@@ -4,6 +4,9 @@ local Tree = require("entities.tree")
 local Enemy = require("entities.enemy")
 local Lunger = require("entities.lunger")
 local Treent = require("entities.treent")
+local SmallTreent = require("entities.small_treent")
+local Wizard = require("entities.wizard")
+local BarkProjectile = require("entities.bark_projectile")
 local Arrow = require("entities.arrow")
 local Particles = require("systems.particles")
 local ScreenShake = require("systems.screen_shake")
@@ -37,6 +40,9 @@ function GameScene:new(gameState)
         enemies = {},
         lungers = {},
         treents = {},
+        smallTreents = {},
+        wizards = {},
+        barkProjectiles = {},
         fireCooldown = 0,
         -- Dash ability
         dashCooldown = 0,
@@ -157,14 +163,19 @@ function GameScene:spawnEnemies()
     local screenHeight = love.graphics.getHeight()
     local floor = self.gameState.currentFloor
     
-    -- More enemies on higher floors
+    -- Spawn counts (MCMs scale slower to keep them special)
     local numEnemies = 2 + math.floor(floor / 2)
-    local numLungers = 1 + math.floor(floor / 4)
+    local numLungers = 1 + math.floor(floor / 4)  -- MCM: Wolf
     local numTreents = math.floor(floor / 3)
+    local numSmallTreents = math.floor(floor / 5)  -- MCM: Bark Thrower
+    local numWizards = math.floor(floor / 6)  -- MCM: Root Caster
     
     self.enemies = {}
     self.lungers = {}
     self.treents = {}
+    self.smallTreents = {}
+    self.wizards = {}
+    self.barkProjectiles = {}
     
     -- Spawn regular enemies
     for i = 1, numEnemies do
@@ -182,7 +193,7 @@ function GameScene:spawnEnemies()
         table.insert(self.enemies, enemy)
     end
     
-    -- Spawn lungers
+    -- Spawn lungers (MCM - Wolf)
     for i = 1, numLungers do
         local angle = math.random() * math.pi * 2
         local distance = math.random(300, 500)
@@ -209,6 +220,34 @@ function GameScene:spawnEnemies()
         treent.damage = (treent.damage or 18) * self.difficultyMult.enemyDamageMult
 
         table.insert(self.treents, treent)
+    end
+
+    -- Spawn Small Treents (MCM - Bark Thrower)
+    for i = 1, numSmallTreents do
+        local angle = math.random() * math.pi * 2
+        local distance = math.random(300, 500)
+        local x = screenWidth / 2 + math.cos(angle) * distance
+        local y = screenHeight / 2 + math.sin(angle) * distance
+
+        local st = SmallTreent:new(x, y)
+        st.health = st.health * self.difficultyMult.enemyHealthMult
+        st.maxHealth = st.health
+
+        table.insert(self.smallTreents, st)
+    end
+
+    -- Spawn Wizards (MCM - Root Caster)
+    for i = 1, numWizards do
+        local angle = math.random() * math.pi * 2
+        local distance = math.random(280, 480)
+        local x = screenWidth / 2 + math.cos(angle) * distance
+        local y = screenHeight / 2 + math.sin(angle) * distance
+
+        local wiz = Wizard:new(x, y)
+        wiz.health = wiz.health * self.difficultyMult.enemyHealthMult
+        wiz.maxHealth = wiz.health
+
+        table.insert(self.wizards, wiz)
     end
 end
 
@@ -328,6 +367,34 @@ function GameScene:update(dt)
                 end
             end
         end
+
+        -- Check Small Treents (MCM)
+        for _, st in ipairs(self.smallTreents) do
+            if st.isAlive then
+                local stx, sty = st:getPosition()
+                local dx = stx - playerX
+                local dy = sty - playerY
+                local distance = math.sqrt(dx * dx + dy * dy)
+                if distance < nearestDistance then
+                    nearestEnemy = st
+                    nearestDistance = distance
+                end
+            end
+        end
+
+        -- Check Wizards (MCM)
+        for _, wiz in ipairs(self.wizards) do
+            if wiz.isAlive then
+                local wx, wy = wiz:getPosition()
+                local dx = wx - playerX
+                local dy = wy - playerY
+                local distance = math.sqrt(dx * dx + dy * dy)
+                if distance < nearestDistance then
+                    nearestEnemy = wiz
+                    nearestDistance = distance
+                end
+            end
+        end
         
         -- Aim at nearest enemy for bow presentation + primary targeting
         if nearestEnemy then
@@ -390,6 +457,12 @@ function GameScene:update(dt)
             for _, enemy in ipairs(self.enemies) do
                 if enemy.isAlive then considerTarget(enemy, 0) end
             end
+            for _, st in ipairs(self.smallTreents) do
+                if st.isAlive then considerTarget(st, 10) end
+            end
+            for _, wiz in ipairs(self.wizards) do
+                if wiz.isAlive then considerTarget(wiz, 12) end
+            end
             if best and best.applyRoot then
                 self.player:useAbility("entangle")
                 local dur = (best.state ~= nil) and 1.0 or 1.8
@@ -446,7 +519,8 @@ function GameScene:update(dt)
                             self.screenShake:add(5, 0.2)
                             
                             -- Drop XP orbs
-                            local xpValue = 15 + math.random(0, 10)
+                            local baseXP = 15 + math.random(0, 10)
+                            local xpValue = enemy.isMCM and (baseXP * 5) or baseXP  -- MCM bonus!
                             self.xpSystem:spawnOrb(ex, ey, xpValue)
                             
                             -- Add rarity charge for special enemies
@@ -494,8 +568,9 @@ function GameScene:update(dt)
                                 self.particles:createExplosion(lx, ly, {0.8, 0.3, 0.8})
                                 self.screenShake:add(6, 0.25)
                                 
-                                -- Drop XP orbs (lungers drop more)
-                                local xpValue = 25 + math.random(0, 15)
+                                -- Drop XP orbs (lungers are MCM - massive XP!)
+                                local baseXP = 25 + math.random(0, 15)
+                                local xpValue = lunger.isMCM and (baseXP * 5) or baseXP
                                 self.xpSystem:spawnOrb(lx, ly, xpValue)
                                 
                                 -- Lungers are MCM-type enemies, add rarity charge
@@ -545,6 +620,94 @@ function GameScene:update(dt)
                                 self.xpSystem:spawnOrb(tx, ty, xpValue)
                             else
                                 self.screenShake:add(3, 0.12)
+                            end
+
+                            if arrow:consumePierce() then
+                                hitEnemy = false
+                            else
+                                hitEnemy = true
+                            end
+                            if hitEnemy then break end
+                        end
+                    end
+                end
+            end
+
+            -- Check Small Treents (MCM)
+            if not hitEnemy then
+                for _, st in ipairs(self.smallTreents) do
+                    if st.isAlive then
+                        local stx, sty = st:getPosition()
+                        local dx = ax - stx
+                        local dy = ay - sty
+                        local distance = math.sqrt(dx * dx + dy * dy)
+
+                        if distance < st:getSize() + arrow:getSize() and arrow:canHit(st) then
+                            arrow:markHit(st)
+                            local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
+                            self.particles:createHitSpark(stx, sty, {1, 1, 0.6})
+                            if self.damageNumbers then
+                                self.damageNumbers:add(stx, sty - st:getSize(), dmg, { isCrit = isCrit })
+                            end
+                            local died = st:takeDamage(dmg, ax, ay, arrow.knockback)
+
+                            if died then
+                                self.particles:createExplosion(stx, sty, {0.3, 1, 0.3})
+                                self.screenShake:add(6, 0.25)
+                                -- MCM: 5x XP!
+                                local baseXP = 35 + math.random(0, 15)
+                                local xpValue = st.isMCM and (baseXP * 5) or baseXP
+                                self.xpSystem:spawnOrb(stx, sty, xpValue)
+                                -- Also grant rarity charge
+                                if st.isMCM then
+                                    self.rarityCharge:add(love.timer.getTime(), 2)
+                                end
+                            else
+                                self.screenShake:add(2, 0.1)
+                            end
+
+                            if arrow:consumePierce() then
+                                hitEnemy = false
+                            else
+                                hitEnemy = true
+                            end
+                            if hitEnemy then break end
+                        end
+                    end
+                end
+            end
+
+            -- Check Wizards (MCM)
+            if not hitEnemy then
+                for _, wiz in ipairs(self.wizards) do
+                    if wiz.isAlive then
+                        local wx, wy = wiz:getPosition()
+                        local dx = ax - wx
+                        local dy = ay - wy
+                        local distance = math.sqrt(dx * dx + dy * dy)
+
+                        if distance < wiz:getSize() + arrow:getSize() and arrow:canHit(wiz) then
+                            arrow:markHit(wiz)
+                            local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
+                            self.particles:createHitSpark(wx, wy, {1, 1, 0.6})
+                            if self.damageNumbers then
+                                self.damageNumbers:add(wx, wy - wiz:getSize(), dmg, { isCrit = isCrit })
+                            end
+                            local died = wiz:takeDamage(dmg, ax, ay, arrow.knockback)
+
+                            if died then
+                                self.particles:createExplosion(wx, wy, {0.7, 0.4, 1})
+                                self.screenShake:add(6, 0.25)
+                                -- MCM: 5x XP!
+                                local baseXP = 30 + math.random(0, 15)
+                                local xpValue = wiz.isMCM and (baseXP * 5) or baseXP
+                                self.xpSystem:spawnOrb(wx, wy, xpValue)
+                                -- Also grant rarity charge
+                                if wiz.isMCM then
+                                    self.rarityCharge:add(love.timer.getTime(), 2)
+                                end
+                            else
+                                self.screenShake:add(2, 0.1)
                             end
 
                             if arrow:consumePierce() then
@@ -678,6 +841,112 @@ function GameScene:update(dt)
                 end
             end
         end
+
+        -- Update Small Treents (MCM - Bark Thrower)
+        for _, st in ipairs(self.smallTreents) do
+            if st.isAlive then
+                local onShoot = function(sx, sy, tx, ty)
+                    local bark = BarkProjectile:new(sx, sy, tx, ty)
+                    table.insert(self.barkProjectiles, bark)
+                end
+                st:update(dt, playerX, playerY, onShoot)
+
+                if not self.isDashing then
+                    local stx, sty = st:getPosition()
+                    local dx = playerX - stx
+                    local dy = playerY - sty
+                    local distance = math.sqrt(dx * dx + dy * dy)
+                    if distance < self.player:getSize() + st:getSize() then
+                        local damage = (st.damage or 12) * self.difficultyMult.enemyDamageMult
+                        if self.frenzyActive then damage = damage * 1.15 end
+                        local before = self.player.health
+                        self.player:takeDamage(damage)
+                        local wasHit = self.player.health < before
+                        if wasHit and self.playerStats then
+                            self.playerStats:update(0, { wasHit = true, didRoll = false, inFrenzy = self.frenzyActive })
+                        end
+                        if not self.player:isInvincible() then
+                            self.screenShake:add(5, 0.18)
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Update Wizards (MCM - Root Caster)
+        for _, wiz in ipairs(self.wizards) do
+            if wiz.isAlive then
+                local onConeAttack = function(wx, wy, angleToPlayer, coneAngle, coneRange, rootDur)
+                    -- Check if player is in cone
+                    local pdx = playerX - wx
+                    local pdy = playerY - wy
+                    local distToPlayer = math.sqrt(pdx * pdx + pdy * pdy)
+                    if distToPlayer < coneRange then
+                        local angleToP = math.atan2(pdy, pdx)
+                        local angleDiff = math.abs(((angleToP - angleToPlayer + math.pi) % (2 * math.pi)) - math.pi)
+                        if angleDiff < coneAngle / 2 then
+                            -- Player hit by cone: root them
+                            if self.player.applyRoot then
+                                self.player:applyRoot(rootDur)
+                            end
+                            -- Also deal damage
+                            local coneDmg = 15 * self.difficultyMult.enemyDamageMult
+                            if self.frenzyActive then coneDmg = coneDmg * 1.15 end
+                            self.player:takeDamage(coneDmg)
+                            self.screenShake:add(4, 0.15)
+                            -- Visual feedback
+                            self.particles:createExplosion(playerX, playerY, {0.8, 0.3, 1})
+                        end
+                    end
+                end
+                wiz:update(dt, playerX, playerY, onConeAttack)
+
+                if not self.isDashing then
+                    local wx, wy = wiz:getPosition()
+                    local dx = playerX - wx
+                    local dy = playerY - wy
+                    local distance = math.sqrt(dx * dx + dy * dy)
+                    if distance < self.player:getSize() + wiz:getSize() then
+                        local damage = (wiz.damage or 10) * self.difficultyMult.enemyDamageMult
+                        if self.frenzyActive then damage = damage * 1.15 end
+                        local before = self.player.health
+                        self.player:takeDamage(damage)
+                        local wasHit = self.player.health < before
+                        if wasHit and self.playerStats then
+                            self.playerStats:update(0, { wasHit = true, didRoll = false, inFrenzy = self.frenzyActive })
+                        end
+                        if not self.player:isInvincible() then
+                            self.screenShake:add(4, 0.15)
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Update bark projectiles
+        for i = #self.barkProjectiles, 1, -1 do
+            local bark = self.barkProjectiles[i]
+            bark:update(dt)
+
+            if bark:isExpired() then
+                table.remove(self.barkProjectiles, i)
+            else
+                -- Check collision with player
+                local bx, by = bark:getPosition()
+                local dx = playerX - bx
+                local dy = playerY - by
+                local distance = math.sqrt(dx * dx + dy * dy)
+                if distance < self.player:getSize() + bark:getSize() and not self.isDashing then
+                    local barkDmg = bark.damage * self.difficultyMult.enemyDamageMult
+                    if self.frenzyActive then barkDmg = barkDmg * 1.15 end
+                    self.player:takeDamage(barkDmg)
+                    if not self.player:isInvincible() then
+                        self.screenShake:add(3, 0.12)
+                    end
+                    table.remove(self.barkProjectiles, i)
+                end
+            end
+        end
         
         -- Check if all enemies dead - advance floor
         local allDead = true
@@ -689,6 +958,12 @@ function GameScene:update(dt)
         end
         for _, treent in ipairs(self.treents) do
             if treent.isAlive then allDead = false break end
+        end
+        for _, st in ipairs(self.smallTreents) do
+            if st.isAlive then allDead = false break end
+        end
+        for _, wiz in ipairs(self.wizards) do
+            if wiz.isAlive then allDead = false break end
         end
         
         if allDead then
@@ -813,6 +1088,20 @@ function GameScene:draw()
             table.insert(drawables, {entity = treent, y = treent.y, type = "treent"})
         end
     end
+
+    -- Add Small Treents (MCM)
+    for _, st in ipairs(self.smallTreents) do
+        if st.isAlive then
+            table.insert(drawables, {entity = st, y = st.y, type = "small_treent"})
+        end
+    end
+
+    -- Add Wizards (MCM)
+    for _, wiz in ipairs(self.wizards) do
+        if wiz.isAlive then
+            table.insert(drawables, {entity = wiz, y = wiz.y, type = "wizard"})
+        end
+    end
     
     -- Add player
     if self.player then
@@ -843,6 +1132,11 @@ function GameScene:draw()
     -- Draw arrows (always on top of entities)
     for _, arrow in ipairs(self.arrows) do
         arrow:draw()
+    end
+
+    -- Draw bark projectiles
+    for _, bark in ipairs(self.barkProjectiles) do
+        bark:draw()
     end
 
     -- Draw floating damage numbers in world space
