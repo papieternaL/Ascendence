@@ -119,7 +119,7 @@ function Player:update(dt)
     
     -- Update ability cooldowns
     for _, ability in pairs(self.abilities) do
-        if ability.currentCooldown > 0 then
+        if ability.currentCooldown and ability.currentCooldown > 0 then
             ability.currentCooldown = ability.currentCooldown - dt
             if ability.currentCooldown < 0 then
                 ability.currentCooldown = 0
