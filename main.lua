@@ -120,6 +120,21 @@ function drawHUD()
     -- Draw bottom HUD (health bar + abilities)
     if gameScene and gameScene.player then
         drawBottomHUD(gameScene.player)
+        
+        -- Draw floor indicator (top-left corner)
+        love.graphics.setColor(1, 1, 1, 0.9)
+        love.graphics.print("FLOOR: " .. gameState.currentFloor, 20, 20)
+        
+        -- Debug: show when boss should trigger
+        if gameState.currentFloor == 4 then
+            love.graphics.setColor(1, 1, 0, 1)
+            love.graphics.print(">>> NEXT WAVE = BOSS! <<<", 20, 40)
+        elseif gameState.currentFloor >= 5 then
+            love.graphics.setColor(1, 0, 0, 1)
+            love.graphics.print("!!! BOSS SHOULD HAVE TRIGGERED !!!", 20, 40)
+        end
+        
+        love.graphics.setColor(1, 1, 1, 1)
     end
 end
 

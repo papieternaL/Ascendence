@@ -973,15 +973,31 @@ function GameScene:update(dt)
 end
 
 function GameScene:advanceFloor()
-    -- Check if boss floor (floor 5)
+    -- Debug: print current floor
+    print("=================================================")
+    print("=== ADVANCE FLOOR CALLED ===")
+    print("Current floor BEFORE any changes:", self.gameState.currentFloor)
+    print("Checking: currentFloor == 4?", self.gameState.currentFloor == 4)
+    print("=================================================")
+    
+    -- Check if boss floor (after clearing floor 4)
     if self.gameState.currentFloor == 4 then
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        print("!!! BOSS CONDITION MET - TRIGGERING BOSS !!!")
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         -- Next floor is boss, transition to boss arena!
         self.gameState:nextFloor()
+        print("Called nextFloor(), new floor:", self.gameState.currentFloor)
+        print("About to call transitionTo(BOSS_FIGHT)")
         self.gameState:transitionTo(self.gameState.States.BOSS_FIGHT)
+        print("transitionTo() called, returning from advanceFloor()")
         return
     end
     
+    print("Boss condition NOT met, proceeding with normal floor advance")
     local continued = self.gameState:nextFloor()
+    print("After nextFloor(), new floor:", self.gameState.currentFloor)
+    print("continued =", continued)
     if continued then
         -- Heal player slightly between floors
         self.player.health = math.min(self.player.maxHealth, self.player.health + 20)
