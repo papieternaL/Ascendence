@@ -123,8 +123,12 @@ function BossArenaScene:update(dt)
             if self.dashTime <= 0 then
                 self.isDashing = false
             else
-                self.player.x = self.player.x + self.dashDirX * self.dashSpeed * dt
-                self.player.y = self.player.y + self.dashDirY * self.dashSpeed * dt
+                -- Apply dash movement
+                local moveX = self.dashDirX * self.dashSpeed * dt
+                local moveY = self.dashDirY * self.dashSpeed * dt
+                print(string.format("Dash moving: dx=%.2f, dy=%.2f (dir: %.2f, %.2f)", moveX, moveY, self.dashDirX, self.dashDirY))
+                self.player.x = self.player.x + moveX
+                self.player.y = self.player.y + moveY
                 self.particles:createDashTrail(self.player.x, self.player.y)
             end
         else
@@ -133,43 +137,97 @@ function BossArenaScene:update(dt)
         
         local playerX, playerY = self.player:getPosition()
         
-        -- Aim at boss
-        if self.boss and self.boss.isAlive then
-            local bx, by = self.boss:getPosition()
-            self.player:aimAt(bx, by)
+        -- Find best target (prioritize roots in Phase 2)
+        local targetX, targetY = nil, nil
+        local bestTarget = nil
+        
+        -- Phase 2: Prioritize roots heavily
+        if self.boss and self.boss.phase == 2 and #self.roots > 0 then
+            local nearestRootDist = 999999
+            for _, root in ipairs(self.roots) do
+                if root.isAlive then
+                    local rx, ry = root:getPosition()
+                    local dx = rx - playerX
+                    local dy = ry - playerY
+                    local dist = math.sqrt(dx*dx + dy*dy)
+                    if dist < nearestRootDist then
+                        nearestRootDist = dist
+                        targetX = rx
+                        targetY = ry
+                        bestTarget = root
+                    end
+                end
+            end
+        end
+        
+        -- Fallback to boss if no roots
+        if not targetX and self.boss and self.boss.isAlive then
+            targetX, targetY = self.boss:getPosition()
+            bestTarget = self.boss
+        end
+        
+        -- Aim at target
+        if targetX and targetY then
+            self.player:aimAt(targetX, targetY)
             
             -- Auto-fire primary
             if self.fireCooldown <= 0 and not self.isDashing then
                 local baseDmg = (self.player.attackDamage or 10) * 1.0
                 local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
                 local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
-                local arrow = Arrow:new(sx, sy, bx, by, { damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140 })
+                local arrow = Arrow:new(sx, sy, targetX, targetY, { damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140 })
                 table.insert(self.arrows, arrow)
                 self.fireCooldown = self.fireRate
                 if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
             end
         end
         
-        -- Auto-cast Power Shot
-        if self.player and self.player:isAbilityReady("power_shot") and not self.isDashing and self.boss and self.boss.isAlive then
-            local bx, by = self.boss:getPosition()
-            self.player:aimAt(bx, by)
-            self.player:useAbility("power_shot")
-            local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
-            local base = (self.player.attackDamage or 10) * 3.0
-            local ps = Arrow:new(sx, sy, bx, by, {
-                damage = base,
-                speed = 760,
-                size = 12,
-                lifetime = 1.8,
-                pierce = 999,
-                alwaysCrit = true,
-                kind = "power_shot",
-                knockback = 260,
-            })
-            table.insert(self.arrows, ps)
-            self.screenShake:add(3, 0.12)
-            if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
+        -- Auto-cast Power Shot (also prioritizes roots in Phase 2)
+        if self.player and self.player:isAbilityReady("power_shot") and not self.isDashing then
+            local psTargetX, psTargetY = nil, nil
+            
+            -- Phase 2: Prioritize roots
+            if self.boss and self.boss.phase == 2 and #self.roots > 0 then
+                local nearestRootDist = 999999
+                for _, root in ipairs(self.roots) do
+                    if root.isAlive then
+                        local rx, ry = root:getPosition()
+                        local dx = rx - playerX
+                        local dy = ry - playerY
+                        local dist = math.sqrt(dx*dx + dy*dy)
+                        if dist < nearestRootDist then
+                            nearestRootDist = dist
+                            psTargetX = rx
+                            psTargetY = ry
+                        end
+                    end
+                end
+            end
+            
+            -- Fallback to boss
+            if not psTargetX and self.boss and self.boss.isAlive then
+                psTargetX, psTargetY = self.boss:getPosition()
+            end
+            
+            if psTargetX and psTargetY then
+                self.player:aimAt(psTargetX, psTargetY)
+                self.player:useAbility("power_shot")
+                local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
+                local base = (self.player.attackDamage or 10) * 3.0
+                local ps = Arrow:new(sx, sy, psTargetX, psTargetY, {
+                    damage = base,
+                    speed = 760,
+                    size = 12,
+                    lifetime = 1.8,
+                    pierce = 999,
+                    alwaysCrit = true,
+                    kind = "power_shot",
+                    knockback = 260,
+                })
+                table.insert(self.arrows, ps)
+                self.screenShake:add(3, 0.12)
+                if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
+            end
         end
         
         -- Auto-cast Entangle (prioritizes roots in Phase 2)
@@ -573,6 +631,21 @@ function BossArenaScene:drawUI()
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.print(string.format("HP: %d / %d", math.floor(self.player.health), math.floor(self.player.maxHealth)), 25, love.graphics.getHeight() - 38)
     
+    -- DEBUG: Show dash direction
+    if self.isDashing and self.player then
+        local lineLen = 100
+        local endX = self.player.x + self.dashDirX * lineLen
+        local endY = self.player.y + self.dashDirY * lineLen
+        love.graphics.setColor(1, 1, 0, 0.8)
+        love.graphics.setLineWidth(3)
+        love.graphics.line(self.player.x, self.player.y, endX, endY)
+        love.graphics.setLineWidth(1)
+        
+        -- Show direction values
+        love.graphics.setColor(1, 1, 0, 1)
+        love.graphics.print(string.format("Dash Dir: %.2f, %.2f", self.dashDirX, self.dashDirY), 20, 60)
+    end
+    
     -- Boss title
     love.graphics.setColor(1, 0.3, 0.3, 1)
     love.graphics.setNewFont(24)
@@ -605,6 +678,12 @@ function BossArenaScene:keypressed(key)
 end
 
 function BossArenaScene:startDash()
+    -- Can't dash while rooted!
+    if self.player and self.player.isRooted then
+        print("Cannot dash: player is rooted!")
+        return
+    end
+    
     if self.dashCooldown <= 0 and not self.isDashing and self.player then
         local mouseX, mouseY = love.mouse.getPosition()
         local dx = mouseX - self.player.x
