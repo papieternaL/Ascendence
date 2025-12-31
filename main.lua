@@ -54,14 +54,39 @@ function love.update(dt)
         end
     elseif state == States.BOSS_FIGHT then
         -- Initialize boss arena if needed
-        if not bossArenaScene and gameScene then
-            bossArenaScene = BossArenaScene:new(
-                gameScene.player,
-                gameScene.playerStats,
-                gameState,
-                gameScene.xpSystem,
-                gameScene.rarityCharge
-            )
+        if not bossArenaScene then
+            if gameState.bossTestMode and not gameScene then
+                -- BOSS TEST MODE: Create temporary game scene with boosted player
+                print("Creating BOSS TEST MODE game scene")
+                gameScene = GameScene:new(gameState)
+                gameScene:load()
+                
+                -- Boost player stats for testing
+                if gameScene.player and gameScene.playerStats then
+                    gameScene.player.health = 150
+                    gameScene.player.maxHealth = 150
+                    gameScene.player.attackDamage = 25
+                    gameScene.player.speed = 250
+                    
+                    -- Apply some upgrades
+                    gameScene.playerStats.base.crit_chance = 0.25
+                    gameScene.playerStats.base.crit_damage = 2.5
+                    gameScene.playerStats.base.move_speed = 250
+                    
+                    print("Player boosted for boss test: HP=150, ATK=25, SPD=250")
+                end
+            end
+            
+            if gameScene then
+                bossArenaScene = BossArenaScene:new(
+                    gameScene.player,
+                    gameScene.playerStats,
+                    gameState,
+                    gameScene.xpSystem,
+                    gameScene.rarityCharge
+                )
+                print("Boss arena scene created!")
+            end
         end
         if bossArenaScene then
             bossArenaScene:update(dt)

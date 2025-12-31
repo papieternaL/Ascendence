@@ -75,6 +75,10 @@ function Menu:update(dt)
         if self:isPointInButton(mx, my, w/2, h * 0.6, 200, 50) then
             self.selectedIndex = 1
             self.hoveredButton = "begin"
+        -- Check if hovering over BOSS TEST button
+        elseif self:isPointInButton(mx, my, w/2, h * 0.7, 200, 50) then
+            self.selectedIndex = 2
+            self.hoveredButton = "boss_test"
         else
             self.hoveredButton = nil
         end
@@ -159,6 +163,9 @@ function Menu:drawMainMenu()
     
     -- Begin button
     self:drawButton("BEGIN TRIAL", w/2, h * 0.6, 200, 50, self.selectedIndex == 1)
+    
+    -- Boss Test button (debug/test mode)
+    self:drawButton("BOSS TEST", w/2, h * 0.7, 200, 50, self.selectedIndex == 2)
     
     -- Instructions
     love.graphics.setFont(self.smallFont)
@@ -572,9 +579,26 @@ function Menu:keypressed(key)
     local States = self.gameState.States
     
     if state == States.MENU then
-        if key == "return" or key == "space" then
-            self.gameState:transitionTo(States.CHARACTER_SELECT)
-            self.selectedIndex = 1
+        if key == "up" then
+            self.selectedIndex = self.selectedIndex - 1
+            if self.selectedIndex < 1 then self.selectedIndex = 2 end
+        elseif key == "down" then
+            self.selectedIndex = self.selectedIndex + 1
+            if self.selectedIndex > 2 then self.selectedIndex = 1 end
+        elseif key == "return" or key == "space" then
+            if self.selectedIndex == 1 then
+                -- Normal game start
+                self.gameState:transitionTo(States.CHARACTER_SELECT)
+                self.selectedIndex = 1
+            elseif self.selectedIndex == 2 then
+                -- BOSS TEST MODE - skip straight to boss
+                self.gameState.bossTestMode = true
+                self.gameState:selectHeroClass("ARCHER")
+                self.gameState:selectBiome("DEEPWOOD")
+                self.gameState:selectDifficulty("VETERAN")
+                self.gameState:initFloor(5)
+                self.gameState:transitionTo(States.BOSS_FIGHT)
+            end
         end
     elseif state == States.CHARACTER_SELECT then
         local classes = {"ARCHER", "WIZARD", "KNIGHT"}
@@ -656,12 +680,23 @@ function Menu:mousepressed(x, y, button)
     
     if state == States.MENU then
         -- Check "BEGIN TRIAL" button
-        local inButton = self:isPointInButton(x, y, w/2, h * 0.6, 200, 50)
-        print("In BEGIN button:", inButton, "Button center:", w/2, h * 0.6)
-        if inButton then
+        local inBeginButton = self:isPointInButton(x, y, w/2, h * 0.6, 200, 50)
+        local inBossButton = self:isPointInButton(x, y, w/2, h * 0.7, 200, 50)
+        print("In BEGIN button:", inBeginButton, "In BOSS button:", inBossButton)
+        
+        if inBeginButton then
             print("Transitioning to CHARACTER_SELECT")
             self.gameState:transitionTo(States.CHARACTER_SELECT)
             self.selectedIndex = 1
+        elseif inBossButton then
+            print("Launching BOSS TEST MODE")
+            -- BOSS TEST MODE - skip straight to boss
+            self.gameState.bossTestMode = true
+            self.gameState:selectHeroClass("ARCHER")
+            self.gameState:selectBiome("DEEPWOOD")
+            self.gameState:selectDifficulty("VETERAN")
+            self.gameState:initFloor(5)
+            self.gameState:transitionTo(States.BOSS_FIGHT)
         end
         
     elseif state == States.CHARACTER_SELECT then
