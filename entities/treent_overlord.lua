@@ -50,8 +50,12 @@ function TreentOverlord:new(x, y)
         
         -- Phase 1: Bark Barrage
         barkBarrageTimer = 0,
-        barkBarrageCooldown = 4.0,
+        barkBarrageCooldown = 3.0,  -- Reduced from 4.0
         barkBarrageCount = 8, -- Shoots 8 projectiles in a circle
+        barkBarrageDelay = 0.08,  -- Time between each projectile
+        barkBarrageIndex = 0,  -- Current projectile being fired
+        barkBarrageActive = false,
+        barkBarrageInternalTimer = 0,
         
         -- Phase 2: Root status
         rootDuration = 0,
@@ -69,6 +73,9 @@ function TreentOverlord:new(x, y)
         earthquakeTimer = 0,
         earthquakeCooldown = 10.0,
         earthquakeDuration = 3.0,
+        earthquakeCastTime = 2.0,  -- NEW: 2 second cast before earthquake
+        earthquakeCasting = false,
+        earthquakeCastProgress = 0,
         earthquakeActive = false,
         earthquakeElapsed = 0,
         safeZones = {}, -- Array of safe zone positions
@@ -164,17 +171,34 @@ function TreentOverlord:updatePhase1(dt, playerX, playerY, onBarkShoot)
     end
     
     -- Bark Barrage attack
-    self.barkBarrageTimer = self.barkBarrageTimer + dt
-    if self.barkBarrageTimer >= self.barkBarrageCooldown then
-        self.barkBarrageTimer = 0
-        -- Shoot bark projectiles in all directions
-        if onBarkShoot then
-            for i = 1, self.barkBarrageCount do
-                local angle = (i / self.barkBarrageCount) * math.pi * 2
+    if not self.barkBarrageActive then
+        self.barkBarrageTimer = self.barkBarrageTimer + dt
+        if self.barkBarrageTimer >= self.barkBarrageCooldown then
+            -- Start barrage
+            self.barkBarrageActive = true
+            self.barkBarrageIndex = 0
+            self.barkBarrageInternalTimer = 0
+            self.barkBarrageTimer = 0
+        end
+    else
+        -- Fire projectiles in sequence
+        self.barkBarrageInternalTimer = self.barkBarrageInternalTimer + dt
+        if self.barkBarrageInternalTimer >= self.barkBarrageDelay and self.barkBarrageIndex < self.barkBarrageCount then
+            self.barkBarrageInternalTimer = 0
+            self.barkBarrageIndex = self.barkBarrageIndex + 1
+            
+            -- Fire one projectile
+            if onBarkShoot then
+                local angle = (self.barkBarrageIndex / self.barkBarrageCount) * math.pi * 2
                 local targetX = self.x + math.cos(angle) * 500
                 local targetY = self.y + math.sin(angle) * 500
                 onBarkShoot(self.x, self.y, targetX, targetY)
             end
+        end
+        
+        -- End barrage when all projectiles fired
+        if self.barkBarrageIndex >= self.barkBarrageCount then
+            self.barkBarrageActive = false
         end
     end
 end
@@ -199,18 +223,29 @@ function TreentOverlord:updatePhase2(dt, playerX, playerY, onEncompassRoot, onEa
         end
     end
     
-    -- Territory Control: Earthquake with safe zones
-    if not self.earthquakeActive then
+    -- Territory Control: Earthquake with cast time
+    if not self.earthquakeCasting and not self.earthquakeActive then
         self.earthquakeTimer = self.earthquakeTimer + dt
         if self.earthquakeTimer >= self.earthquakeCooldown then
-            self.earthquakeActive = true
+            -- Start casting earthquake
+            self.earthquakeCasting = true
+            self.earthquakeCastProgress = 0
             self.earthquakeTimer = 0
+        end
+    elseif self.earthquakeCasting then
+        -- Casting earthquake (show cast bar)
+        self.earthquakeCastProgress = self.earthquakeCastProgress + dt
+        if self.earthquakeCastProgress >= self.earthquakeCastTime then
+            -- Cast complete, start earthquake!
+            self.earthquakeCasting = false
+            self.earthquakeActive = true
             self.earthquakeElapsed = 0
             if onEarthquake then
                 onEarthquake("start")
             end
         end
-    else
+    elseif self.earthquakeActive then
+        -- Earthquake is happening
         self.earthquakeElapsed = self.earthquakeElapsed + dt
         if self.earthquakeElapsed >= self.earthquakeDuration then
             self.earthquakeActive = false
@@ -269,6 +304,32 @@ function TreentOverlord:draw()
     -- Phase indicator
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.print("PHASE " .. self.phase, self.x - 30, self.y - self.size - 35)
+    
+    -- Cast bar (EARTHQUAKE TELEGRAPH)
+    if self.earthquakeCasting then
+        local castPercent = self.earthquakeCastProgress / self.earthquakeCastTime
+        local barWidth = 140
+        local barHeight = 12
+        local barY = self.y - self.size - 50
+        
+        -- Background
+        love.graphics.setColor(0, 0, 0, 0.8)
+        love.graphics.rectangle("fill", self.x - barWidth/2, barY, barWidth, barHeight)
+        
+        -- Cast progress (red = danger!)
+        love.graphics.setColor(1, 0.2, 0.2, 0.9)
+        love.graphics.rectangle("fill", self.x - barWidth/2, barY, barWidth * castPercent, barHeight)
+        
+        -- Border
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.setLineWidth(2)
+        love.graphics.rectangle("line", self.x - barWidth/2, barY, barWidth, barHeight)
+        love.graphics.setLineWidth(1)
+        
+        -- Text
+        love.graphics.setColor(1, 1, 0, 1)
+        love.graphics.print("EARTHQUAKE!", self.x - 35, barY - 15)
+    end
     
     love.graphics.setColor(1, 1, 1, 1)
 end

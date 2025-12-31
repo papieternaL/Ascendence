@@ -285,40 +285,27 @@ function BossArenaScene:update(dt)
                     self.player:applyRoot(self.boss.encompassRootDuration)
                 end
                 
-                -- Spawn root entities around the arena
+                -- Spawn 1 root entity ON the player (they must destroy it to escape)
                 self.roots = {}
-                local screenWidth = love.graphics.getWidth()
-                local screenHeight = love.graphics.getHeight()
-                for i = 1, 6 do
-                    local angle = (i / 6) * math.pi * 2
-                    local distance = 200
-                    local rx = screenWidth / 2 + math.cos(angle) * distance
-                    local ry = screenHeight / 2 + math.sin(angle) * distance
-                    table.insert(self.roots, Root:new(rx, ry))
-                end
+                local root = Root:new(px, py)
+                root.maxHealth = 200  -- Tankier single root
+                root.health = 200
+                table.insert(self.roots, root)
                 
                 self.screenShake:add(8, 0.3)
+                self.particles:createExplosion(px, py, {0.6, 0.3, 0.1})
             end
             
             local onEarthquake = function(phase)
                 if phase == "start" then
                     self.earthquakeActive = true
                     self.earthquakeDamageTimer = 0
-                    -- Spawn 3 safe zones
-                    self.safeZones = {}
-                    local screenWidth = love.graphics.getWidth()
-                    local screenHeight = love.graphics.getHeight()
-                    for i = 1, 3 do
-                        local angle = (i / 3) * math.pi * 2
-                        local distance = 180
-                        local sx = screenWidth / 2 + math.cos(angle) * distance
-                        local sy = screenHeight / 2 + math.sin(angle) * distance
-                        table.insert(self.safeZones, { x = sx, y = sy, radius = 60 })
-                    end
+                    -- Choose 1 safe pizza slice (90 degrees), rest is dangerous
+                    self.safeSliceAngle = math.random(0, 3) * (math.pi / 2) -- Random 90-degree slice
                     self.screenShake:add(15, 0.6)
                 elseif phase == "end" then
                     self.earthquakeActive = false
-                    self.safeZones = {}
+                    self.safeSliceAngle = nil
                 end
             end
             
@@ -382,21 +369,33 @@ function BossArenaScene:update(dt)
             self.earthquakeDamageTimer = self.earthquakeDamageTimer + dt
             if self.earthquakeDamageTimer >= 0.5 then
                 self.earthquakeDamageTimer = 0
-                -- Check if player is in a safe zone
+                -- Check if player is in the safe pizza slice
                 local inSafeZone = false
-                for _, zone in ipairs(self.safeZones) do
-                    local dx = playerX - zone.x
-                    local dy = playerY - zone.y
-                    local dist = math.sqrt(dx * dx + dy * dy)
-                    if dist < zone.radius then
+                if self.safeSliceAngle then
+                    local screenWidth = love.graphics.getWidth()
+                    local screenHeight = love.graphics.getHeight()
+                    local centerX, centerY = screenWidth / 2, screenHeight / 2
+                    
+                    -- Calculate angle from center to player
+                    local dx = playerX - centerX
+                    local dy = playerY - centerY
+                    local playerAngle = math.atan2(dy, dx)
+                    
+                    -- Normalize angle to 0-2π
+                    if playerAngle < 0 then playerAngle = playerAngle + math.pi * 2 end
+                    
+                    -- Check if player is in safe slice (90-degree slice)
+                    local sliceStart = self.safeSliceAngle
+                    local sliceEnd = self.safeSliceAngle + (math.pi / 2)
+                    
+                    if playerAngle >= sliceStart and playerAngle < sliceEnd then
                         inSafeZone = true
-                        break
                     end
                 end
                 
                 if not inSafeZone then
-                    -- Deal earthquake damage
-                    local eqDmg = 30
+                    -- Deal earthquake damage (DEADLIER!)
+                    local eqDmg = 50  -- Increased from 30
                     if self.frenzyActive then eqDmg = eqDmg * 1.15 end
                     self.player:takeDamage(eqDmg)
                     self.screenShake:add(6, 0.2)
@@ -532,25 +531,40 @@ function BossArenaScene:draw()
     -- Draw particles (background layer)
     self.particles:draw()
     
-    -- Draw safe zones (if earthquake active)
-    if self.earthquakeActive then
-        -- Pulsing effect for visibility
-        local pulse = 0.5 + math.sin(love.timer.getTime() * 6) * 0.3
+    -- Draw pizza slice safe zones (if earthquake active)
+    if self.earthquakeActive and self.safeSliceAngle then
+        local screenWidth = love.graphics.getWidth()
+        local screenHeight = love.graphics.getHeight()
+        local centerX, centerY = screenWidth / 2, screenHeight / 2
+        local radius = math.max(screenWidth, screenHeight) * 1.5  -- Cover entire screen
         
-        for _, zone in ipairs(self.safeZones) do
-            -- Outer glow
-            love.graphics.setColor(0.2, 1, 0.2, 0.2)
-            love.graphics.circle("fill", zone.x, zone.y, zone.radius + 10)
-            
-            -- Main safe zone (bright green, pulsing)
-            love.graphics.setColor(0.2, 1, 0.2, 0.4 + pulse * 0.3)
-            love.graphics.circle("fill", zone.x, zone.y, zone.radius)
-            
-            -- Border (solid, very visible)
-            love.graphics.setColor(0, 1, 0, 0.9)
-            love.graphics.setLineWidth(4)
-            love.graphics.circle("line", zone.x, zone.y, zone.radius)
+        -- Pulsing effect
+        local pulse = 0.5 + math.sin(love.timer.getTime() * 8) * 0.5
+        
+        -- Draw 3 DANGER slices (red/green tinted)
+        for i = 0, 3 do
+            local sliceAngle = i * (math.pi / 2)
+            if sliceAngle ~= self.safeSliceAngle then
+                -- Danger zone (green/red, pulsing)
+                love.graphics.setColor(0.2 + pulse * 0.3, 1, 0.2 + pulse * 0.2, 0.5 + pulse * 0.2)
+                love.graphics.arc("fill", centerX, centerY, radius, sliceAngle, sliceAngle + math.pi / 2)
+                
+                -- Border
+                love.graphics.setColor(0, 1, 0, 0.9)
+                love.graphics.setLineWidth(6)
+                love.graphics.arc("line", centerX, centerY, radius * 0.8, sliceAngle, sliceAngle + math.pi / 2)
+            end
         end
+        
+        -- Draw SAFE slice (white, pulsing)
+        love.graphics.setColor(1, 1, 1, 0.3 + pulse * 0.2)
+        love.graphics.arc("fill", centerX, centerY, radius, self.safeSliceAngle, self.safeSliceAngle + math.pi / 2)
+        
+        -- Safe zone border (bright white)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.setLineWidth(8)
+        love.graphics.arc("line", centerX, centerY, radius * 0.8, self.safeSliceAngle, self.safeSliceAngle + math.pi / 2)
+        
         love.graphics.setLineWidth(1)
     end
     
@@ -630,6 +644,43 @@ function BossArenaScene:drawUI()
     
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.print(string.format("HP: %d / %d", math.floor(self.player.health), math.floor(self.player.maxHealth)), 25, love.graphics.getHeight() - 38)
+    
+    -- Draw abilities below health bar
+    if self.player and self.player.abilities and self.player.abilityOrder then
+        local abilitySize = 40
+        local abilitySpacing = 10
+        local numAbilities = #self.player.abilityOrder
+        local abilitiesWidth = numAbilities * abilitySize + (numAbilities - 1) * abilitySpacing
+        local abilitiesX = 20
+        local abilitiesY = love.graphics.getHeight() - 75
+        
+        for i, abilityId in ipairs(self.player.abilityOrder) do
+            local ability = self.player.abilities[abilityId]
+            if ability then
+                local x = abilitiesX + (i - 1) * (abilitySize + abilitySpacing)
+                
+                -- Ability background
+                local isReady = ability.currentCooldown and ability.currentCooldown <= 0
+                if isReady then
+                    love.graphics.setColor(0.2, 0.6, 0.8, 0.8)
+                else
+                    love.graphics.setColor(0.1, 0.1, 0.2, 0.8)
+                end
+                love.graphics.rectangle("fill", x, abilitiesY, abilitySize, abilitySize, 4, 4)
+                
+                -- Cooldown overlay
+                if not isReady and ability.cooldown and ability.cooldown > 0 then
+                    local cooldownPercent = ability.currentCooldown / ability.cooldown
+                    love.graphics.setColor(0, 0, 0, 0.7)
+                    love.graphics.rectangle("fill", x, abilitiesY, abilitySize, abilitySize * cooldownPercent, 4, 4)
+                end
+                
+                -- Icon/Key
+                love.graphics.setColor(1, 1, 1, 1)
+                love.graphics.print(ability.key or "?", x + abilitySize/2 - 6, abilitiesY + abilitySize/2 - 6)
+            end
+        end
+    end
     
     -- DEBUG: Show dash direction
     if self.isDashing and self.player then
