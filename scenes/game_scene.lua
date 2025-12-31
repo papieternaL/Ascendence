@@ -973,6 +973,14 @@ function GameScene:update(dt)
 end
 
 function GameScene:advanceFloor()
+    -- Check if boss floor (floor 5)
+    if self.gameState.currentFloor == 4 then
+        -- Next floor is boss, transition to boss arena!
+        self.gameState:nextFloor()
+        self.gameState:transitionTo(self.gameState.States.BOSS_FIGHT)
+        return
+    end
+    
     local continued = self.gameState:nextFloor()
     if continued then
         -- Heal player slightly between floors
@@ -981,6 +989,7 @@ function GameScene:advanceFloor()
         self:spawnEnemies()
         -- Reset arrows
         self.arrows = {}
+        self.barkProjectiles = {}
     end
 end
 

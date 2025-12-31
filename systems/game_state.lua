@@ -9,6 +9,7 @@ GameState.States = {
     BIOME_SELECT = "biome_select",
     DIFFICULTY_SELECT = "difficulty_select",
     PLAYING = "playing",
+    BOSS_FIGHT = "boss_fight",
     PAUSED = "paused",
     GAME_OVER = "game_over",
     VICTORY = "victory"

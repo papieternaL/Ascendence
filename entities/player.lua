@@ -37,6 +37,10 @@ function Player:new(x, y)
         health = 100,
         invincibleTime = 0, -- invincibility frames after taking damage
         invincibleDuration = 0.5, -- seconds of invincibility after hit
+        -- Root status (boss mechanic)
+        isRooted = false,
+        rootDuration = 0,
+        rootedAt = 0,
         -- Combat stats
         attackDamage = 15,
         attackRange = 350,
@@ -100,6 +104,14 @@ function Player:update(dt)
         self.invincibleTime = self.invincibleTime - dt
     end
 
+    -- Update root status
+    if self.isRooted then
+        self.rootDuration = self.rootDuration - dt
+        if self.rootDuration <= 0 then
+            self.isRooted = false
+        end
+    end
+
     -- Bow recoil decay
     if self.bowRecoilTime and self.bowRecoilTime > 0 then
         self.bowRecoilTime = math.max(0, self.bowRecoilTime - dt)
@@ -115,11 +127,12 @@ function Player:update(dt)
         end
     end
     
-    -- Get input
+    -- Get input (skip if rooted)
     local dx, dy = 0, 0
     
-    -- Check for arrow keys or WASD
-    if love.keyboard.isDown("left", "a") then
+    if not self.isRooted then
+        -- Check for arrow keys or WASD
+        if love.keyboard.isDown("left", "a") then
         dx = dx - 1
     end
     if love.keyboard.isDown("right", "d") then
@@ -150,6 +163,7 @@ function Player:update(dt)
     
     -- Check if moving
     self.isMoving = (dx ~= 0 or dy ~= 0)
+    end -- End of "if not self.isRooted" block
     
     -- Update bobbing animation when moving
     if self.isMoving then
@@ -325,6 +339,17 @@ function Player:setDashCooldown(cooldown)
     if self.abilities.dash then
         self.abilities.dash.currentCooldown = cooldown
     end
+end
+
+function Player:applyRoot(duration)
+    -- Root the player (prevent movement for duration)
+    self.isRooted = true
+    self.rootDuration = duration
+    self.rootedAt = love.timer.getTime()
+end
+
+function Player:isDead()
+    return self.health <= 0
 end
 
 return Player

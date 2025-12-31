@@ -4,11 +4,13 @@
 local GameState = require("systems.game_state")
 local Menu = require("ui.menu")
 local GameScene = require("scenes.game_scene")
+local BossArenaScene = require("scenes.boss_arena_scene")
 
 -- Global game objects
 local gameState
 local menu
 local gameScene
+local bossArenaScene
 
 function love.load()
     -- Set up window
@@ -23,8 +25,9 @@ function love.load()
     -- Initialize menu
     menu = Menu:new(gameState)
     
-    -- Game scene will be initialized when game starts
+    -- Game scenes will be initialized when game starts
     gameScene = nil
+    bossArenaScene = nil
 end
 
 function love.update(dt)
@@ -49,12 +52,29 @@ function love.update(dt)
         if gameScene.player and gameScene.player.health <= 0 then
             gameState:transitionTo(States.GAME_OVER)
         end
+    elseif state == States.BOSS_FIGHT then
+        -- Initialize boss arena if needed
+        if not bossArenaScene and gameScene then
+            bossArenaScene = BossArenaScene:new(
+                gameScene.player,
+                gameScene.playerStats,
+                gameState,
+                gameScene.xpSystem,
+                gameScene.rarityCharge
+            )
+        end
+        if bossArenaScene then
+            bossArenaScene:update(dt)
+        end
     elseif state == States.MENU or state == States.CHARACTER_SELECT or 
            state == States.BIOME_SELECT or state == States.DIFFICULTY_SELECT then
         menu:update(dt)
-        -- Reset game scene when in menu
+        -- Reset game scenes when in menu
         if gameScene then
             gameScene = nil
+        end
+        if bossArenaScene then
+            bossArenaScene = nil
         end
     elseif state == States.GAME_OVER or state == States.VICTORY then
         menu:update(dt)
@@ -76,6 +96,10 @@ function love.draw()
             if gameScene.drawOverlays then
                 gameScene:drawOverlays()
             end
+        end
+    elseif state == States.BOSS_FIGHT then
+        if bossArenaScene then
+            bossArenaScene:draw()
         end
     elseif state == States.GAME_OVER or state == States.VICTORY then
         -- Draw game in background
@@ -282,6 +306,13 @@ function love.keypressed(key)
 
         if key == "escape" then
             -- TODO: Pause menu
+            gameState:transitionTo(States.MENU)
+        end
+    elseif state == States.BOSS_FIGHT then
+        if bossArenaScene and bossArenaScene.keypressed then
+            bossArenaScene:keypressed(key)
+        end
+        if key == "escape" then
             gameState:transitionTo(States.MENU)
         end
     else
