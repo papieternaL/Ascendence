@@ -221,6 +221,34 @@ function Player:draw()
     
     love.graphics.circle("fill", self.x, drawY, self.size)
     
+    -- Draw ROOTED indicator
+    if self.isRooted then
+        -- Pulsing red/brown roots around player
+        local pulse = 0.5 + math.sin(love.timer.getTime() * 8) * 0.5
+        love.graphics.setColor(0.6, 0.3, 0.1, 0.8 * pulse)
+        love.graphics.setLineWidth(6)
+        love.graphics.circle("line", self.x, drawY, self.size + 8)
+        love.graphics.circle("line", self.x, drawY, self.size + 12)
+        love.graphics.setLineWidth(1)
+        
+        -- ROOTED text above player
+        love.graphics.setColor(1, 0.3, 0.3, 1)
+        local text = "ROOTED!"
+        local font = love.graphics.getFont()
+        local textWidth = font:getWidth(text)
+        love.graphics.print(text, self.x - textWidth/2, drawY - self.size - 25)
+        
+        -- Duration bar
+        if self.rootDuration > 0 then
+            local barWidth = 40
+            local barHeight = 4
+            love.graphics.setColor(0, 0, 0, 0.7)
+            love.graphics.rectangle("fill", self.x - barWidth/2, drawY - self.size - 15, barWidth, barHeight)
+            love.graphics.setColor(0.8, 0.4, 0, 1)
+            love.graphics.rectangle("fill", self.x - barWidth/2, drawY - self.size - 15, barWidth * (self.rootDuration / 8), barHeight)
+        end
+    end
+    
     -- Draw eyes
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.circle("fill", self.x - 5, drawY - 5, 4)

@@ -476,10 +476,24 @@ function BossArenaScene:draw()
     
     -- Draw safe zones (if earthquake active)
     if self.earthquakeActive then
-        love.graphics.setColor(0.3, 0.8, 0.3, 0.3)
+        -- Pulsing effect for visibility
+        local pulse = 0.5 + math.sin(love.timer.getTime() * 6) * 0.3
+        
         for _, zone in ipairs(self.safeZones) do
+            -- Outer glow
+            love.graphics.setColor(0.2, 1, 0.2, 0.2)
+            love.graphics.circle("fill", zone.x, zone.y, zone.radius + 10)
+            
+            -- Main safe zone (bright green, pulsing)
+            love.graphics.setColor(0.2, 1, 0.2, 0.4 + pulse * 0.3)
             love.graphics.circle("fill", zone.x, zone.y, zone.radius)
+            
+            -- Border (solid, very visible)
+            love.graphics.setColor(0, 1, 0, 0.9)
+            love.graphics.setLineWidth(4)
+            love.graphics.circle("line", zone.x, zone.y, zone.radius)
         end
+        love.graphics.setLineWidth(1)
     end
     
     -- Y-sort drawing
@@ -597,9 +611,16 @@ function BossArenaScene:startDash()
         local dy = mouseY - self.player.y
         local distance = math.sqrt(dx * dx + dy * dy)
         
+        print("=== DASH DEBUG ===")
+        print("Player pos:", self.player.x, self.player.y)
+        print("Mouse pos:", mouseX, mouseY)
+        print("Delta:", dx, dy)
+        print("Distance:", distance)
+        
         if distance > 0 then
             self.dashDirX = dx / distance
             self.dashDirY = dy / distance
+            print("Dash direction:", self.dashDirX, self.dashDirY)
             self.isDashing = true
             self.dashTime = self.dashDuration
             self.dashCooldown = self.dashCooldownMax

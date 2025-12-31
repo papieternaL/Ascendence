@@ -19,9 +19,9 @@ function TreentOverlord:new(x, y)
         x = x or 0,
         y = y or 0,
         size = 48, -- Much bigger than normal enemies
-        speed = 35,
-        maxHealth = 2000,
-        health = 2000,
+        speed = 65, -- Increased from 35
+        maxHealth = 3500, -- Increased from 2000
+        health = 3500,
         isAlive = true,
         damage = 40,
         isBoss = true,
