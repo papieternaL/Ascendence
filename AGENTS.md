@@ -100,6 +100,14 @@ Files touched/added:
 7. **Meta-progression scaffold**: Add gear profile screen (Universal + Class relics); wire win/loss → keep/lose relics.
 
 ## Changelog
+- 2025-12-30 (experimental branch): **Treent Overlord boss fight fully implemented**:
+  - **Phase 1**: Lunge attack (telegraphed charge) + Bark Barrage (8-directional projectile burst).
+  - **Phase 2 @ 50% HP**: Encompass Root (roots player, spawns 6 root entities player must destroy) + Territory Control (earthquake with 3 safe zones, ticks damage every 0.5s if not in safe zone).
+  - **Auto-target priority**: Entangle ability prioritizes roots in Phase 2 (50-point bonus) to help player escape.
+  - **Boss arena**: Separate sealed scene, teleports player at floor 5, dark forest aesthetic.
+  - **Victory condition**: Defeat boss → VICTORY state (relics kept).
+  - **Player rooting**: Player can now be rooted by boss mechanics; root prevents movement, displays duration.
+  - Fully wired: main.lua, game_state.lua (BOSS_FIGHT state), advanceFloor transition.
 - 2025-12-30 (experimental branch): **MCM system fully implemented**:
   - **Wolf (Lunger)**: Teaches dodge timing via lunge attack; grants **5x XP** on kill (MCM glow: red).
   - **Small Treent (Bark Thrower)**: Teaches projectile dodging; shoots bark at range; **5x XP** (MCM glow: green).
