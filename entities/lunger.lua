@@ -24,6 +24,7 @@ function Lunger:new(x, y)
         maxHealth = 40,
         health = 40,
         isAlive = true,
+        isMCM = true, -- Mechanic-Carrying Minion
         damage = 15, -- damage dealt to player on contact
         
         -- Lunge behavior
@@ -198,6 +199,10 @@ end
 
 function Lunger:draw()
     if not self.isAlive then return end
+
+    -- MCM glow (subtle red to indicate importance + danger)
+    love.graphics.setColor(1, 0.3, 0.3, 0.15)
+    love.graphics.circle("fill", self.x, self.y, self.size + 8)
 
     if Lunger.image then
         local img = Lunger.image
