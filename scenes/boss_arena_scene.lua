@@ -646,6 +646,23 @@ function BossArenaScene:drawUI()
         love.graphics.print(string.format("Dash Dir: %.2f, %.2f", self.dashDirX, self.dashDirY), 20, 60)
     end
     
+    -- DEBUG: Always show mouse cursor position
+    local mx, my = love.mouse.getPosition()
+    love.graphics.setColor(1, 0, 1, 0.8)
+    love.graphics.circle("fill", mx, my, 8)
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.print(string.format("Mouse: %d, %d", mx, my), 20, 80)
+    
+    if self.player then
+        love.graphics.print(string.format("Player: %.0f, %.0f", self.player.x, self.player.y), 20, 100)
+        
+        -- Draw line from player to mouse (expected dash direction)
+        love.graphics.setColor(0, 1, 1, 0.5)
+        love.graphics.setLineWidth(2)
+        love.graphics.line(self.player.x, self.player.y, mx, my)
+        love.graphics.setLineWidth(1)
+    end
+    
     -- Boss title
     love.graphics.setColor(1, 0.3, 0.3, 1)
     love.graphics.setNewFont(24)
