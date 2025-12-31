@@ -100,6 +100,11 @@ Files touched/added:
 7. **Meta-progression scaffold**: Add gear profile screen (Universal + Class relics); wire win/loss → keep/lose relics.
 
 ## Changelog
+- 2025-12-30 (experimental branch): **Boss Test Mode added**:
+  - New "BOSS TEST" button on main menu for instant boss access.
+  - Skips character/biome/difficulty selection.
+  - Player spawns with boosted stats: 150 HP, 25 ATK, 250 SPD, 25% crit, 2.5x crit damage.
+  - Perfect for rapid iteration and testing boss mechanics.
 - 2025-12-30 (experimental branch): **Treent Overlord boss fight fully implemented**:
   - **Phase 1**: Lunge attack (telegraphed charge) + Bark Barrage (8-directional projectile burst).
   - **Phase 2 @ 50% HP**: Encompass Root (roots player, spawns 6 root entities player must destroy) + Territory Control (earthquake with 3 safe zones, ticks damage every 0.5s if not in safe zone).
