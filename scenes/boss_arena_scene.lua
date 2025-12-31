@@ -646,21 +646,18 @@ function BossArenaScene:drawUI()
         love.graphics.print(string.format("Dash Dir: %.2f, %.2f", self.dashDirX, self.dashDirY), 20, 60)
     end
     
-    -- DEBUG: Always show mouse cursor position
-    local mx, my = love.mouse.getPosition()
-    love.graphics.setColor(1, 0, 1, 0.8)
-    love.graphics.circle("fill", mx, my, 8)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print(string.format("Mouse: %d, %d", mx, my), 20, 80)
+    -- DEBUG: Show WASD input state
+    local wasdText = "WASD: "
+    if love.keyboard.isDown("w", "up") then wasdText = wasdText .. "W " end
+    if love.keyboard.isDown("a", "left") then wasdText = wasdText .. "A " end
+    if love.keyboard.isDown("s", "down") then wasdText = wasdText .. "S " end
+    if love.keyboard.isDown("d", "right") then wasdText = wasdText .. "D " end
+    love.graphics.setColor(0, 1, 1, 1)
+    love.graphics.print(wasdText, 20, 80)
     
     if self.player then
+        love.graphics.setColor(1, 1, 1, 1)
         love.graphics.print(string.format("Player: %.0f, %.0f", self.player.x, self.player.y), 20, 100)
-        
-        -- Draw line from player to mouse (expected dash direction)
-        love.graphics.setColor(0, 1, 1, 0.5)
-        love.graphics.setLineWidth(2)
-        love.graphics.line(self.player.x, self.player.y, mx, my)
-        love.graphics.setLineWidth(1)
     end
     
     -- Boss title
@@ -702,21 +699,25 @@ function BossArenaScene:startDash()
     end
     
     if self.dashCooldown <= 0 and not self.isDashing and self.player then
-        local mouseX, mouseY = love.mouse.getPosition()
-        local dx = mouseX - self.player.x
-        local dy = mouseY - self.player.y
+        -- Use WASD input for dash direction
+        local dx, dy = 0, 0
+        
+        if love.keyboard.isDown("w", "up") then dy = dy - 1 end
+        if love.keyboard.isDown("s", "down") then dy = dy + 1 end
+        if love.keyboard.isDown("a", "left") then dx = dx - 1 end
+        if love.keyboard.isDown("d", "right") then dx = dx + 1 end
+        
+        -- Normalize diagonal movement
         local distance = math.sqrt(dx * dx + dy * dy)
         
         print("=== DASH DEBUG ===")
-        print("Player pos:", self.player.x, self.player.y)
-        print("Mouse pos:", mouseX, mouseY)
-        print("Delta:", dx, dy)
+        print("WASD input: dx=", dx, "dy=", dy)
         print("Distance:", distance)
         
         if distance > 0 then
             self.dashDirX = dx / distance
             self.dashDirY = dy / distance
-            print("Dash direction:", self.dashDirX, self.dashDirY)
+            print("Dash direction (normalized):", self.dashDirX, self.dashDirY)
             self.isDashing = true
             self.dashTime = self.dashDuration
             self.dashCooldown = self.dashCooldownMax
@@ -724,6 +725,8 @@ function BossArenaScene:startDash()
             if self.player.startDash then
                 self.player:startDash()
             end
+        else
+            print("No direction pressed - cannot dash")
         end
     end
 end
