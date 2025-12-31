@@ -626,98 +626,154 @@ end
 function BossArenaScene:drawUI()
     if not self.player then return end
     
-    love.graphics.setColor(1, 1, 1, 1)
+    local w = love.graphics.getWidth()
+    local h = love.graphics.getHeight()
     
-    -- Player health
-    local hpPercent = self.player.health / self.player.maxHealth
+    -- U-shaped HUD background (from main build)
+    local hudWidth = 400
+    local hudHeight = 90
+    local hudX = (w - hudWidth) / 2
+    local hudY = h - hudHeight - 10
+    
+    -- Draw curved background shape
     love.graphics.setColor(0, 0, 0, 0.7)
-    love.graphics.rectangle("fill", 20, love.graphics.getHeight() - 40, 200, 20)
+    -- Main rectangle
+    love.graphics.rectangle("fill", hudX + 30, hudY + 20, hudWidth - 60, hudHeight - 20, 8, 8)
+    -- Left curve
+    love.graphics.arc("fill", hudX + 38, hudY + 28, 30, math.pi, math.pi * 1.5)
+    love.graphics.rectangle("fill", hudX + 8, hudY + 28, 30, hudHeight - 28)
+    -- Right curve
+    love.graphics.arc("fill", hudX + hudWidth - 38, hudY + 28, 30, math.pi * 1.5, math.pi * 2)
+    love.graphics.rectangle("fill", hudX + hudWidth - 38, hudY + 28, 30, hudHeight - 28)
     
-    if hpPercent > 0.5 then
-        love.graphics.setColor(0, 1, 0, 1)
-    elseif hpPercent > 0.25 then
-        love.graphics.setColor(1, 1, 0, 1)
-    else
-        love.graphics.setColor(1, 0, 0, 1)
+    -- Health bar
+    local healthBarWidth = hudWidth - 80
+    local healthBarHeight = 16
+    local healthBarX = hudX + 40
+    local healthBarY = hudY + 25
+    
+    -- Health bar background
+    love.graphics.setColor(0.2, 0.05, 0.05, 1)
+    love.graphics.rectangle("fill", healthBarX, healthBarY, healthBarWidth, healthBarHeight, 4, 4)
+    
+    -- Health bar fill
+    local healthPercent = self.player.health / self.player.maxHealth
+    local healthColor = {0.2, 0.8, 0.2}
+    if healthPercent < 0.3 then
+        healthColor = {0.9, 0.2, 0.2}
+    elseif healthPercent < 0.6 then
+        healthColor = {0.9, 0.7, 0.2}
     end
-    love.graphics.rectangle("fill", 20, love.graphics.getHeight() - 40, 200 * hpPercent, 20)
+    love.graphics.setColor(healthColor[1], healthColor[2], healthColor[3], 1)
+    love.graphics.rectangle("fill", healthBarX + 2, healthBarY + 2, (healthBarWidth - 4) * healthPercent, healthBarHeight - 4, 3, 3)
     
+    -- Health bar shine
+    love.graphics.setColor(1, 1, 1, 0.2)
+    love.graphics.rectangle("fill", healthBarX + 2, healthBarY + 2, (healthBarWidth - 4) * healthPercent, (healthBarHeight - 4) / 2, 3, 3)
+    
+    -- Health bar border
+    love.graphics.setColor(0.4, 0.4, 0.4, 1)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", healthBarX, healthBarY, healthBarWidth, healthBarHeight, 4, 4)
+    love.graphics.setLineWidth(1)
+    
+    -- Health text
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print(string.format("HP: %d / %d", math.floor(self.player.health), math.floor(self.player.maxHealth)), 25, love.graphics.getHeight() - 38)
+    local font = love.graphics.getFont()
+    local healthText = math.floor(self.player.health) .. "/" .. self.player.maxHealth
+    local textWidth = font:getWidth(healthText)
+    love.graphics.print(healthText, healthBarX + healthBarWidth/2 - textWidth/2, healthBarY + 1)
     
     -- Draw abilities below health bar
-    if self.player and self.player.abilities and self.player.abilityOrder then
-        local abilitySize = 40
-        local abilitySpacing = 10
-        local numAbilities = #self.player.abilityOrder
-        local abilitiesWidth = numAbilities * abilitySize + (numAbilities - 1) * abilitySpacing
-        local abilitiesX = 20
-        local abilitiesY = love.graphics.getHeight() - 75
-        
-        for i, abilityId in ipairs(self.player.abilityOrder) do
-            local ability = self.player.abilities[abilityId]
-            if ability then
-                local x = abilitiesX + (i - 1) * (abilitySize + abilitySpacing)
-                
-                -- Ability background
-                local isReady = ability.currentCooldown and ability.currentCooldown <= 0
-                if isReady then
-                    love.graphics.setColor(0.2, 0.6, 0.8, 0.8)
-                else
-                    love.graphics.setColor(0.1, 0.1, 0.2, 0.8)
-                end
-                love.graphics.rectangle("fill", x, abilitiesY, abilitySize, abilitySize, 4, 4)
-                
-                -- Cooldown overlay
-                if not isReady and ability.cooldown and ability.cooldown > 0 then
-                    local cooldownPercent = ability.currentCooldown / ability.cooldown
-                    love.graphics.setColor(0, 0, 0, 0.7)
-                    love.graphics.rectangle("fill", x, abilitiesY, abilitySize, abilitySize * cooldownPercent, 4, 4)
-                end
-                
-                -- Icon/Key
-                love.graphics.setColor(1, 1, 1, 1)
-                love.graphics.print(ability.key or "?", x + abilitySize/2 - 6, abilitiesY + abilitySize/2 - 6)
-            end
+    local abilitySize = 44
+    local abilitySpacing = 12
+    local numAbilities = #self.player.abilityOrder
+    local abilitiesWidth = numAbilities * abilitySize + (numAbilities - 1) * abilitySpacing
+    local abilitiesX = (w - abilitiesWidth) / 2
+    local abilitiesY = healthBarY + healthBarHeight + 10
+    
+    for i, abilityId in ipairs(self.player.abilityOrder) do
+        local ability = self.player.abilities[abilityId]
+        if ability then
+            local x = abilitiesX + (i - 1) * (abilitySize + abilitySpacing)
+            self:drawAbilityIcon(ability, x, abilitiesY, abilitySize)
         end
     end
     
-    -- DEBUG: Show dash direction
-    if self.isDashing and self.player then
-        local lineLen = 100
-        local endX = self.player.x + self.dashDirX * lineLen
-        local endY = self.player.y + self.dashDirY * lineLen
-        love.graphics.setColor(1, 1, 0, 0.8)
-        love.graphics.setLineWidth(3)
-        love.graphics.line(self.player.x, self.player.y, endX, endY)
-        love.graphics.setLineWidth(1)
-        
-        -- Show direction values
-        love.graphics.setColor(1, 1, 0, 1)
-        love.graphics.print(string.format("Dash Dir: %.2f, %.2f", self.dashDirX, self.dashDirY), 20, 60)
-    end
-    
-    -- DEBUG: Show WASD input state
-    local wasdText = "WASD: "
-    if love.keyboard.isDown("w", "up") then wasdText = wasdText .. "W " end
-    if love.keyboard.isDown("a", "left") then wasdText = wasdText .. "A " end
-    if love.keyboard.isDown("s", "down") then wasdText = wasdText .. "S " end
-    if love.keyboard.isDown("d", "right") then wasdText = wasdText .. "D " end
-    love.graphics.setColor(0, 1, 1, 1)
-    love.graphics.print(wasdText, 20, 80)
-    
-    if self.player then
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.print(string.format("Player: %.0f, %.0f", self.player.x, self.player.y), 20, 100)
-    end
-    
-    -- Boss title
+    -- Boss title at top
     love.graphics.setColor(1, 0.3, 0.3, 1)
     love.graphics.setNewFont(24)
-    love.graphics.printf("TREENT OVERLORD", 0, 30, love.graphics.getWidth(), "center")
+    love.graphics.printf("TREENT OVERLORD", 0, 30, w, "center")
     love.graphics.setNewFont(12)
     
     love.graphics.setColor(1, 1, 1, 1)
+end
+
+function BossArenaScene:drawAbilityIcon(ability, x, y, size)
+    local hasCharge = (ability.chargeMax ~= nil)
+    local isReady = ability.currentCooldown and ability.currentCooldown <= 0
+    local cooldownPercent = 0
+    if hasCharge then
+        local c = ability.charge or 0
+        local m = ability.chargeMax or 1
+        isReady = c >= m
+        cooldownPercent = 1 - (c / m)
+    else
+        cooldownPercent = ability.cooldown and ability.cooldown > 0 and (ability.currentCooldown / ability.cooldown) or 0
+    end
+    
+    -- Ability background
+    if isReady then
+        love.graphics.setColor(0.2, 0.25, 0.35, 1)
+    else
+        love.graphics.setColor(0.1, 0.1, 0.15, 1)
+    end
+    love.graphics.rectangle("fill", x, y, size, size, 6, 6)
+    
+    -- Cooldown overlay (sweeping arc)
+    if not isReady then
+        love.graphics.setColor(0, 0, 0, 0.6)
+        local centerX = x + size / 2
+        local centerY = y + size / 2
+        local radius = size / 2 - 2
+        local angleStart = -math.pi / 2
+        local angleEnd = angleStart + (2 * math.pi * cooldownPercent)
+        
+        -- Draw filled arc
+        if cooldownPercent > 0 then
+            local vertices = {centerX, centerY}
+            local segments = 32
+            for i = 0, segments do
+                local t = i / segments
+                local angle = angleStart + (angleEnd - angleStart) * t
+                table.insert(vertices, centerX + math.cos(angle) * radius)
+                table.insert(vertices, centerY + math.sin(angle) * radius)
+            end
+            love.graphics.polygon("fill", vertices)
+        end
+    end
+    
+    -- Ready border pulse
+    if isReady then
+        local pulse = 0.5 + math.sin(love.timer.getTime() * 4) * 0.5
+        love.graphics.setColor(0.3, 0.8, 1, pulse)
+        love.graphics.setLineWidth(3)
+        love.graphics.rectangle("line", x, y, size, size, 6, 6)
+        love.graphics.setLineWidth(1)
+    end
+    
+    -- Border
+    love.graphics.setColor(0.3, 0.3, 0.4, 1)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", x, y, size, size, 6, 6)
+    love.graphics.setLineWidth(1)
+    
+    -- Key binding
+    love.graphics.setColor(1, 1, 1, 1)
+    local key = ability.key or "?"
+    local font = love.graphics.getFont()
+    local keyWidth = font:getWidth(key)
+    love.graphics.print(key, x + size/2 - keyWidth/2, y + size/2 - 6)
 end
 
 function BossArenaScene:keypressed(key)

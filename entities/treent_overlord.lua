@@ -95,6 +95,14 @@ function TreentOverlord:update(dt, playerX, playerY, onBarkShoot, onPhaseTransit
         self.lungeState = "idle"
         self.lungeTimer = 0
         self.barkBarrageTimer = 0
+        self.barkBarrageActive = false
+        
+        -- Teleport to center of arena
+        local screenWidth = love.graphics.getWidth()
+        local screenHeight = love.graphics.getHeight()
+        self.x = screenWidth / 2
+        self.y = screenHeight / 2
+        
         if onPhaseTransition then
             onPhaseTransition()
         end
@@ -170,35 +178,37 @@ function TreentOverlord:updatePhase1(dt, playerX, playerY, onBarkShoot)
         end
     end
     
-    -- Bark Barrage attack
-    if not self.barkBarrageActive then
-        self.barkBarrageTimer = self.barkBarrageTimer + dt
-        if self.barkBarrageTimer >= self.barkBarrageCooldown then
-            -- Start barrage
-            self.barkBarrageActive = true
-            self.barkBarrageIndex = 0
-            self.barkBarrageInternalTimer = 0
-            self.barkBarrageTimer = 0
-        end
-    else
-        -- Fire projectiles in sequence
-        self.barkBarrageInternalTimer = self.barkBarrageInternalTimer + dt
-        if self.barkBarrageInternalTimer >= self.barkBarrageDelay and self.barkBarrageIndex < self.barkBarrageCount then
-            self.barkBarrageInternalTimer = 0
-            self.barkBarrageIndex = self.barkBarrageIndex + 1
-            
-            -- Fire one projectile
-            if onBarkShoot then
-                local angle = (self.barkBarrageIndex / self.barkBarrageCount) * math.pi * 2
-                local targetX = self.x + math.cos(angle) * 500
-                local targetY = self.y + math.sin(angle) * 500
-                onBarkShoot(self.x, self.y, targetX, targetY)
+    -- Bark Barrage attack (ONLY when not lunging)
+    if self.lungeState == "idle" then
+        if not self.barkBarrageActive then
+            self.barkBarrageTimer = self.barkBarrageTimer + dt
+            if self.barkBarrageTimer >= self.barkBarrageCooldown then
+                -- Start barrage
+                self.barkBarrageActive = true
+                self.barkBarrageIndex = 0
+                self.barkBarrageInternalTimer = 0
+                self.barkBarrageTimer = 0
             end
-        end
-        
-        -- End barrage when all projectiles fired
-        if self.barkBarrageIndex >= self.barkBarrageCount then
-            self.barkBarrageActive = false
+        else
+            -- Fire projectiles in sequence
+            self.barkBarrageInternalTimer = self.barkBarrageInternalTimer + dt
+            if self.barkBarrageInternalTimer >= self.barkBarrageDelay and self.barkBarrageIndex < self.barkBarrageCount then
+                self.barkBarrageInternalTimer = 0
+                self.barkBarrageIndex = self.barkBarrageIndex + 1
+                
+                -- Fire one projectile
+                if onBarkShoot then
+                    local angle = (self.barkBarrageIndex / self.barkBarrageCount) * math.pi * 2
+                    local targetX = self.x + math.cos(angle) * 500
+                    local targetY = self.y + math.sin(angle) * 500
+                    onBarkShoot(self.x, self.y, targetX, targetY)
+                end
+            end
+            
+            -- End barrage when all projectiles fired
+            if self.barkBarrageIndex >= self.barkBarrageCount then
+                self.barkBarrageActive = false
+            end
         end
     end
 end
