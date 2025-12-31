@@ -100,7 +100,14 @@ Files touched/added:
 7. **Meta-progression scaffold**: Add gear profile screen (Universal + Class relics); wire win/loss → keep/lose relics.
 
 ## Changelog
-- 2025-12-30: Major design overhaul captured in handoff:
+- 2025-12-30 (experimental branch): **MCM system fully implemented**:
+  - **Wolf (Lunger)**: Teaches dodge timing via lunge attack; grants **5x XP** on kill (MCM glow: red).
+  - **Small Treent (Bark Thrower)**: Teaches projectile dodging; shoots bark at range; **5x XP** (MCM glow: green).
+  - **Wizard (Root Caster)**: Teaches positioning + root escape; cone attack roots player; **5x XP** (MCM glow: purple).
+  - All MCMs grant **2x rarity charges** on death.
+  - Spawn scaling: slower than regular enemies to keep them special (floor/4, floor/5, floor/6).
+  - Fully integrated: targeting, collisions, Y-sort draw, Entangle auto-aim, bark projectiles.
+- 2025-12-30: Major design overhaul captured in handoff.
   - **Major/Minor Level system**: Major levels (1, 5, 10, 15, 20, 25) grant mechanical augments; minor levels grant stats or Luck investment.
   - **Luck stat**: Per-run investment that boosts Rare/Epic odds at Major Levels.
   - **Rerolls**: 3 free rerolls per run.
