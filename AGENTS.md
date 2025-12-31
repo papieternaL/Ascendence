@@ -105,6 +105,16 @@ Files touched/added:
   - Skips character/biome/difficulty selection.
   - Player spawns with boosted stats: 150 HP, 25 ATK, 250 SPD, 25% crit, 2.5x crit damage.
   - Perfect for rapid iteration and testing boss mechanics.
+- 2025-12-30 (experimental branch): **Phase 2 MAJOR overhaul (deadlier & more intense)**:
+  - **Pizza Slice Safe Zones**: Earthquake now fills 3/4 of the arena (green danger zones) with 1/4 safe white slice - more visual, more deadly!
+  - **Single Root Mechanic**: Replaced 6 scattered roots with 1 tankier root (200 HP) spawned directly on player - focus fire to escape!
+  - **Boss Cast Bar**: 2-second telegraph before earthquake starts - shows "EARTHQUAKE!" with red progress bar above boss.
+  - **Faster Bark Barrage**: Projectiles fire sequentially (0.08s apart) instead of all at once - tighter, faster, scarier!
+  - **Earthquake Damage**: Increased from 30 → 50 damage per tick (every 0.5s).
+  - **Ability HUD**: Player abilities now visible in boss arena (bottom-left, shows cooldowns).
+  - **WASD Dash**: Dash direction now based on WASD keys held when pressing Space (not mouse).
+  - **Root Prevention**: Can't dash while rooted.
+  - **Auto-targeting**: Primary attacks + Power Shot prioritize roots in Phase 2.
 - 2025-12-30 (experimental branch): **Treent Overlord boss fight fully implemented**:
   - **Phase 1**: Lunge attack (telegraphed charge) + Bark Barrage (8-directional projectile burst).
   - **Phase 2 @ 50% HP**: Encompass Root (roots player, spawns 6 root entities player must destroy) + Territory Control (earthquake with 3 safe zones, ticks damage every 0.5s if not in safe zone).
