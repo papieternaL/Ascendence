@@ -155,4 +155,21 @@ Files touched/added:
   - Abilities auto-cast when ready (Power Shot/Entangle); dash remains manual.
   - Ultimate (Frenzy) is user-activated on `R` once fully charged.
   - Level-up UI no longer selects on Space; gameplay inputs are swallowed while the upgrade modal is open.
+- 2026-01-02: **Progression System Overhaul** (Technical Brief Implementation):
+  - **Rarity System**: Renamed Epic → Ancient across all systems (Common/Rare/Ancient)
+  - **Stat Upgrades**: Created `data/stat_upgrades.lua` with new scaling (Common +5%, Rare +12%, Ancient +25%)
+  - **Luck System**: Implemented probability curves: 0 Luck (85/14/1%) → 50 Luck (50/40/10%) → 100 Luck (20/60/20%)
+  - **Major Level System**: Levels 1, 5, 10, 15, 20, 25 grant mechanical augments (Ancient rarity)
+  - **Element Attunements**: Created `data/major_upgrades_archer.lua` (Fire/Poison/Dark + augments)
+  - **Level 1 Element Selection**: Defines run style, used for filtering future augments
+  - Added `systems/major_level.lua` for Major/Minor level detection
+  - Updated `ui/upgrade_ui.lua` with Ancient rarity colors (gold/orange glow)
+  - **✅ FULLY INTEGRATED**: Level-up system detects Major vs Minor and rolls appropriate upgrades
+- 2026-01-02: **Volley of Wrath Ability**:
+  - Replaced Entangle with Volley of Wrath (circular AOE rain attack)
+  - Created `entities/volley_arrow.lua` - arrows fall from above with shadow indicators
+  - Auto-targets enemy clusters (finds densest group within 400 range)
+  - Spawns 8 arrows in circle pattern around cluster center
+  - 35px impact radius per arrow, 60% primary damage
+  - Cooldown: 10s, Icon: ☄️
 
