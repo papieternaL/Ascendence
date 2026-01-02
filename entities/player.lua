@@ -67,10 +67,10 @@ function Player:new(x, y)
                 unlocked = true,
             },
             entangle = {
-                name = "Entangle",
+                name = "Volley of Wrath",
                 key = "E",
-                icon = "🌿",
-                cooldown = 8.0,
+                icon = "☄️",
+                cooldown = 10.0,
                 currentCooldown = 0,
                 unlocked = true,
             },

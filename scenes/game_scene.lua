@@ -8,6 +8,7 @@ local SmallTreent = require("entities.small_treent")
 local Wizard = require("entities.wizard")
 local BarkProjectile = require("entities.bark_projectile")
 local Arrow = require("entities.arrow")
+local VolleyArrow = require("entities.volley_arrow")
 local Particles = require("systems.particles")
 local ScreenShake = require("systems.screen_shake")
 local Tilemap = require("systems.tilemap")
@@ -23,6 +24,8 @@ local DamageNumbers = require("systems.damage_numbers")
 -- Load upgrade data
 local ArcherUpgrades = require("data.upgrades_archer")
 local AbilityPaths = require("data.ability_paths_archer")
+local StatUpgrades = require("data.stat_upgrades")
+local MajorLevel = require("systems.major_level")
 
 local GameScene = {}
 GameScene.__index = GameScene
@@ -35,6 +38,7 @@ function GameScene:new(gameState)
         screenShake = nil,
         tilemap = nil,
         arrows = {},
+        volleyArrows = {}, -- New: Volley of Wrath arrows
         trees = {},
         bushes = {},
         enemies = {},
@@ -60,6 +64,7 @@ function GameScene:new(gameState)
         isPaused = false,  -- Pause during upgrade selection
         statsOverlay = nil,
         damageNumbers = nil,
+        playerElement = nil,  -- Chosen element from Level 1 (fire/poison/dark)
 
         -- Mouse tracking for manual-aim abilities
         mouseX = 0,
@@ -436,40 +441,82 @@ function GameScene:update(dt)
             if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
         end
 
-        -- Entangle: picks nearest target in range when ready
+        -- Volley of Wrath: Circular AOE rain on nearest enemy cluster
         if self.player and self.player:isAbilityReady("entangle") then
             local px, py = playerX, playerY
-            local entangleRange = 260
-            local best, bestDist = nil, entangleRange
-            local function considerTarget(t, bonus)
-                local ex, ey = t:getPosition()
-                local dx = ex - px
-                local dy = ey - py
-                local d = math.sqrt(dx*dx + dy*dy) - (bonus or 0)
-                if d < bestDist then
-                    best = t
-                    bestDist = d
+            local volleyRange = 400
+            
+            -- Find the best cluster center (enemy with most nearby enemies)
+            local bestTarget, bestClusterSize = nil, 0
+            local function evaluateCluster(t)
+                if not t.isAlive then return end
+                local tx, ty = t:getPosition()
+                local dist = math.sqrt((tx - px)^2 + (ty - py)^2)
+                if dist > volleyRange then return end
+                
+                -- Count nearby enemies within cluster radius
+                local clusterRadius = 150
+                local clusterSize = 0
+                
+                for _, enemy in ipairs(self.enemies) do
+                    if enemy.isAlive then
+                        local ex, ey = enemy:getPosition()
+                        local clusterDist = math.sqrt((ex - tx)^2 + (ey - ty)^2)
+                        if clusterDist <= clusterRadius then
+                            clusterSize = clusterSize + 1
+                        end
+                    end
+                end
+                for _, lunger in ipairs(self.lungers) do
+                    if lunger.isAlive then
+                        local lx, ly = lunger:getPosition()
+                        local clusterDist = math.sqrt((lx - tx)^2 + (ly - ty)^2)
+                        if clusterDist <= clusterRadius then
+                            clusterSize = clusterSize + 1
+                        end
+                    end
+                end
+                for _, treent in ipairs(self.treents) do
+                    if treent.isAlive then
+                        local ttx, tty = treent:getPosition()
+                        local clusterDist = math.sqrt((ttx - tx)^2 + (tty - ty)^2)
+                        if clusterDist <= clusterRadius then
+                            clusterSize = clusterSize + 1
+                        end
+                    end
+                end
+                
+                if clusterSize > bestClusterSize then
+                    bestClusterSize = clusterSize
+                    bestTarget = t
                 end
             end
-            for _, lunger in ipairs(self.lungers) do
-                if lunger.isAlive then considerTarget(lunger, 18) end
-            end
-            for _, enemy in ipairs(self.enemies) do
-                if enemy.isAlive then considerTarget(enemy, 0) end
-            end
-            for _, st in ipairs(self.smallTreents) do
-                if st.isAlive then considerTarget(st, 10) end
-            end
-            for _, wiz in ipairs(self.wizards) do
-                if wiz.isAlive then considerTarget(wiz, 12) end
-            end
-            if best and best.applyRoot then
+            
+            for _, lunger in ipairs(self.lungers) do evaluateCluster(lunger) end
+            for _, enemy in ipairs(self.enemies) do evaluateCluster(enemy) end
+            for _, st in ipairs(self.smallTreents) do evaluateCluster(st) end
+            for _, wiz in ipairs(self.wizards) do evaluateCluster(wiz) end
+            
+            if bestTarget then
                 self.player:useAbility("entangle")
-                local dur = (best.state ~= nil) and 1.0 or 1.8
-                best:applyRoot(dur, 1.15)
-                local tx, ty = best:getPosition()
-                self.particles:createExplosion(tx, ty, {0.2, 1, 0.3})
-                self.screenShake:add(2, 0.1)
+                local tx, ty = bestTarget:getPosition()
+                
+                -- Spawn 8 volley arrows in a circle around the cluster center
+                local volleyCount = 8
+                local volleyRadius = 100
+                for i = 1, volleyCount do
+                    local angle = (i / volleyCount) * math.pi * 2
+                    local offsetX = math.cos(angle) * volleyRadius
+                    local offsetY = math.sin(angle) * volleyRadius
+                    local targetX = tx + offsetX
+                    local targetY = ty + offsetY
+                    
+                    local dmg = self.playerStats:get("primary_damage") * 0.6 -- 60% of primary damage
+                    table.insert(self.volleyArrows, VolleyArrow:new(targetX, targetY, targetX, targetY, dmg))
+                end
+                
+                self.particles:createExplosion(tx, ty, {1, 0.8, 0.2})
+                self.screenShake:add(4, 0.15)
             end
         end
 
@@ -923,6 +970,69 @@ function GameScene:update(dt)
             end
         end
 
+        -- Update volley arrows (Volley of Wrath)
+        for i = #self.volleyArrows, 1, -1 do
+            local volley = self.volleyArrows[i]
+            local hasImpacted = volley:update(dt)
+            
+            if hasImpacted and not volley.hasDealtDamage then
+                volley.hasDealtDamage = true
+                local vx, vy = volley:getPosition()
+                
+                -- Deal AOE damage to all enemies within impact radius
+                local function hitEnemy(enemy)
+                    if not enemy.isAlive then return end
+                    local ex, ey = enemy:getPosition()
+                    local dist = math.sqrt((ex - vx)^2 + (ey - vy)^2)
+                    
+                    if dist <= volley.impactRadius and volley:canHit(enemy) then
+                        volley:markHit(enemy)
+                        
+                        -- Roll damage with crit
+                        local critChance = self.playerStats and self.playerStats:get("crit_chance") or 0
+                        local critDamage = self.playerStats and self.playerStats:get("crit_damage") or 1.5
+                        local isCrit = (love.math.random() < critChance)
+                        local finalDamage = volley.damage
+                        if isCrit then
+                            finalDamage = finalDamage * critDamage
+                        end
+                        
+                        -- Apply rooted damage multiplier if enemy has it
+                        if enemy.rootedDamageTakenMul and enemy.rootedDamageTakenMul > 1.0 then
+                            finalDamage = finalDamage * enemy.rootedDamageTakenMul
+                        end
+                        
+                        local hitX, hitY = ex + (math.random() - 0.5) * 10, ey + (math.random() - 0.5) * 10
+                        enemy:takeDamage(finalDamage, hitX, hitY, 80)
+                        self.damageNumbers:add(ex, ey - 20, finalDamage, { isCrit = isCrit })
+                        self.particles:createExplosion(hitX, hitY, {1, 0.7, 0.2})
+                        self.screenShake:add(1, 0.05)
+                        
+                        -- XP on kill
+                        if not enemy.isAlive then
+                            local xpValue = 10
+                            if enemy.isMCM then
+                                xpValue = xpValue * 5
+                                self.rarityCharge:add(love.timer.getTime(), 2)
+                            end
+                            self.xpSystem:spawnOrb(ex, ey, xpValue)
+                        end
+                    end
+                end
+                
+                for _, enemy in ipairs(self.enemies) do hitEnemy(enemy) end
+                for _, lunger in ipairs(self.lungers) do hitEnemy(lunger) end
+                for _, treent in ipairs(self.treents) do hitEnemy(treent) end
+                for _, st in ipairs(self.smallTreents) do hitEnemy(st) end
+                for _, wiz in ipairs(self.wizards) do hitEnemy(wiz) end
+            end
+            
+            -- Remove expired volleys
+            if volley.age > volley.lifetime then
+                table.remove(self.volleyArrows, i)
+            end
+        end
+
         -- Update bark projectiles
         for i = #self.barkProjectiles, 1, -1 do
             local bark = self.barkProjectiles[i]
@@ -1015,21 +1125,40 @@ function GameScene:showUpgradeSelection()
     -- Consume the level-up
     self.xpSystem:consumeLevelUp()
     
-    -- Roll upgrade options
-    local result = UpgradeRoll.rollOptions({
-        rng = function() return love.math.random() end,
-        now = love.timer.getTime(),
-        player = self.player,
-        classUpgrades = ArcherUpgrades.list,
-        abilityPaths = AbilityPaths,
-        rarityCharge = self.rarityCharge,
-        count = 3,
-    })
+    local currentLevel = self.xpSystem.level
+    local isMajorLevel = MajorLevel.isMajorLevel(currentLevel)
+    
+    local options = {}
+    
+    if isMajorLevel then
+        -- Major Level: Roll mechanical augments
+        print("MAJOR LEVEL " .. currentLevel .. " - Rolling mechanical upgrades!")
+        
+        options = MajorLevel.rollMajorUpgrades({
+            level = currentLevel,
+            playerElement = self.playerElement,
+            acquiredUpgrades = self.playerStats.acquiredUpgrades,
+            rng = function() return love.math.random() end,
+        })
+        
+    else
+        -- Minor Level: Roll stat upgrades using Luck
+        print("Minor Level " .. currentLevel .. " - Rolling stat upgrades!")
+        
+        local luckValue = self.playerStats:get("luck") or 0
+        options = StatUpgrades.rollOptions(luckValue, function() return love.math.random() end)
+    end
     
     -- Show the upgrade UI
-    self.upgradeUI:show(result.options, function(upgrade)
+    self.upgradeUI:show(options, function(upgrade)
         -- Apply the selected upgrade
         self.playerStats:applyUpgrade(upgrade)
+        
+        -- If Level 1, store the chosen element
+        if currentLevel == 1 and upgrade.element then
+            self.playerElement = upgrade.element
+            print("Player chose element: " .. upgrade.element)
+        end
         
         -- Apply stat changes to player entity
         self:applyStatsToPlayer()
@@ -1157,6 +1286,11 @@ function GameScene:draw()
     -- Draw arrows (always on top of entities)
     for _, arrow in ipairs(self.arrows) do
         arrow:draw()
+    end
+
+    -- Draw volley arrows (Volley of Wrath)
+    for _, volley in ipairs(self.volleyArrows) do
+        volley:draw()
     end
 
     -- Draw bark projectiles
