@@ -1,0 +1,11 @@
+﻿
+
+    Directory: C:\Users\steven\Desktop\Cursor\Shooter\assets\Archer
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----          1/6/2026   2:23 AM          59548 The_elven_archer_is_...-1582461570-0.png                             
+-a----          1/6/2026   2:23 AM          39217 The_elven_archer_is_...-1582461570-1.png                             
+
+
