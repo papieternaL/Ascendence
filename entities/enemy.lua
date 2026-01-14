@@ -1,5 +1,6 @@
 -- Enemy Entity (red square)
 local JuiceManager = require("systems.juice_manager")
+local StatusComponent = require("systems.status_component")
 
 local Enemy = {}
 Enemy.__index = Enemy
@@ -31,21 +32,25 @@ function Enemy:new(x, y)
         knockbackY = 0,
         knockbackDecay = 8, -- how fast knockback fades
 
-        -- Status effects
-        rootedTime = 0,
-        rootedDamageTakenMul = 1.0,
+        -- Status Component
+        statusComponent = StatusComponent:new(),
     }
     setmetatable(enemy, Enemy)
     return enemy
 end
 
 function Enemy:update(dt, playerX, playerY)
+    -- Update status component
+    if self.statusComponent then
+        self.statusComponent:update(dt, self)
+    end
+    
     -- Update flash effect
     if self.flashTime > 0 then
         self.flashTime = self.flashTime - dt
     end
 
-    -- Update root
+    -- Update root (legacy - now handled by statusComponent)
     if self.rootedTime and self.rootedTime > 0 then
         self.rootedTime = math.max(0, self.rootedTime - dt)
         if self.rootedTime <= 0 then
@@ -85,8 +90,12 @@ end
 function Enemy:takeDamage(damage, hitX, hitY, knockbackForce)
     if not self.isAlive then return false end
 
-    local mul = (self.rootedTime and self.rootedTime > 0) and (self.rootedDamageTakenMul or 1.0) or 1.0
-    self.health = self.health - (damage * mul)
+    -- Apply damage multipliers from status effects
+    local statusMul = self.statusComponent and self.statusComponent:getDamageMultiplier() or 1.0
+    local legacyMul = (self.rootedTime and self.rootedTime > 0) and (self.rootedDamageTakenMul or 1.0) or 1.0
+    local totalMul = statusMul * legacyMul
+    
+    self.health = self.health - (damage * totalMul)
     
     -- Flash effect
     self.flashTime = self.flashDuration
@@ -112,8 +121,21 @@ function Enemy:takeDamage(damage, hitX, hitY, knockbackForce)
 end
 
 function Enemy:applyRoot(duration, damageTakenMul)
+    -- Apply via status component if available
+    if self.statusComponent then
+        self.statusComponent:applyStatus("rooted", 1, duration, { damage_taken_multiplier = damageTakenMul or 1.15 })
+    end
+    
+    -- Legacy support
     self.rootedTime = math.max(self.rootedTime or 0, duration or 0)
     self.rootedDamageTakenMul = damageTakenMul or 1.15
+end
+
+function Enemy:isRooted()
+    if self.statusComponent and self.statusComponent:hasStatus("rooted") then
+        return true
+    end
+    return self.rootedTime and self.rootedTime > 0
 end
 
 function Enemy:draw()

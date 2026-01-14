@@ -1,4 +1,6 @@
 -- Arrow Projectile
+local UpgradeApplication = require("systems.upgrade_application")
+
 local Arrow = {}
 Arrow.__index = Arrow
 
@@ -52,13 +54,16 @@ function Arrow:new(x, y, targetX, targetY, opts)
         angle = angle,
         damage = opts.damage or 15, -- slightly more damage than fireball
         lifetime = opts.lifetime or 4,
-        age = 0
-        ,
+        age = 0,
         pierce = opts.pierce or 0,
         alwaysCrit = opts.alwaysCrit == true,
         kind = opts.kind or "primary",
         knockback = opts.knockback,
         hit = {}, -- set of entities already hit (avoid double-hit across frames)
+        
+        -- Ability mod fields
+        eliteMcmDamageMul = opts.eliteMcmDamageMul,  -- Bonus damage vs elite/MCM enemies
+        appliesStatus = opts.appliesStatus,          -- Status to apply on hit (e.g., shattered_armor)
         
         -- Trail effect
         trail = {},  -- Stores recent positions {x, y}
@@ -161,4 +166,12 @@ end
 function Arrow:consumePierce()
     if self.pierce and self.pierce > 0 then
         self.pierce = self.pierce - 1
-  
+        return true
+    end
+    return false
+end
+
+return Arrow
+
+
+

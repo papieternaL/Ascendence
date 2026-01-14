@@ -165,7 +165,7 @@ function UpgradeRoll.rollOptions(args)
     local eligible = {}
     if player and player.abilities then
       if player.abilities.power_shot then eligible[#eligible+1] = "power_shot" end
-      if player.abilities.entangle then eligible[#eligible+1] = "entangle" end
+      if player.abilities.arrow_volley then eligible[#eligible+1] = "arrow_volley" end
       if player.abilities.frenzy then eligible[#eligible+1] = "frenzy" end
     end
     if #eligible == 0 then return nil end

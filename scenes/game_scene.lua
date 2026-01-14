@@ -6,11 +6,13 @@ local Lunger = require("entities.lunger")
 local Treent = require("entities.treent")
 local SmallTreent = require("entities.small_treent")
 local Wizard = require("entities.wizard")
+local Healer = require("entities.healer")
 local Imp = require("entities.imp")
 local Slime = require("entities.slime")
 local Bat = require("entities.bat")
 local Skeleton = require("entities.skeleton")
 local BarkProjectile = require("entities.bark_projectile")
+local VineLane = require("entities.vine_lane")
 local Arrow = require("entities.arrow")
 local ArrowVolley = require("entities.arrow_volley")
 local Config = require("data.config")
@@ -26,10 +28,18 @@ local UpgradeUI = require("ui.upgrade_ui")
 local StatsOverlay = require("ui.stats_overlay")
 local DamageNumbers = require("systems.damage_numbers")
 local JuiceManager = require("systems.juice_manager")
+local AbilityHUD = require("ui.ability_hud")
 
 -- Load upgrade data
 local ArcherUpgrades = require("data.upgrades_archer")
 local AbilityPaths = require("data.ability_paths_archer")
+
+-- New systems
+local EnemySpawner = require("systems.enemy_spawner")
+local BossPortal = require("entities.boss_portal")
+local RunTimer = require("ui.run_timer")
+local BuffBar = require("ui.buff_bar")
+local UpgradeApplication = require("systems.upgrade_application")
 
 local GameScene = {}
 GameScene.__index = GameScene
@@ -50,7 +60,13 @@ function GameScene:new(gameState)
         treents = {},
         smallTreents = {},
         wizards = {},
+        healers = {},
+        imps = {},
+        slimes = {},
+        bats = {},
+        skeletons = {},
         barkProjectiles = {},
+        vineLanes = {},
         arrowVolleys = {},
         fireCooldown = 0,
         -- Dash ability
@@ -80,6 +96,9 @@ function GameScene:new(gameState)
         frenzyActive = false,
         frenzyCombatGainPerSec = 3.5,
         frenzyKillGain = 10,
+        
+        -- Run timer
+        timeAlive = 0,
     }
     setmetatable(scene, GameScene)
     return scene
@@ -147,14 +166,17 @@ function GameScene:load()
     self.upgradeUI = UpgradeUI:new()
     self.statsOverlay = StatsOverlay:new()
     self.damageNumbers = DamageNumbers:new()
+    self.abilityHUD = AbilityHUD:new()
     
-    -- Set ability unlock states for archer (abilities are already defined in player)
+    -- Initialize new systems
+    self.enemySpawner = EnemySpawner:new(self)
+    self.runTimer = RunTimer:new()
+    self.buffBar = BuffBar:new()
+    self.bossPortal = nil  -- Spawned at level 10
+    
+    -- Ability unlock states are set in player.lua (all start locked)
+    -- Players choose abilities at levels 1, 2, and 5
     if self.player and self.player.abilities then
-        self.player.abilities.power_shot.unlocked = true
-        self.player.abilities.arrow_volley.unlocked = true
-        self.player.abilities.frenzy.unlocked = true
-        self.player.abilities.dash.unlocked = true
-
         -- Make Frenzy charge-based in HUD
         self.player.abilities.frenzy.charge = 0
         self.player.abilities.frenzy.chargeMax = self.frenzyChargeMax
@@ -175,8 +197,52 @@ function GameScene:load()
     self.trees = {}
     self.bushes = {}
     
-    -- Spawn enemies based on floor and difficulty
-    self:spawnEnemies()
+    -- Always unlock Dash (utility ability)
+    self.player.abilities.dash.unlocked = true
+    
+    -- Track starting ability selection for Level 3 auto-unlock
+    self.selectedStartingAbility = nil
+    
+    -- Show ability selection BEFORE spawning enemies (Level 0 selection)
+    self.awaitingAbilitySelection = true
+    self:showStartingAbilitySelection()
+end
+
+-- Show Level 0 ability selection (before enemies spawn)
+function GameScene:showStartingAbilitySelection()
+    local abilityOptions = {
+        {
+            id = "ability_power_shot",
+            name = "Power Shot",
+            description = "[Q] Auto-fires a powerful piercing shot at nearest enemy.\n\n300% damage, guaranteed crit, infinite pierce.\n\nCooldown: 6s",
+            rarity = "rare",
+            type = "ability_unlock",
+            abilityId = "power_shot",
+            icon = self.player.abilities.power_shot.icon,
+        },
+        {
+            id = "ability_arrow_volley",
+            name = "Arrow Volley",
+            description = "[E] Rains arrows at target location, dealing damage in an area.\n\n150% damage, 60 radius AOE.\n\nCooldown: 8s",
+            rarity = "rare",
+            type = "ability_unlock",
+            abilityId = "arrow_volley",
+            icon = self.player.abilities.arrow_volley.icon,
+        },
+    }
+    
+    self.upgradeUI:show(abilityOptions, function(upgrade)
+        if upgrade.type == "ability_unlock" then
+            -- Unlock the selected ability
+            self.player.abilities[upgrade.abilityId].unlocked = true
+            self.selectedStartingAbility = upgrade.abilityId
+            print("Starting ability selected: " .. upgrade.name)
+            
+            -- Now spawn enemies and start the game
+            self.awaitingAbilitySelection = false
+            self:spawnEnemies()
+        end
+    end)
 end
 
 function GameScene:spawnEnemies()
@@ -184,6 +250,9 @@ function GameScene:spawnEnemies()
     local worldWidth = Config.World and Config.World.width or love.graphics.getWidth()
     local worldHeight = Config.World and Config.World.height or love.graphics.getHeight()
     local floor = self.gameState.currentFloor
+    
+    -- Floor-based HP scaling: +25% HP per floor
+    local floorScale = 1.0 + (floor - 1) * 0.25
     
     -- Spawn counts (MCMs scale slower to keep them special)
     local numEnemies = 2 + math.floor(floor / 2)
@@ -197,17 +266,20 @@ function GameScene:spawnEnemies()
     local numSlimes = math.floor(floor / 4)  -- Tanky
     local numBats = math.floor(floor / 4)  -- Erratic flyers
     local numSkeletons = math.floor(floor / 3)  -- Medium threat
+    local numHealers = math.max(0, math.floor((floor - 2) / 2))  -- Start floor 3, 1 per 2 floors
     
     self.enemies = {}
     self.lungers = {}
     self.treents = {}
     self.smallTreents = {}
     self.wizards = {}
+    self.healers = {}
     self.imps = {}
     self.slimes = {}
     self.bats = {}
     self.skeletons = {}
     self.barkProjectiles = {}
+    self.vineLanes = {}
     
     -- Spawn regular enemies (around player, who is at world center)
     for i = 1, numEnemies do
@@ -217,8 +289,8 @@ function GameScene:spawnEnemies()
         local y = self.player.y + math.sin(angle) * distance
         
         local enemy = Enemy:new(x, y)
-        -- Apply difficulty multipliers
-        enemy.health = enemy.health * self.difficultyMult.enemyHealthMult
+        -- Apply difficulty and floor scaling multipliers
+        enemy.health = enemy.health * self.difficultyMult.enemyHealthMult * floorScale
         enemy.maxHealth = enemy.health
         enemy.damage = (enemy.damage or 10) * self.difficultyMult.enemyDamageMult
         
@@ -233,7 +305,7 @@ function GameScene:spawnEnemies()
         local y = self.player.y + math.sin(angle) * distance
         
         local lunger = Lunger:new(x, y)
-        lunger.health = lunger.health * self.difficultyMult.enemyHealthMult
+        lunger.health = lunger.health * self.difficultyMult.enemyHealthMult * floorScale
         lunger.maxHealth = lunger.health
         
         table.insert(self.lungers, lunger)
@@ -247,7 +319,7 @@ function GameScene:spawnEnemies()
         local y = self.player.y + math.sin(angle) * distance
 
         local treent = Treent:new(x, y)
-        treent.health = treent.health * self.difficultyMult.enemyHealthMult
+        treent.health = treent.health * self.difficultyMult.enemyHealthMult * floorScale
         treent.maxHealth = treent.health
         treent.damage = (treent.damage or 18) * self.difficultyMult.enemyDamageMult
 
@@ -262,7 +334,7 @@ function GameScene:spawnEnemies()
         local y = self.player.y + math.sin(angle) * distance
 
         local st = SmallTreent:new(x, y)
-        st.health = st.health * self.difficultyMult.enemyHealthMult
+        st.health = st.health * self.difficultyMult.enemyHealthMult * floorScale
         st.maxHealth = st.health
 
         table.insert(self.smallTreents, st)
@@ -276,7 +348,7 @@ function GameScene:spawnEnemies()
         local y = self.player.y + math.sin(angle) * distance
 
         local wiz = Wizard:new(x, y)
-        wiz.health = wiz.health * self.difficultyMult.enemyHealthMult
+        wiz.health = wiz.health * self.difficultyMult.enemyHealthMult * floorScale
         wiz.maxHealth = wiz.health
 
         table.insert(self.wizards, wiz)
@@ -290,7 +362,7 @@ function GameScene:spawnEnemies()
         local y = self.player.y + math.sin(angle) * distance
 
         local imp = Imp:new(x, y)
-        imp.health = imp.health * self.difficultyMult.enemyHealthMult
+        imp.health = imp.health * self.difficultyMult.enemyHealthMult * floorScale
         imp.maxHealth = imp.health
 
         table.insert(self.imps, imp)
@@ -304,7 +376,7 @@ function GameScene:spawnEnemies()
         local y = self.player.y + math.sin(angle) * distance
 
         local slime = Slime:new(x, y)
-        slime.health = slime.health * self.difficultyMult.enemyHealthMult
+        slime.health = slime.health * self.difficultyMult.enemyHealthMult * floorScale
         slime.maxHealth = slime.health
 
         table.insert(self.slimes, slime)
@@ -318,7 +390,7 @@ function GameScene:spawnEnemies()
         local y = self.player.y + math.sin(angle) * distance
 
         local bat = Bat:new(x, y)
-        bat.health = bat.health * self.difficultyMult.enemyHealthMult
+        bat.health = bat.health * self.difficultyMult.enemyHealthMult * floorScale
         bat.maxHealth = bat.health
 
         table.insert(self.bats, bat)
@@ -332,10 +404,53 @@ function GameScene:spawnEnemies()
         local y = self.player.y + math.sin(angle) * distance
 
         local skel = Skeleton:new(x, y)
-        skel.health = skel.health * self.difficultyMult.enemyHealthMult
+        skel.health = skel.health * self.difficultyMult.enemyHealthMult * floorScale
         skel.maxHealth = skel.health
 
         table.insert(self.skeletons, skel)
+    end
+    
+    -- Spawn Healers (support units that heal wounded allies)
+    for i = 1, numHealers do
+        local angle = math.random() * math.pi * 2
+        local distance = math.random(350, 500)  -- Spawn further back
+        local x = self.player.x + math.cos(angle) * distance
+        local y = self.player.y + math.sin(angle) * distance
+        
+        local healer = Healer:new(x, y)
+        healer.health = healer.health * self.difficultyMult.enemyHealthMult * floorScale
+        healer.maxHealth = healer.health
+        
+        table.insert(self.healers, healer)
+    end
+end
+
+-- Helper: Handle frenzy charge/extension on enemy kill
+function GameScene:onEnemyKill(bonusCharge)
+    bonusCharge = bonusCharge or 0
+    local baseGain = self.frenzyKillGain + bonusCharge
+    
+    if self.frenzyActive then
+        -- During Frenzy: check for extend_on_kill mod
+        local extendMod = self.playerStats:getAbilityMod("frenzy", "extend_on_kill")
+        if extendMod and extendMod.value then
+            local maxExtend = extendMod.max_extend or 2.0
+            self.frenzyExtendedTime = self.frenzyExtendedTime or 0
+            if self.frenzyExtendedTime < maxExtend then
+                local extend = math.min(extendMod.value, maxExtend - self.frenzyExtendedTime)
+                self.frenzyExtendedTime = self.frenzyExtendedTime + extend
+                -- Extend the buff duration
+                local buff = self.playerStats.buffs["frenzy"]
+                if buff then
+                    buff.timeRemaining = buff.timeRemaining + extend
+                end
+            end
+        end
+    else
+        -- Not in Frenzy: build charge (with charge_gain_mul mod)
+        local chargeGainMul = self.playerStats:getAbilityModValue("frenzy", "charge_gain_mul", 1.0)
+        local finalGain = baseGain * chargeGainMul
+        self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + finalGain)
     end
 end
 
@@ -347,6 +462,11 @@ function GameScene:update(dt)
 
     -- Pause gameplay while stats overlay is open
     self.isPaused = (self.statsOverlay and self.statsOverlay:isVisible()) or false
+    
+    -- Pause while awaiting starting ability selection (Level 0)
+    if self.awaitingAbilitySelection then
+        return
+    end
     
     -- Check for pending level-ups
     if self.xpSystem and self.xpSystem:hasPendingLevelUp() and not self.upgradeUI:isVisible() then
@@ -372,6 +492,23 @@ function GameScene:update(dt)
         self.damageNumbers:update(dt)
     end
     
+    -- Update new systems
+    if self.enemySpawner then
+        self.enemySpawner:update(dt)
+    end
+    if self.runTimer then
+        self.runTimer:update(dt)
+    end
+    if self.buffBar then
+        self.buffBar:update(dt, self.player)
+    end
+    if self.bossPortal then
+        self.bossPortal:update(dt, self.player)
+    end
+    
+    -- Update run time
+    self.timeAlive = self.timeAlive + dt
+    
     -- Update camera to follow player
     if self.camera and self.player then
         self.camera:update(dt, self.player.x, self.player.y)
@@ -381,6 +518,18 @@ function GameScene:update(dt)
     if self.xpSystem and self.player then
         local pickupRadius = self.playerStats and self.playerStats:get("xp_pickup_radius") or 60
         self.xpSystem:update(dt, self.player.x, self.player.y, pickupRadius)
+    end
+    
+    -- Spawn boss portal at level 15
+    if self.xpSystem and self.xpSystem.level >= Config.boss_progression.level_required and not self.bossPortal then
+        local portalX = self.player.x + 200
+        local portalY = self.player.y
+        self.bossPortal = BossPortal:new(portalX, portalY)
+        
+        -- Pause enemy spawner when portal appears
+        if self.enemySpawner then
+            self.enemySpawner:pause()
+        end
     end
     
     -- Update player stats (tick buff durations)
@@ -420,7 +569,7 @@ function GameScene:update(dt)
                 self.particles:createDashTrail(self.player.x, self.player.y)
             end
         else
-            self.player:update(dt)
+            self.player:update(dt, self.particles)
         end
         
         local playerX, playerY = self.player:getPosition()
@@ -580,9 +729,17 @@ function GameScene:update(dt)
             local ex, ey = nearestEnemy:getPosition()
             local psCfg = Config.Abilities.powerShot
             self.player:aimAt(ex, ey)
-            self.player:useAbility("power_shot")
+            self.player:useAbility("power_shot", self.playerStats)
             local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
-            local base = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult * psCfg.damageMult
+            
+            -- Apply ability mods
+            local damageMul = self.playerStats:getAbilityModValue("power_shot", "damage_mul", 1.0)
+            local base = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult * psCfg.damageMult * damageMul
+            
+            -- Check for elite/MCM bonus damage mod
+            local eliteMcmMod = self.playerStats:getAbilityMod("power_shot", "bonus_damage_vs_elite_mcm")
+            local appliesStatus = self.playerStats:getAbilityMod("power_shot", "applies_status")
+            
             local ps = Arrow:new(sx, sy, ex, ey, {
                 damage = base,
                 speed = psCfg.speed,
@@ -592,11 +749,30 @@ function GameScene:update(dt)
                 alwaysCrit = true,
                 kind = "power_shot",
                 knockback = psCfg.knockback,
+                eliteMcmDamageMul = eliteMcmMod and eliteMcmMod.value or nil,
+                appliesStatus = appliesStatus,
             })
             table.insert(self.arrows, ps)
             self.screenShake:add(3, 0.12)
             if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
             if self.player.playAttackAnimation then self.player:playAttackAnimation() end
+            
+            -- Handle fires_twice mod: spawn second arrow after delay
+            local firesTwiceMod = self.playerStats:getAbilityMod("power_shot", "fires_twice")
+            if firesTwiceMod then
+                local delay = firesTwiceMod.delay or 0.08
+                local secondDamageMul = firesTwiceMod.second_shot_damage_mul or 0.55
+                self.pendingPowerShots = self.pendingPowerShots or {}
+                table.insert(self.pendingPowerShots, {
+                    timer = delay,
+                    sx = sx, sy = sy, ex = ex, ey = ey,
+                    damage = base * secondDamageMul,
+                    speed = psCfg.speed,
+                    knockback = psCfg.knockback,
+                    eliteMcmDamageMul = eliteMcmMod and eliteMcmMod.value or nil,
+                    appliesStatus = appliesStatus,
+                })
+            end
         end
 
         -- Arrow Volley: auto-cast AOE at nearest enemy when ready
@@ -639,19 +815,82 @@ function GameScene:update(dt)
                 if skel.isAlive then considerTarget(skel) end
             end
             if best then
-                self.player:useAbility("arrow_volley")
+                self.player:useAbility("arrow_volley", self.playerStats)
                 local tx, ty = best:getPosition()
                 -- Spawn Arrow Volley at target location
-                local baseDmg = self.playerStats and self.playerStats:get("attack") or 25
-                local volley = ArrowVolley:new(tx, ty, baseDmg * 1.5, 60)
+                local baseDmg = self.playerStats and self.playerStats:get("primary_damage") or 25
+                
+                -- Apply ability mods
+                local damageMul = self.playerStats:getAbilityModValue("arrow_volley", "damage_mul", 1.0)
+                local radiusAdd = self.playerStats:getAbilityModValue("arrow_volley", "radius_add", 0)
+                local arrowCountAdd = self.playerStats:getAbilityModValue("arrow_volley", "arrow_count_add", 0)
+                
+                local finalDamage = baseDmg * 1.5 * damageMul
+                local finalRadius = 60 + radiusAdd
+                
+                local volley = ArrowVolley:new(tx, ty, finalDamage, finalRadius, arrowCountAdd)
                 if volley then
                     table.insert(self.arrowVolleys, volley)
                 end
                 self.screenShake:add(3, 0.15)
+                
+                -- Handle double_strike mod: spawn second volley after delay
+                local doubleStrikeMod = self.playerStats:getAbilityMod("arrow_volley", "double_strike")
+                if doubleStrikeMod then
+                    local delay = doubleStrikeMod.delay or 0.3
+                    local secondVolleyDamageMul = doubleStrikeMod.second_volley_damage_mul or 1.0
+                    self.pendingArrowVolleys = self.pendingArrowVolleys or {}
+                    table.insert(self.pendingArrowVolleys, {
+                        timer = delay,
+                        tx = tx, ty = ty,
+                        damage = finalDamage * secondVolleyDamageMul,
+                        radius = finalRadius,
+                        arrowCountAdd = arrowCountAdd,
+                    })
+                end
             end
         end
 
         -- Frenzy is USER-ACTIVATED (press R). We only build charge here.
+        
+        -- Process pending power shots (fires_twice mod)
+        if self.pendingPowerShots then
+            for i = #self.pendingPowerShots, 1, -1 do
+                local pending = self.pendingPowerShots[i]
+                pending.timer = pending.timer - dt
+                if pending.timer <= 0 then
+                    local ps = Arrow:new(pending.sx, pending.sy, pending.ex, pending.ey, {
+                        damage = pending.damage,
+                        speed = pending.speed,
+                        size = 12,
+                        lifetime = 1.8,
+                        pierce = 999,
+                        alwaysCrit = true,
+                        kind = "power_shot",
+                        knockback = pending.knockback,
+                        eliteMcmDamageMul = pending.eliteMcmDamageMul,
+                        appliesStatus = pending.appliesStatus,
+                    })
+                    table.insert(self.arrows, ps)
+                    table.remove(self.pendingPowerShots, i)
+                end
+            end
+        end
+        
+        -- Process pending arrow volleys (double_strike mod)
+        if self.pendingArrowVolleys then
+            for i = #self.pendingArrowVolleys, 1, -1 do
+                local pending = self.pendingArrowVolleys[i]
+                pending.timer = pending.timer - dt
+                if pending.timer <= 0 then
+                    local volley = ArrowVolley:new(pending.tx, pending.ty, pending.damage, pending.radius, pending.arrowCountAdd)
+                    if volley then
+                        table.insert(self.arrowVolleys, volley)
+                    end
+                    table.remove(self.pendingArrowVolleys, i)
+                end
+            end
+        end
         
         -- Update arrows
         for i = #self.arrows, 1, -1 do
@@ -687,6 +926,11 @@ function GameScene:update(dt)
                         arrow:markHit(enemy)
                         local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
                         
+                        -- Apply elite/MCM damage bonus if applicable
+                        if arrow.eliteMcmDamageMul and (enemy.isElite or enemy.isMCM) then
+                            dmg = dmg * arrow.eliteMcmDamageMul
+                        end
+                        
                         -- Juice effects based on hit type
                         if arrow.kind == "power_shot" then
                             -- Power Shot: full impact (freeze, shake, flash)
@@ -709,10 +953,31 @@ function GameScene:update(dt)
                         end
                         local died = enemy:takeDamage(dmg, ax, ay, arrow.knockback)
                         
+                        -- Apply status effect if applicable (e.g., shattered_armor)
+                        if arrow.appliesStatus and enemy.statusComponent then
+                            local statusData = arrow.appliesStatus
+                            enemy.statusComponent:applyStatus(
+                                statusData.status,
+                                1,
+                                statusData.duration,
+                                statusData.status_effect
+                            )
+                        end
+                        
+                        -- Trigger upgrade procs on hit
+                        if arrow.kind == "primary" then
+                            UpgradeApplication.checkProcs(self.player, "on_primary_hit", { target = enemy, damage = dmg, is_crit = isCrit })
+                            if isCrit then
+                                UpgradeApplication.checkProcs(self.player, "on_crit_hit", { target = enemy, damage = dmg, is_crit = isCrit })
+                            end
+                        end
+                        
                         if died then
                             self.particles:createExplosion(ex, ey, {1, 0.3, 0.1})
                             -- Death juice: bigger shake
                             JuiceManager.shake(6, 0.15)
+                            
+                            -- Notify spawner of death
                             
                             -- Drop XP orbs
                             local baseXP = 5 + math.random(0, 5)
@@ -724,10 +989,8 @@ function GameScene:update(dt)
                                 self.rarityCharge:add(love.timer.getTime(), 1)
                             end
 
-                            -- Frenzy charge on kill
-                            if not self.frenzyActive then
-                                self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + self.frenzyKillGain)
-                            end
+                            -- Frenzy charge on kill (or extend if active)
+                            self:onEnemyKill(0)
                         else
                             self.screenShake:add(2, 0.1)
                         end
@@ -755,6 +1018,11 @@ function GameScene:update(dt)
                             arrow:markHit(lunger)
                             local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
                             
+                            -- Apply elite/MCM damage bonus if applicable
+                            if arrow.eliteMcmDamageMul and (lunger.isElite or lunger.isMCM) then
+                                dmg = dmg * arrow.eliteMcmDamageMul
+                            end
+                            
                             -- Juice effects based on hit type
                             if arrow.kind == "power_shot" then
                                 JuiceManager.impact(lunger, 0.05, 10, 0.15, 0.1)
@@ -775,6 +1043,25 @@ function GameScene:update(dt)
                             end
                             local died = lunger:takeDamage(dmg, ax, ay, arrow.knockback)
                             
+                            -- Apply status effect if applicable
+                            if arrow.appliesStatus and lunger.statusComponent then
+                                local statusData = arrow.appliesStatus
+                                lunger.statusComponent:applyStatus(
+                                    statusData.status,
+                                    1,
+                                    statusData.duration,
+                                    statusData.status_effect
+                                )
+                            end
+                            
+                            -- Trigger upgrade procs
+                            if arrow.kind == "primary" then
+                                UpgradeApplication.checkProcs(self.player, "on_primary_hit", { target = lunger, damage = dmg, is_crit = isCrit })
+                                if isCrit then
+                                    UpgradeApplication.checkProcs(self.player, "on_crit_hit", { target = lunger, damage = dmg, is_crit = isCrit })
+                                end
+                            end
+                            
                             if died then
                                 self.particles:createExplosion(lx, ly, {0.8, 0.3, 0.8})
                                 -- MCM death: bigger impact
@@ -789,9 +1076,7 @@ function GameScene:update(dt)
                                 self.rarityCharge:add(love.timer.getTime(), 2)
 
                                 -- Frenzy charge on kill (lungers count as bigger kills)
-                                if not self.frenzyActive then
-                                    self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + (self.frenzyKillGain + 5))
-                                end
+                                self:onEnemyKill(5)
                             else
                                 self.screenShake:add(2, 0.1)
                             end
@@ -820,6 +1105,11 @@ function GameScene:update(dt)
                             arrow:markHit(treent)
                             local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
                             
+                            -- Apply elite/MCM damage bonus if applicable
+                            if arrow.eliteMcmDamageMul and (treent.isElite or treent.isMCM) then
+                                dmg = dmg * arrow.eliteMcmDamageMul
+                            end
+                            
                             -- Juice effects based on hit type
                             if arrow.kind == "power_shot" then
                                 JuiceManager.impact(treent, 0.05, 10, 0.15, 0.1)
@@ -834,6 +1124,25 @@ function GameScene:update(dt)
                                 self.damageNumbers:add(tx, ty - treent:getSize(), dmg, { isCrit = isCrit })
                             end
                             local died = treent:takeDamage(dmg, ax, ay, arrow.knockback and (arrow.knockback * 0.75) or nil)
+                            
+                            -- Apply status effect if applicable
+                            if arrow.appliesStatus and treent.statusComponent then
+                                local statusData = arrow.appliesStatus
+                                treent.statusComponent:applyStatus(
+                                    statusData.status,
+                                    1,
+                                    statusData.duration,
+                                    statusData.status_effect
+                                )
+                            end
+
+                            -- Trigger upgrade procs
+                            if arrow.kind == "primary" then
+                                UpgradeApplication.checkProcs(self.player, "on_primary_hit", { target = treent, damage = dmg, is_crit = isCrit })
+                                if isCrit then
+                                    UpgradeApplication.checkProcs(self.player, "on_crit_hit", { target = treent, damage = dmg, is_crit = isCrit })
+                                end
+                            end
 
                             if died then
                                 self.particles:createExplosion(tx, ty, {0.2, 0.9, 0.2})
@@ -869,6 +1178,11 @@ function GameScene:update(dt)
                             arrow:markHit(st)
                             local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
                             
+                            -- Apply elite/MCM damage bonus if applicable
+                            if arrow.eliteMcmDamageMul and (st.isElite or st.isMCM) then
+                                dmg = dmg * arrow.eliteMcmDamageMul
+                            end
+                            
                             -- Juice effects based on hit type
                             if arrow.kind == "power_shot" then
                                 JuiceManager.impact(st, 0.05, 10, 0.15, 0.1)
@@ -883,6 +1197,25 @@ function GameScene:update(dt)
                                 self.damageNumbers:add(stx, sty - st:getSize(), dmg, { isCrit = isCrit })
                             end
                             local died = st:takeDamage(dmg, ax, ay, arrow.knockback)
+                            
+                            -- Apply status effect if applicable
+                            if arrow.appliesStatus and st.statusComponent then
+                                local statusData = arrow.appliesStatus
+                                st.statusComponent:applyStatus(
+                                    statusData.status,
+                                    1,
+                                    statusData.duration,
+                                    statusData.status_effect
+                                )
+                            end
+
+                            -- Trigger upgrade procs
+                            if arrow.kind == "primary" then
+                                UpgradeApplication.checkProcs(self.player, "on_primary_hit", { target = st, damage = dmg, is_crit = isCrit })
+                                if isCrit then
+                                    UpgradeApplication.checkProcs(self.player, "on_crit_hit", { target = st, damage = dmg, is_crit = isCrit })
+                                end
+                            end
 
                             if died then
                                 self.particles:createExplosion(stx, sty, {0.3, 1, 0.3})
@@ -924,6 +1257,11 @@ function GameScene:update(dt)
                             arrow:markHit(wiz)
                             local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
                             
+                            -- Apply elite/MCM damage bonus if applicable
+                            if arrow.eliteMcmDamageMul and (wiz.isElite or wiz.isMCM) then
+                                dmg = dmg * arrow.eliteMcmDamageMul
+                            end
+                            
                             -- Juice effects based on hit type
                             if arrow.kind == "power_shot" then
                                 JuiceManager.impact(wiz, 0.05, 10, 0.15, 0.1)
@@ -938,6 +1276,25 @@ function GameScene:update(dt)
                                 self.damageNumbers:add(wx, wy - wiz:getSize(), dmg, { isCrit = isCrit })
                             end
                             local died = wiz:takeDamage(dmg, ax, ay, arrow.knockback)
+                            
+                            -- Apply status effect if applicable
+                            if arrow.appliesStatus and wiz.statusComponent then
+                                local statusData = arrow.appliesStatus
+                                wiz.statusComponent:applyStatus(
+                                    statusData.status,
+                                    1,
+                                    statusData.duration,
+                                    statusData.status_effect
+                                )
+                            end
+
+                            -- Trigger upgrade procs
+                            if arrow.kind == "primary" then
+                                UpgradeApplication.checkProcs(self.player, "on_primary_hit", { target = wiz, damage = dmg, is_crit = isCrit })
+                                if isCrit then
+                                    UpgradeApplication.checkProcs(self.player, "on_crit_hit", { target = wiz, damage = dmg, is_crit = isCrit })
+                                end
+                            end
 
                             if died then
                                 self.particles:createExplosion(wx, wy, {0.7, 0.4, 1})
@@ -979,6 +1336,11 @@ function GameScene:update(dt)
                             arrow:markHit(imp)
                             local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
                             
+                            -- Apply elite/MCM damage bonus if applicable
+                            if arrow.eliteMcmDamageMul and (imp.isElite or imp.isMCM) then
+                                dmg = dmg * arrow.eliteMcmDamageMul
+                            end
+                            
                             -- Juice effects based on hit type
                             if arrow.kind == "power_shot" then
                                 JuiceManager.impact(imp, 0.05, 10, 0.15, 0.1)
@@ -993,6 +1355,25 @@ function GameScene:update(dt)
                                 self.damageNumbers:add(ix, iy - imp:getSize(), dmg, { isCrit = isCrit })
                             end
                             local died = imp:takeDamage(dmg, ax, ay, arrow.knockback)
+                            
+                            -- Apply status effect if applicable
+                            if arrow.appliesStatus and imp.statusComponent then
+                                local statusData = arrow.appliesStatus
+                                imp.statusComponent:applyStatus(
+                                    statusData.status,
+                                    1,
+                                    statusData.duration,
+                                    statusData.status_effect
+                                )
+                            end
+
+                            -- Trigger upgrade procs
+                            if arrow.kind == "primary" then
+                                UpgradeApplication.checkProcs(self.player, "on_primary_hit", { target = imp, damage = dmg, is_crit = isCrit })
+                                if isCrit then
+                                    UpgradeApplication.checkProcs(self.player, "on_crit_hit", { target = imp, damage = dmg, is_crit = isCrit })
+                                end
+                            end
 
                             if died then
                                 self.particles:createExplosion(ix, iy, {1, 0.2, 0.2})
@@ -1027,6 +1408,11 @@ function GameScene:update(dt)
                             arrow:markHit(slime)
                             local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
                             
+                            -- Apply elite/MCM damage bonus if applicable
+                            if arrow.eliteMcmDamageMul and (slime.isElite or slime.isMCM) then
+                                dmg = dmg * arrow.eliteMcmDamageMul
+                            end
+                            
                             -- Juice effects based on hit type
                             if arrow.kind == "power_shot" then
                                 JuiceManager.impact(slime, 0.05, 10, 0.15, 0.1)
@@ -1041,6 +1427,25 @@ function GameScene:update(dt)
                                 self.damageNumbers:add(sx, sy - slime:getSize(), dmg, { isCrit = isCrit })
                             end
                             local died = slime:takeDamage(dmg, ax, ay, arrow.knockback)
+                            
+                            -- Apply status effect if applicable
+                            if arrow.appliesStatus and slime.statusComponent then
+                                local statusData = arrow.appliesStatus
+                                slime.statusComponent:applyStatus(
+                                    statusData.status,
+                                    1,
+                                    statusData.duration,
+                                    statusData.status_effect
+                                )
+                            end
+
+                            -- Trigger upgrade procs
+                            if arrow.kind == "primary" then
+                                UpgradeApplication.checkProcs(self.player, "on_primary_hit", { target = slime, damage = dmg, is_crit = isCrit })
+                                if isCrit then
+                                    UpgradeApplication.checkProcs(self.player, "on_crit_hit", { target = slime, damage = dmg, is_crit = isCrit })
+                                end
+                            end
 
                             if died then
                                 self.particles:createExplosion(sx, sy, {0.5, 0.5, 0.5})
@@ -1075,6 +1480,11 @@ function GameScene:update(dt)
                             arrow:markHit(bat)
                             local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
                             
+                            -- Apply elite/MCM damage bonus if applicable
+                            if arrow.eliteMcmDamageMul and (bat.isElite or bat.isMCM) then
+                                dmg = dmg * arrow.eliteMcmDamageMul
+                            end
+                            
                             -- Juice effects based on hit type
                             if arrow.kind == "power_shot" then
                                 JuiceManager.impact(bat, 0.05, 10, 0.15, 0.1)
@@ -1089,6 +1499,25 @@ function GameScene:update(dt)
                                 self.damageNumbers:add(bx, by - bat:getSize(), dmg, { isCrit = isCrit })
                             end
                             local died = bat:takeDamage(dmg, ax, ay, arrow.knockback)
+                            
+                            -- Apply status effect if applicable
+                            if arrow.appliesStatus and bat.statusComponent then
+                                local statusData = arrow.appliesStatus
+                                bat.statusComponent:applyStatus(
+                                    statusData.status,
+                                    1,
+                                    statusData.duration,
+                                    statusData.status_effect
+                                )
+                            end
+
+                            -- Trigger upgrade procs
+                            if arrow.kind == "primary" then
+                                UpgradeApplication.checkProcs(self.player, "on_primary_hit", { target = bat, damage = dmg, is_crit = isCrit })
+                                if isCrit then
+                                    UpgradeApplication.checkProcs(self.player, "on_crit_hit", { target = bat, damage = dmg, is_crit = isCrit })
+                                end
+                            end
 
                             if died then
                                 self.particles:createExplosion(bx, by, {0.6, 0.4, 0.2})
@@ -1123,6 +1552,11 @@ function GameScene:update(dt)
                             arrow:markHit(skel)
                             local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
                             
+                            -- Apply elite/MCM damage bonus if applicable
+                            if arrow.eliteMcmDamageMul and (skel.isElite or skel.isMCM) then
+                                dmg = dmg * arrow.eliteMcmDamageMul
+                            end
+                            
                             -- Juice effects based on hit type
                             if arrow.kind == "power_shot" then
                                 JuiceManager.impact(skel, 0.05, 10, 0.15, 0.1)
@@ -1137,12 +1571,101 @@ function GameScene:update(dt)
                                 self.damageNumbers:add(skx, sky - skel:getSize(), dmg, { isCrit = isCrit })
                             end
                             local died = skel:takeDamage(dmg, ax, ay, arrow.knockback)
+                            
+                            -- Apply status effect if applicable
+                            if arrow.appliesStatus and skel.statusComponent then
+                                local statusData = arrow.appliesStatus
+                                skel.statusComponent:applyStatus(
+                                    statusData.status,
+                                    1,
+                                    statusData.duration,
+                                    statusData.status_effect
+                                )
+                            end
+
+                            -- Trigger upgrade procs
+                            if arrow.kind == "primary" then
+                                UpgradeApplication.checkProcs(self.player, "on_primary_hit", { target = skel, damage = dmg, is_crit = isCrit })
+                                if isCrit then
+                                    UpgradeApplication.checkProcs(self.player, "on_crit_hit", { target = skel, damage = dmg, is_crit = isCrit })
+                                end
+                            end
 
                             if died then
                                 self.particles:createExplosion(skx, sky, {0.6, 0.6, 0.6})
                                 JuiceManager.shake(5, 0.15)
                                 local xpValue = 6 + math.random(0, 4)
                                 self.xpSystem:spawnOrb(skx, sky, xpValue)
+                            else
+                                self.screenShake:add(2, 0.1)
+                            end
+
+                            if arrow:consumePierce() then
+                                hitEnemy = false
+                            else
+                                hitEnemy = true
+                            end
+                            if hitEnemy then break end
+                        end
+                    end
+                end
+            end
+            
+            -- Check Healers
+            if not hitEnemy then
+                for _, healer in ipairs(self.healers) do
+                    if healer.isAlive then
+                        local hx, hy = healer:getPosition()
+                        local dx = ax - hx
+                        local dy = ay - hy
+                        local distance = math.sqrt(dx * dx + dy * dy)
+
+                        if distance < healer:getSize() + arrow:getSize() and arrow:canHit(healer) then
+                            arrow:markHit(healer)
+                            local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
+                            
+                            -- Apply elite/MCM damage bonus if applicable
+                            if arrow.eliteMcmDamageMul and (healer.isElite or healer.isMCM) then
+                                dmg = dmg * arrow.eliteMcmDamageMul
+                            end
+                            
+                            if arrow.kind == "power_shot" then
+                                JuiceManager.impact(healer, 0.05, 10, 0.15, 0.1)
+                            elseif isCrit then
+                                JuiceManager.impact(healer, 0.02, 4, 0.08, 0.06)
+                            else
+                                JuiceManager.flash(healer, 0.04)
+                            end
+                            
+                            self.particles:createHitSpark(hx, hy, {0.5, 1, 0.7})
+                            if self.damageNumbers then
+                                self.damageNumbers:add(hx, hy - healer:getSize(), dmg, { isCrit = isCrit })
+                            end
+                            local died = healer:takeDamage(dmg, ax, ay, arrow.knockback)
+                            
+                            -- Apply status effect if applicable
+                            if arrow.appliesStatus and healer.statusComponent then
+                                local statusData = arrow.appliesStatus
+                                healer.statusComponent:applyStatus(
+                                    statusData.status,
+                                    1,
+                                    statusData.duration,
+                                    statusData.status_effect
+                                )
+                            end
+
+                            if arrow.kind == "primary" then
+                                UpgradeApplication.checkProcs(self.player, "on_primary_hit", { target = healer, damage = dmg, is_crit = isCrit })
+                                if isCrit then
+                                    UpgradeApplication.checkProcs(self.player, "on_crit_hit", { target = healer, damage = dmg, is_crit = isCrit })
+                                end
+                            end
+
+                            if died then
+                                self.particles:createExplosion(hx, hy, {0.5, 1, 0.7})
+                                JuiceManager.shake(4, 0.12)
+                                local xpValue = 8 + math.random(0, 4)
+                                self.xpSystem:spawnOrb(hx, hy, xpValue)
                             else
                                 self.screenShake:add(2, 0.1)
                             end
@@ -1171,7 +1694,8 @@ function GameScene:update(dt)
                 for _, e in ipairs(self.lungers) do if e.isAlive then inCombat = true break end end
             end
             if inCombat then
-                self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + (self.frenzyCombatGainPerSec * dt))
+                local chargeGainMul = self.playerStats:getAbilityModValue("frenzy", "charge_gain_mul", 1.0)
+                self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + (self.frenzyCombatGainPerSec * dt * chargeGainMul))
             end
         end
 
@@ -1255,7 +1779,17 @@ function GameScene:update(dt)
         -- Update treents
         for _, treent in ipairs(self.treents) do
             if treent.isAlive then
-                treent:update(dt, playerX, playerY)
+                -- Vine attack callback
+                local onVineAttack = function(tx, ty, playerX, playerY)
+                    -- #region agent log
+                    local f = io.open("c:\\Users\\steven\\Desktop\\Cursor\\Shooter\\.cursor\\debug.log", "a"); if f then f:write('{"location":"game_scene.lua:1462","message":"vine_attack_spawn","data":{"tx":'..tx..',"ty":'..ty..',"playerY":'..playerY..'},"hypothesisId":"H3","timestamp":'..os.time()..'}\n'); f:close(); end
+                    -- #endregion
+                    -- Spawn vine lane at player's Y position (horizontal lane moving left)
+                    local vineLane = VineLane:new(playerY, 1, 300, 18)  -- y, laneIndex, speed, damage
+                    table.insert(self.vineLanes, vineLane)
+                end
+                
+                treent:update(dt, playerX, playerY, onVineAttack)
 
                 if not self.isDashing then
                     local tx, ty = treent:getPosition()
@@ -1493,6 +2027,67 @@ function GameScene:update(dt)
             end
         end
         
+        -- Update vine lanes
+        -- #region agent log
+        local f = io.open("c:\\Users\\steven\\Desktop\\Cursor\\Shooter\\.cursor\\debug.log", "a"); if f then f:write('{"location":"game_scene.lua:1709","message":"vine_lanes_count","data":{"count":'..#self.vineLanes..'},"hypothesisId":"H1","timestamp":'..os.time()..'}\n'); f:close(); end
+        -- #endregion
+        for i = #self.vineLanes, 1, -1 do
+            local vine = self.vineLanes[i]
+            -- #region agent log
+            local f2 = io.open("c:\\Users\\steven\\Desktop\\Cursor\\Shooter\\.cursor\\debug.log", "a"); if f2 then f2:write('{"location":"game_scene.lua:1712","message":"vine_object_check","data":{"isNil":'..(vine == nil and "true" or "false")..',"hasIsExpired":'..(vine and vine.isExpired ~= nil and "true" or "false")..',"hasIsFinished":'..(vine and vine.isFinished ~= nil and "true" or "false")..'},"hypothesisId":"H1","timestamp":'..os.time()..'}\n'); f2:close(); end
+            -- #endregion
+            vine:update(dt)
+            
+            if vine:isFinished() then
+                table.remove(self.vineLanes, i)
+            else
+                -- Check collision with player
+                if not self.isDashing then
+                    local vx, vy = vine:getPosition()
+                    local dx = playerX - vx
+                    local dy = playerY - vy
+                    local distance = math.sqrt(dx * dx + dy * dy)
+                    
+                    -- Check if player is within vine lane hitbox
+                    if vine:isPlayerInDanger(playerX, playerY) then
+                        local vineDmg = vine.damage * self.difficultyMult.enemyDamageMult
+                        if self.frenzyActive then vineDmg = vineDmg * 1.15 end
+                        local before = self.player.health
+                        self.player:takeDamage(vineDmg)
+                        local wasHit = self.player.health < before
+                        if wasHit and self.playerStats then
+                            self.playerStats:update(0, { wasHit = true, didRoll = false, inFrenzy = self.frenzyActive })
+                        end
+                        if not self.player:isInvincible() then
+                            self.screenShake:add(5, 0.18)
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- Update Healers
+        for _, healer in ipairs(self.healers) do
+            if healer.isAlive then
+                -- Build list of all enemies for healer AI
+                local allEnemies = {}
+                for _, e in ipairs(self.enemies) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.lungers) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.treents) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.smallTreents) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.wizards) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.healers) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.imps) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.slimes) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.bats) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.skeletons) do table.insert(allEnemies, e) end
+                
+                healer:update(dt, playerX, playerY, allEnemies)
+                
+                -- Healers don't attack player (support only)
+            end
+        end
+        
         -- Update Arrow Volleys
         for i = #self.arrowVolleys, 1, -1 do
             local volley = self.arrowVolleys[i]
@@ -1535,10 +2130,8 @@ function GameScene:update(dt)
                         local xpValue = 10 + math.random(0, 10)
                         if enemy.isMCM then xpValue = xpValue * 5 end
                         self.xpSystem:spawnOrb(ex, ey, xpValue)
-                        -- Frenzy charge
-                        if not self.frenzyActive then
-                            self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + self.frenzyKillGain)
-                        end
+                        -- Frenzy charge (or extend if active)
+                        self:onEnemyKill(0)
                     end
                 end
                 self.screenShake:add(4, 0.2)
@@ -1555,17 +2148,50 @@ function GameScene:update(dt)
         for _, enemy in ipairs(self.enemies) do
             if enemy.isAlive then allDead = false break end
         end
-        for _, lunger in ipairs(self.lungers) do
-            if lunger.isAlive then allDead = false break end
+        if allDead then
+            for _, lunger in ipairs(self.lungers) do
+                if lunger.isAlive then allDead = false break end
+            end
         end
-        for _, treent in ipairs(self.treents) do
-            if treent.isAlive then allDead = false break end
+        if allDead then
+            for _, treent in ipairs(self.treents) do
+                if treent.isAlive then allDead = false break end
+            end
         end
-        for _, st in ipairs(self.smallTreents) do
-            if st.isAlive then allDead = false break end
+        if allDead then
+            for _, st in ipairs(self.smallTreents) do
+                if st.isAlive then allDead = false break end
+            end
         end
-        for _, wiz in ipairs(self.wizards) do
-            if wiz.isAlive then allDead = false break end
+        if allDead then
+            for _, wiz in ipairs(self.wizards) do
+                if wiz.isAlive then allDead = false break end
+            end
+        end
+        if allDead then
+            for _, imp in ipairs(self.imps) do
+                if imp.isAlive then allDead = false break end
+            end
+        end
+        if allDead then
+            for _, slime in ipairs(self.slimes) do
+                if slime.isAlive then allDead = false break end
+            end
+        end
+        if allDead then
+            for _, bat in ipairs(self.bats) do
+                if bat.isAlive then allDead = false break end
+            end
+        end
+        if allDead then
+            for _, skel in ipairs(self.skeletons) do
+                if skel.isAlive then allDead = false break end
+            end
+        end
+        if allDead then
+            for _, healer in ipairs(self.healers) do
+                if healer.isAlive then allDead = false break end
+            end
         end
         
         if allDead then
@@ -1575,31 +2201,15 @@ function GameScene:update(dt)
 end
 
 function GameScene:advanceFloor()
-    -- Debug: print current floor
-    print("=================================================")
-    print("=== ADVANCE FLOOR CALLED ===")
-    print("Current floor BEFORE any changes:", self.gameState.currentFloor)
-    print("Checking: currentFloor == 4?", self.gameState.currentFloor == 4)
-    print("=================================================")
-    
     -- Check if boss floor (after clearing floor 4)
     if self.gameState.currentFloor == 4 then
-        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        print("!!! BOSS CONDITION MET - TRIGGERING BOSS !!!")
-        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        -- Next floor is boss, transition to boss arena!
+        -- Transition to boss arena
         self.gameState:nextFloor()
-        print("Called nextFloor(), new floor:", self.gameState.currentFloor)
-        print("About to call transitionTo(BOSS_FIGHT)")
         self.gameState:transitionTo(self.gameState.States.BOSS_FIGHT)
-        print("transitionTo() called, returning from advanceFloor()")
         return
     end
     
-    print("Boss condition NOT met, proceeding with normal floor advance")
     local continued = self.gameState:nextFloor()
-    print("After nextFloor(), new floor:", self.gameState.currentFloor)
-    print("continued =", continued)
     if continued then
         -- Heal player slightly between floors
         self.player.health = math.min(self.player.maxHealth, self.player.health + 20)
@@ -1612,12 +2222,51 @@ function GameScene:advanceFloor()
 end
 
 function GameScene:showUpgradeSelection()
+    -- #region agent log
+    local logFile = io.open("c:\\Users\\steven\\Desktop\\Cursor\\Shooter\\.cursor\\debug.log", "a")
+    if logFile then logFile:write('{"hypothesisId":"H1","location":"game_scene.lua:showUpgradeSelection","message":"showUpgradeSelection called","data":{"hasPending":'..tostring(self.xpSystem:hasPendingLevelUp())..',"level":'..tostring(self.xpSystem.level)..'},"timestamp":'..os.time()..'}\n') logFile:close() end
+    -- #endregion
     if not self.xpSystem:hasPendingLevelUp() then return end
     
     -- Consume the level-up
     self.xpSystem:consumeLevelUp()
+    local currentLevel = self.xpSystem.level
     
-    -- Roll upgrade options
+    -- #region agent log
+    local logFile2 = io.open("c:\\Users\\steven\\Desktop\\Cursor\\Shooter\\.cursor\\debug.log", "a")
+    if logFile2 then logFile2:write('{"hypothesisId":"H1","location":"game_scene.lua:showUpgradeSelection","message":"level consumed","data":{"currentLevel":'..tostring(currentLevel)..'},"timestamp":'..os.time()..'}\n') logFile2:close() end
+    -- #endregion
+    
+    -- Auto-unlock abilities at specific levels (no selection UI, just unlock + continue to regular upgrade)
+    local abilityAutoUnlocked = nil
+    
+    if currentLevel == 3 then
+        -- Level 3: Auto-unlock the ability NOT chosen at Level 0
+        local otherAbility = nil
+        if self.selectedStartingAbility == "power_shot" then
+            otherAbility = "arrow_volley"
+        elseif self.selectedStartingAbility == "arrow_volley" then
+            otherAbility = "power_shot"
+        end
+        
+        if otherAbility and not self.player.abilities[otherAbility].unlocked then
+            self.player.abilities[otherAbility].unlocked = true
+            abilityAutoUnlocked = self.player.abilities[otherAbility].name
+            print("Level 3: Auto-unlocked " .. abilityAutoUnlocked)
+        end
+    elseif currentLevel == 6 then
+        -- Level 6: Auto-unlock Frenzy (ultimate)
+        if not self.player.abilities.frenzy.unlocked then
+            self.player.abilities.frenzy.unlocked = true
+            abilityAutoUnlocked = "Frenzy"
+            print("Level 6: Auto-unlocked Frenzy")
+        end
+    end
+    
+    -- TODO: Could show a notification about the auto-unlocked ability here
+    -- For now, we just continue to the regular upgrade selection
+    
+    -- Roll normal upgrade options for non-ability levels
     local result = UpgradeRoll.rollOptions({
         rng = function() return love.math.random() end,
         now = love.timer.getTime(),
@@ -1630,8 +2279,8 @@ function GameScene:showUpgradeSelection()
     
     -- Show the upgrade UI
     self.upgradeUI:show(result.options, function(upgrade)
-        -- Apply the selected upgrade
-        self.playerStats:applyUpgrade(upgrade)
+        -- Apply the selected upgrade using new system
+        UpgradeApplication.apply(self.player, upgrade, self.playerStats)
         
         -- Apply stat changes to player entity
         self:applyStatsToPlayer()
@@ -1763,6 +2412,13 @@ function GameScene:draw()
         end
     end
     
+    -- Add Healers
+    for _, healer in ipairs(self.healers) do
+        if healer.isAlive then
+            table.insert(drawables, {entity = healer, y = healer.y, type = "healer"})
+        end
+    end
+    
     -- Add player
     if self.player then
         table.insert(drawables, {entity = self.player, y = self.player.y, type = "player", isDashing = self.isDashing})
@@ -1798,6 +2454,11 @@ function GameScene:draw()
     for _, bark in ipairs(self.barkProjectiles) do
         bark:draw()
     end
+    
+    -- Draw vine lanes
+    for _, vine in ipairs(self.vineLanes) do
+        vine:draw()
+    end
 
     -- Draw Arrow Volleys
     for _, volley in ipairs(self.arrowVolleys) do
@@ -1817,15 +2478,36 @@ function GameScene:draw()
     -- Draw particles (on top of everything)
     self.particles:draw()
     
+    -- Draw boss portal (in world space)
+    if self.bossPortal then
+        self.bossPortal:draw()
+    end
+    
     -- Detach camera before UI/HUD
     if self.camera then
         self.camera:detach()
+    end
+    
+    -- Draw run timer at top center
+    if self.runTimer then
+        self.runTimer:draw(self.timeAlive or 0)
     end
     
     love.graphics.pop()
     
     -- Draw HUD (not affected by screen shake or camera)
     self:drawXPBar()
+    
+    -- Draw ability HUD
+    if self.abilityHUD and self.player then
+        self.abilityHUD:draw(self.player, self.xpSystem)
+    end
+    
+    -- Draw buff bar above ability HUD
+    if self.buffBar and self.player and self.abilityHUD then
+        local abilityHudY = love.graphics.getHeight() - 100  -- Approximate ability HUD Y position
+        self.buffBar:draw(self.player, abilityHudY)
+    end
     
     -- Draw upgrade UI (on top of everything)
     if self.upgradeUI then
@@ -1900,18 +2582,40 @@ function GameScene:keypressed(key)
     if key == "r" and self.playerStats and (not self.frenzyActive) and self.frenzyCharge >= self.frenzyChargeMax then
         self.frenzyCharge = self.frenzyCharge - self.frenzyChargeMax
         local fCfg = Config.Abilities.frenzy
-        self.playerStats:addBuff("frenzy", fCfg.duration, {
-            { stat = "move_speed", mul = fCfg.moveSpeedMult },
+        
+        -- Apply ability mods
+        local durationAdd = self.playerStats:getAbilityModValue("frenzy", "duration_add", 0)
+        local critChanceAdd = self.playerStats:getAbilityModValue("frenzy", "crit_chance_add", 0)
+        local moveSpeedMul = self.playerStats:getAbilityModValue("frenzy", "move_speed_mul", 1.0)
+        local rollCooldownMul = self.playerStats:getAbilityModValue("frenzy", "roll_cooldown_mul", 1.0)
+        
+        local finalDuration = fCfg.duration + durationAdd
+        local finalCritAdd = fCfg.critChanceAdd + critChanceAdd
+        local finalMoveSpeedMul = fCfg.moveSpeedMult * moveSpeedMul
+        
+        self.playerStats:addBuff("frenzy", finalDuration, {
+            { stat = "move_speed", mul = finalMoveSpeedMul },
             { stat = "attack_speed", mul = fCfg.attackSpeedMult },
-            { stat = "crit_chance", add = fCfg.critChanceAdd },
+            { stat = "crit_chance", add = finalCritAdd },
+            { stat = "roll_cooldown", mul = rollCooldownMul },
         }, { break_on_hit_taken = true, damage_taken_multiplier = fCfg.damageTakenMult })
         self.frenzyActive = true
+        self.frenzyKillsThisActivation = 0  -- Track kills for extend_on_kill
+        self.frenzyExtendedTime = 0  -- Track how much we've extended
         self.screenShake:add(4, 0.15)
         return true
     end
     
     if key == "space" then
         self:startDash()
+    end
+    
+    -- Activate boss portal
+    if key == "e" and self.bossPortal and self.bossPortal:canActivate(self.player) then
+        if self.bossPortal:activate() then
+            -- Transition to boss fight
+            self.gameState:enterBossFight()
+        end
     end
 end
 

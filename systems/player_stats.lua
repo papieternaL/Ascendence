@@ -37,6 +37,7 @@ function PlayerStats:new(baseOverrides)
     additive = {},  -- from stat_add effects
     multipliers = {},  -- from stat_mul effects
     weaponMods = {},  -- from weapon_mod effects
+    abilityMods = {},  -- from ability_mod effects: { [abilityName] = { [modType] = value/data } }
     buffs = {},  -- active buffs with duration/charges
     acquiredUpgrades = {},  -- { [upgradeId] = true }
     acquiredUpgradeLog = {}, -- ordered list: { {id,name,rarity,tags,effects,at}, ... }
@@ -95,6 +96,54 @@ function PlayerStats:getWeaponMod(modName)
   return self.weaponMods[modName] or 0
 end
 
+-- Get an ability mod value
+-- Returns the stored value/data, or a default based on mod type
+function PlayerStats:getAbilityMod(abilityName, modType)
+  if not self.abilityMods[abilityName] then
+    return nil
+  end
+  return self.abilityMods[abilityName][modType]
+end
+
+-- Get computed ability mod with proper defaults for additive/multiplicative mods
+function PlayerStats:getAbilityModValue(abilityName, modType, default)
+  local val = self:getAbilityMod(abilityName, modType)
+  if val == nil then
+    return default
+  end
+  return val
+end
+
+-- Check if an ability has a specific mod flag (for boolean mods like fires_twice)
+function PlayerStats:hasAbilityMod(abilityName, modType)
+  local mod = self:getAbilityMod(abilityName, modType)
+  return mod ~= nil
+end
+
+-- Apply an ability mod effect
+function PlayerStats:applyAbilityMod(effect)
+  local ability = effect.ability
+  local mod = effect.mod
+  
+  -- Initialize ability mod table if needed
+  if not self.abilityMods[ability] then
+    self.abilityMods[ability] = {}
+  end
+  
+  -- Handle different mod types based on suffix convention
+  if mod:match("_add$") then
+    -- Additive mods: accumulate
+    self.abilityMods[ability][mod] = (self.abilityMods[ability][mod] or 0) + effect.value
+  elseif mod:match("_mul$") then
+    -- Multiplicative mods: chain multiply
+    self.abilityMods[ability][mod] = (self.abilityMods[ability][mod] or 1.0) * effect.value
+  else
+    -- Flag/complex mods: store entire effect data
+    -- This includes: fires_twice, applies_status, double_strike, extend_on_kill, etc.
+    self.abilityMods[ability][mod] = effect
+  end
+end
+
 -- Apply an upgrade's effects permanently
 function PlayerStats:applyUpgrade(upgrade)
   if self.acquiredUpgrades[upgrade.id] then
@@ -149,6 +198,10 @@ function PlayerStats:applyEffect(effect)
     -- Store proc effects for the combat system to check
     self.weaponMods.procs = self.weaponMods.procs or {}
     table.insert(self.weaponMods.procs, effect)
+    
+  elseif effect.kind == "ability_mod" then
+    -- Apply ability-specific modifiers
+    self:applyAbilityMod(effect)
   end
 end
 

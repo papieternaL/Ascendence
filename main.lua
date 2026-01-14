@@ -1,6 +1,19 @@
 -- LÖVE2D Action RPG - ASCENDENCE
 -- Main Entry Point
 
+-- #region agent log
+local function debugLog(msg, data)
+    local logPath = "C:/Users/steven/Desktop/Cursor/Shooter/.cursor/debug.log"
+    local f = io.open(logPath, "a")
+    if f then
+        local json = '{"location":"main.lua","message":"' .. msg .. '","data":' .. (data or '{}') .. ',"timestamp":' .. os.time() .. ',"hypothesisId":"H1"}'
+        f:write(json .. "\n")
+        f:close()
+    end
+end
+debugLog("GAME_START", '{"cwd":"' .. love.filesystem.getSource() .. '"}')
+-- #endregion
+
 local GameState = require("systems.game_state")
 local Menu = require("ui.menu")
 local GameScene = require("scenes.game_scene")
@@ -43,6 +56,10 @@ function reloadBossModules()
 end
 
 function love.load()
+    -- #region agent log
+    debugLog("LOVE_LOAD_START", '{"source":"' .. love.filesystem.getSource() .. '"}')
+    -- #endregion
+    
     -- Set up window
     love.window.setTitle("ASCENDENCE")
     
@@ -62,6 +79,10 @@ function love.load()
     -- Game scenes will be initialized when game starts
     gameScene = nil
     bossArenaScene = nil
+    
+    -- #region agent log
+    debugLog("LOVE_LOAD_COMPLETE", '{"gameState":"initialized"}')
+    -- #endregion
 end
 
 function love.update(dt)
@@ -191,17 +212,15 @@ function drawHUD()
     if gameScene and gameScene.player then
         drawBottomHUD(gameScene.player)
         
-        -- Draw floor indicator (top-left corner)
+        -- Draw level indicator (top-left corner) - replaced old floor system
         love.graphics.setColor(1, 1, 1, 0.9)
-        love.graphics.print("FLOOR: " .. gameState.currentFloor, 20, 20)
+        local level = gameScene.xpSystem and gameScene.xpSystem.level or 1
+        love.graphics.print("LEVEL: " .. level, 20, 20)
         
-        -- Debug: show when boss should trigger
-        if gameState.currentFloor == 4 then
-            love.graphics.setColor(1, 1, 0, 1)
-            love.graphics.print(">>> NEXT WAVE = BOSS! <<<", 20, 40)
-        elseif gameState.currentFloor >= 5 then
-            love.graphics.setColor(1, 0, 0, 1)
-            love.graphics.print("!!! BOSS SHOULD HAVE TRIGGERED !!!", 20, 40)
+        -- Show boss portal hint at level 15
+        if level >= 15 and gameScene.bossPortal then
+            love.graphics.setColor(0.75, 0.25, 0.95, 1)
+            love.graphics.print("Boss Portal Active - Press E near portal!", 20, 40)
         end
         
         love.graphics.setColor(1, 1, 1, 1)
@@ -269,21 +288,8 @@ function drawBottomHUD(player)
     local textWidth = font:getWidth(healthText)
     love.graphics.print(healthText, healthBarX + healthBarWidth/2 - textWidth/2, healthBarY + 1)
     
-    -- Draw abilities in a row below health bar
-    local abilitySize = cfg.abilityIconSize
-    local abilitySpacing = cfg.abilitySpacing
-    local numAbilities = #player.abilityOrder
-    local abilitiesWidth = numAbilities * abilitySize + (numAbilities - 1) * abilitySpacing
-    local abilitiesX = (w - abilitiesWidth) / 2
-    local abilitiesY = healthBarY + healthBarHeight + 10
-    
-    for i, abilityId in ipairs(player.abilityOrder) do
-        local ability = player.abilities[abilityId]
-        if ability then
-            local x = abilitiesX + (i - 1) * (abilitySize + abilitySpacing)
-            UIUtils.drawAbilityIcon(ability, x, abilitiesY, abilitySize)
-        end
-    end
+    -- REMOVED: Old ability icons - now drawn by game_scene.lua abilityHUD
+    -- Abilities are drawn by the newer abilityHUD in game_scene.lua with radial cooldowns
 end
 
 function love.keypressed(key)

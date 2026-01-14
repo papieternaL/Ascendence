@@ -29,6 +29,7 @@ function TreentOverlord:new(x, y)
         isAlive = true,
         damage = cfg.damage,
         isBoss = true,
+        isInvulnerable = false,  -- Set true during phase 2 earthquake mechanic
         
         -- Visual
         flashTime = 0,
@@ -194,15 +195,24 @@ function TreentOverlord:updatePhase1(dt, playerX, playerY, onBarkShoot)
                 self.barkBarrageTimer = 0
             end
         else
-            -- Fire projectiles in sequence
+            -- Fire projectiles in sequence (CONE ATTACK toward player)
             self.barkBarrageInternalTimer = self.barkBarrageInternalTimer + dt
             if self.barkBarrageInternalTimer >= self.barkBarrageDelay and self.barkBarrageIndex < self.barkBarrageCount then
                 self.barkBarrageInternalTimer = 0
                 self.barkBarrageIndex = self.barkBarrageIndex + 1
                 
-                -- Fire one projectile
+                -- Fire one projectile in cone toward player
                 if onBarkShoot then
-                    local angle = (self.barkBarrageIndex / self.barkBarrageCount) * math.pi * 2
+                    -- Calculate base angle toward player
+                    local dx = playerX - self.x
+                    local dy = playerY - self.y
+                    local baseAngle = math.atan2(dy, dx)
+                    
+                    -- Cone spread: 60 degrees total (30 degrees each side)
+                    local coneSpread = math.rad(60)
+                    local spreadOffset = (self.barkBarrageIndex / self.barkBarrageCount - 0.5) * coneSpread
+                    local angle = baseAngle + spreadOffset
+                    
                     local targetX = self.x + math.cos(angle) * 500
                     local targetY = self.y + math.sin(angle) * 500
                     onBarkShoot(self.x, self.y, targetX, targetY)
@@ -230,6 +240,7 @@ function TreentOverlord:updatePhase2(dt, playerX, playerY, onEncompassRoot, onVi
             self.earthquakeCastProgress = 0
             self.earthquakeTimer = 0
             self.earthquakeActive = false
+            self.isInvulnerable = true  -- Boss is invulnerable during earthquake mechanic
             
             if onEncompassRoot then
                 onEncompassRoot(playerX, playerY)
@@ -241,6 +252,7 @@ function TreentOverlord:updatePhase2(dt, playerX, playerY, onEncompassRoot, onVi
         if self.encompassRootTimer >= self.encompassRootDuration then
             self.encompassRootActive = false
             self.encompassRootTimer = 0
+            self.isInvulnerable = false  -- End invulnerability when mechanic ends
         end
     end
     
@@ -350,6 +362,11 @@ end
 
 function TreentOverlord:takeDamage(damage, hitX, hitY, knockbackForce)
     if not self.isAlive then return false end
+    
+    -- Boss is invulnerable during phase 2 earthquake mechanic
+    if self.isInvulnerable then
+        return false  -- No damage taken
+    end
     
     -- Apply damage taken multiplier (rooted = more damage)
     local finalDamage = damage * self.damageTakenMultiplier

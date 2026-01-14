@@ -36,33 +36,33 @@ P.power_shot = {
   },
 }
 
-P.entangle = {
-  -- HARD RULE: does not affect bosses. System should check target.isBoss and ignore.
+P.arrow_volley = {
+  -- Arrow Volley upgrades: AOE damage ability that rains arrows on a target area
   {
-    id="en_c_wider_vines", name="Wider Vines", rarity="common",
-    effects={ { kind="ability_mod", ability="entangle", mod="radius_add", value=20 } }
+    id="av_c_wide_spread", name="Wide Spread", rarity="common",
+    effects={ { kind="ability_mod", ability="arrow_volley", mod="radius_add", value=20 } }
   },
   {
-    id="en_c_quick_cast", name="Quick Cast", rarity="common",
-    effects={ { kind="ability_mod", ability="entangle", mod="cooldown_mul", value=0.90 } }
+    id="av_c_rapid_reload", name="Rapid Reload", rarity="common",
+    effects={ { kind="ability_mod", ability="arrow_volley", mod="cooldown_mul", value=0.85 } }
   },
   {
-    id="en_r_thorned_bind", name="Thorned Bind", rarity="rare",
+    id="av_r_heavy_volley", name="Heavy Volley", rarity="rare",
     effects={
-      { kind="ability_mod", ability="entangle", mod="damage_taken_mul", value=1.22 } -- rooted enemies take more dmg
+      { kind="ability_mod", ability="arrow_volley", mod="damage_mul", value=1.25 }
     }
   },
   {
-    id="en_r_vine_pop", name="Vine Pop", rarity="rare",
+    id="av_r_arrow_storm", name="Arrow Storm", rarity="rare",
     effects={
-      { kind="ability_mod", ability="entangle", mod="on_root_end_explosion", radius=70, damage_mul=0.35 }
+      { kind="ability_mod", ability="arrow_volley", mod="arrow_count_add", value=6 }
     }
   },
   {
-    id="en_e_spreading_roots", name="Spreading Roots", rarity="epic",
+    id="av_e_double_strike", name="Double Strike", rarity="epic",
     effects={
-      { kind="ability_mod", ability="entangle", mod="recast_zone", value=1, -- entangle zone pulses once after 1s
-        pulse_delay=1.0, pulse_root_duration_mul=0.60 }
+      { kind="ability_mod", ability="arrow_volley", mod="double_strike", value=1, delay=0.3, second_volley_damage_mul=0.6 }
+      -- Volley strikes the same location twice with a short delay (second volley deals 60% damage)
     }
   },
 }

@@ -15,11 +15,10 @@ U.meta = {
 --  - stat_mul: multiply player stats
 --  - weapon_mod: changes primary projectile behavior
 --  - proc: conditional triggers
---  - ability_mod: modifies a named ability (power_shot / entangle / frenzy)
+--  - ability_mod: modifies a named ability (power_shot / arrow_volley / frenzy)
 --  - aura/aoe: for radial bursts, on-death explosions, etc.
 --
 -- IMPORTANT RULES ENFORCED BY DATA:
---  - entangle never tags bosses (system should check target.isBoss)
 --  - frenzy risk cannot be removed by upgrades (no effect for that exists)
 
 U.list = {

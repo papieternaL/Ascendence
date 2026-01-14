@@ -226,34 +226,63 @@ function BossArenaScene:update(dt)
         end
         
         -- Auto-cast Power Shot
-    if self.player and self.player:isAbilityReady("power_shot") and not self.isDashing then
-        local psTargetX, psTargetY = nil, nil
-        local psCfg = Config.Abilities.powerShot
-        
-        -- Target the boss
-        if self.boss and self.boss.isAlive then
-            psTargetX, psTargetY = self.boss:getPosition()
-        end
-        
-        if psTargetX and psTargetY then
-            self.player:aimAt(psTargetX, psTargetY)
-            self.player:useAbility("power_shot")
-            local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
-            local base = (self.player.attackDamage or 10) * psCfg.damageMult
-            local ps = Arrow:new(sx, sy, psTargetX, psTargetY, {
-                damage = base,
-                speed = psCfg.speed,
-                size = 12,
-                lifetime = 1.8,
-                pierce = 999,
-                alwaysCrit = true,
-                kind = "power_shot",
-                knockback = psCfg.knockback,
-            })
+        if self.player and self.player:isAbilityReady("power_shot") and not self.isDashing then
+            local psTargetX, psTargetY = nil, nil
+            local psCfg = Config.Abilities.powerShot
+            
+            -- Target the boss
+            if self.boss and self.boss.isAlive then
+                psTargetX, psTargetY = self.boss:getPosition()
+            end
+            
+            if psTargetX and psTargetY then
+                self.player:aimAt(psTargetX, psTargetY)
+                self.player:useAbility("power_shot", self.playerStats)
+                local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
+                
+                -- Apply ability mods
+                local damageMul = self.playerStats:getAbilityModValue("power_shot", "damage_mul", 1.0)
+                local base = (self.player.attackDamage or 10) * psCfg.damageMult * damageMul
+                
+                -- Check for elite/MCM bonus damage mod (boss counts as elite)
+                local eliteMcmMod = self.playerStats:getAbilityMod("power_shot", "bonus_damage_vs_elite_mcm")
+                if eliteMcmMod then
+                    base = base * eliteMcmMod.value
+                end
+                
+                local appliesStatus = self.playerStats:getAbilityMod("power_shot", "applies_status")
+                
+                local ps = Arrow:new(sx, sy, psTargetX, psTargetY, {
+                    damage = base,
+                    speed = psCfg.speed,
+                    size = 12,
+                    lifetime = 1.8,
+                    pierce = 999,
+                    alwaysCrit = true,
+                    kind = "power_shot",
+                    knockback = psCfg.knockback,
+                    appliesStatus = appliesStatus,
+                })
                 table.insert(self.arrows, ps)
                 self.screenShake:add(3, 0.12)
                 if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
                 if self.player.playAttackAnimation then self.player:playAttackAnimation() end
+                
+                -- Handle fires_twice mod: spawn second arrow after delay
+                local firesTwiceMod = self.playerStats:getAbilityMod("power_shot", "fires_twice")
+                if firesTwiceMod then
+                    local delay = firesTwiceMod.delay or 0.08
+                    local secondDamageMul = firesTwiceMod.second_shot_damage_mul or 0.55
+                    self.pendingPowerShots = self.pendingPowerShots or {}
+                    table.insert(self.pendingPowerShots, {
+                        timer = delay,
+                        sx = sx, sy = sy, ex = psTargetX, ey = psTargetY,
+                        damage = base * secondDamageMul,
+                        speed = psCfg.speed,
+                        knockback = psCfg.knockback,
+                        appliesStatus = appliesStatus,
+                    })
+                end
             end
         end
         
@@ -270,13 +299,68 @@ function BossArenaScene:update(dt)
                 local dist = math.sqrt(dx*dx + dy*dy)
                 
                 if dist <= volleyRange then
-                    self.player:useAbility("arrow_volley")
+                    self.player:useAbility("arrow_volley", self.playerStats)
                     -- Deal damage to boss (Arrow Volley is damage, not root)
                     local baseDmg = self.playerStats and self.playerStats:get("attack") or 25
-                    local damage = baseDmg * 1.5
+                    
+                    -- Apply ability mods
+                    local damageMul = self.playerStats:getAbilityModValue("arrow_volley", "damage_mul", 1.0)
+                    local damage = baseDmg * 1.5 * damageMul
+                    
                     self.boss:takeDamage(damage)
                     self.particles:createExplosion(bx, by, {1, 0.8, 0.2})
                     self.screenShake:add(3, 0.15)
+                    
+                    -- Handle double_strike mod: deal damage again after delay
+                    local doubleStrikeMod = self.playerStats:getAbilityMod("arrow_volley", "double_strike")
+                    if doubleStrikeMod then
+                        local delay = doubleStrikeMod.delay or 0.3
+                        local secondVolleyDamageMul = doubleStrikeMod.second_volley_damage_mul or 1.0
+                        self.pendingArrowVolleys = self.pendingArrowVolleys or {}
+                        table.insert(self.pendingArrowVolleys, {
+                            timer = delay,
+                            tx = bx, ty = by,
+                            damage = damage * secondVolleyDamageMul,
+                        })
+                    end
+                end
+            end
+        end
+        
+        -- Process pending power shots (fires_twice mod)
+        if self.pendingPowerShots then
+            for i = #self.pendingPowerShots, 1, -1 do
+                local pending = self.pendingPowerShots[i]
+                pending.timer = pending.timer - dt
+                if pending.timer <= 0 then
+                    local ps = Arrow:new(pending.sx, pending.sy, pending.ex, pending.ey, {
+                        damage = pending.damage,
+                        speed = pending.speed,
+                        size = 12,
+                        lifetime = 1.8,
+                        pierce = 999,
+                        alwaysCrit = true,
+                        kind = "power_shot",
+                        knockback = pending.knockback,
+                        appliesStatus = pending.appliesStatus,
+                    })
+                    table.insert(self.arrows, ps)
+                    table.remove(self.pendingPowerShots, i)
+                end
+            end
+        end
+        
+        -- Process pending arrow volleys (double_strike mod)
+        if self.pendingArrowVolleys then
+            for i = #self.pendingArrowVolleys, 1, -1 do
+                local pending = self.pendingArrowVolleys[i]
+                pending.timer = pending.timer - dt
+                if pending.timer <= 0 then
+                    if self.boss and self.boss.isAlive then
+                        self.boss:takeDamage(pending.damage)
+                        self.particles:createExplosion(pending.tx, pending.ty, {1, 0.8, 0.2})
+                    end
+                    table.remove(self.pendingArrowVolleys, i)
                 end
             end
         end
@@ -543,7 +627,7 @@ function BossArenaScene:draw()
     -- Draw particles (background layer)
     self.particles:draw()
     
-    -- Draw DANGER ZONE indicators (red blinking lines where vines will be)
+    -- Draw DANGER ZONE indicators (red blinking zones where vines will be)
     -- Only show during casting phase (telegraph), not when vines are actually active
     if self.boss and self.boss.earthquakeCasting and self.safeLaneIndex then
         local screenWidth = love.graphics.getWidth()
@@ -561,13 +645,13 @@ function BossArenaScene:draw()
         local blinkRate = love.timer.getTime() * 8 -- Fast blink
         local blinkAlpha = 0.3 + math.abs(math.sin(blinkRate)) * 0.7
         
-        -- Draw red danger lines for ALL lanes EXCEPT the safe one
+        -- Draw red danger zones for ALL lanes EXCEPT the safe one
         for i = 1, laneCount do
             local laneY = startY + (i - 1) * spacing
             
             if i ~= self.safeLaneIndex then
-                -- DANGER LANE - red blinking warning
-                love.graphics.setColor(1, 0.1, 0.1, blinkAlpha * 0.4)
+                -- DANGER LANE - red blinking warning (just the flashing zone, no text/arrows)
+                love.graphics.setColor(1, 0.1, 0.1, blinkAlpha * 0.5)
                 love.graphics.rectangle("fill", 0, laneY - 35, screenWidth, 70)
                 
                 -- Danger border (bright red, pulsing)
@@ -575,26 +659,8 @@ function BossArenaScene:draw()
                 love.graphics.setLineWidth(4)
                 love.graphics.line(0, laneY - 35, screenWidth, laneY - 35)
                 love.graphics.line(0, laneY + 35, screenWidth, laneY + 35)
-                
-                -- Danger arrow indicators (pointing inward)
-                local arrowSpacing = 120
-                for ax = 50, screenWidth - 50, arrowSpacing do
-                    love.graphics.setColor(1, 0.3, 0.3, blinkAlpha)
-                    -- Draw simple ">" arrows pointing right (vine direction)
-                    love.graphics.polygon("fill", 
-                        ax, laneY - 8,
-                        ax + 12, laneY,
-                        ax, laneY + 8
-                    )
-                end
             end
         end
-        
-        -- Warning text at top
-        love.graphics.setColor(1, 0.3, 0.3, blinkAlpha)
-        love.graphics.setNewFont(18)
-        love.graphics.printf("DANGER! AVOID RED ZONES!", 0, 120, screenWidth, "center")
-        love.graphics.setNewFont(12)
         
         love.graphics.setLineWidth(1)
     end
@@ -657,6 +723,11 @@ function BossArenaScene:drawUI()
     
     local w = love.graphics.getWidth()
     local h = love.graphics.getHeight()
+    
+    -- Draw boss health bar at top
+    if self.boss and self.boss.isAlive then
+        self:drawBossHealthBar()
+    end
     
     -- Typing Test UI (top of screen)
     if self.typingTestActive then
@@ -768,11 +839,7 @@ function BossArenaScene:drawUI()
         end
     end
     
-    -- Boss title at top
-    love.graphics.setColor(1, 0.3, 0.3, 1)
-    love.graphics.setNewFont(24)
-    love.graphics.printf("TREENT OVERLORD", 0, 30, w, "center")
-    love.graphics.setNewFont(12)
+    -- Boss title removed - now drawn in drawBossHealthBar()
     
     love.graphics.setColor(1, 1, 1, 1)
 end
@@ -806,15 +873,29 @@ function BossArenaScene:keypressed(key)
     
     -- Manual abilities
     if key == "r" and self.player and self.player:isAbilityReady("frenzy") and self.frenzyCharge >= self.frenzyChargeMax then
-        self.player:useAbility("frenzy")
+        self.player:useAbility("frenzy", self.playerStats)
         self.frenzyCharge = self.frenzyCharge - self.frenzyChargeMax
         local fCfg = Config.Abilities.frenzy
-        self.playerStats:addBuff("frenzy", fCfg.duration, {
-            { stat = "move_speed", mul = fCfg.moveSpeedMult },
+        
+        -- Apply ability mods
+        local durationAdd = self.playerStats:getAbilityModValue("frenzy", "duration_add", 0)
+        local critChanceAdd = self.playerStats:getAbilityModValue("frenzy", "crit_chance_add", 0)
+        local moveSpeedMul = self.playerStats:getAbilityModValue("frenzy", "move_speed_mul", 1.0)
+        local rollCooldownMul = self.playerStats:getAbilityModValue("frenzy", "roll_cooldown_mul", 1.0)
+        
+        local finalDuration = fCfg.duration + durationAdd
+        local finalCritAdd = fCfg.critChanceAdd + critChanceAdd
+        local finalMoveSpeedMul = fCfg.moveSpeedMult * moveSpeedMul
+        
+        self.playerStats:addBuff("frenzy", finalDuration, {
+            { stat = "move_speed", mul = finalMoveSpeedMul },
             { stat = "attack_speed", mul = fCfg.attackSpeedMult },
-            { stat = "crit_chance", add = fCfg.critChanceAdd },
+            { stat = "crit_chance", add = finalCritAdd },
+            { stat = "roll_cooldown", mul = rollCooldownMul },
         }, { break_on_hit_taken = true, damage_taken_multiplier = fCfg.damageTakenMult })
         self.frenzyActive = true
+        self.frenzyKillsThisActivation = 0
+        self.frenzyExtendedTime = 0
         self.screenShake:add(4, 0.15)
         return true
     end
@@ -857,6 +938,92 @@ function BossArenaScene:startDash()
             end
         end
     end
+end
+
+function BossArenaScene:drawBossHealthBar()
+    if not self.boss then return end
+    
+    local w = love.graphics.getWidth()
+    
+    -- Boss health bar dimensions
+    local barWidth = 600
+    local barHeight = 30
+    local barX = (w - barWidth) / 2
+    local barY = 40
+    
+    -- Boss name
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setNewFont(18)
+    local bossName = "TREENT OVERLORD"
+    local nameWidth = love.graphics.getFont():getWidth(bossName)
+    love.graphics.print(bossName, (w - nameWidth) / 2, barY - 25)
+    
+    -- Phase indicator
+    local phase = self.boss.phase or 1
+    local phaseText = "Phase " .. phase
+    love.graphics.setNewFont(14)
+    local phaseWidth = love.graphics.getFont():getWidth(phaseText)
+    local phaseColor = phase == 1 and {0.3, 1, 0.5} or {1, 0.3, 0.3}
+    love.graphics.setColor(phaseColor[1], phaseColor[2], phaseColor[3], 1)
+    love.graphics.print(phaseText, (w - phaseWidth) / 2, barY - 8)
+    
+    -- Health percentage
+    local healthPercent = self.boss.health / self.boss.maxHealth
+    
+    -- Dark background
+    love.graphics.setColor(0.1, 0.1, 0.15, 0.95)
+    love.graphics.rectangle("fill", barX - 4, barY - 4, barWidth + 8, barHeight + 8, 6, 6)
+    
+    -- Health bar background (dark red)
+    love.graphics.setColor(0.3, 0.05, 0.05, 1)
+    love.graphics.rectangle("fill", barX, barY, barWidth, barHeight, 4, 4)
+    
+    -- Health bar fill with color gradient based on HP
+    local r, g, b
+    if healthPercent > 0.6 then
+        r, g, b = 0.3, 0.9, 0.3  -- Green
+    elseif healthPercent > 0.3 then
+        r, g, b = 0.9, 0.7, 0.2  -- Yellow
+    else
+        r, g, b = 0.9, 0.2, 0.2  -- Red
+    end
+    
+    -- Pulse effect when low health
+    if healthPercent < 0.25 then
+        local pulse = 0.8 + math.sin(love.timer.getTime() * 6) * 0.2
+        r, g, b = r * pulse, g * pulse, b * pulse
+    end
+    
+    love.graphics.setColor(r, g, b, 1)
+    love.graphics.rectangle("fill", barX + 2, barY + 2, (barWidth - 4) * healthPercent, barHeight - 4, 3, 3)
+    
+    -- Segmented overlay (shows damage chunks)
+    love.graphics.setColor(0, 0, 0, 0.3)
+    local segments = 10
+    for i = 1, segments - 1 do
+        local segX = barX + (barWidth / segments) * i
+        love.graphics.rectangle("fill", segX - 1, barY, 2, barHeight)
+    end
+    
+    -- Shine effect on top half
+    love.graphics.setColor(1, 1, 1, 0.15)
+    love.graphics.rectangle("fill", barX + 2, barY + 2, (barWidth - 4) * healthPercent, (barHeight - 4) / 2, 3, 3)
+    
+    -- Border
+    love.graphics.setColor(0.6, 0.6, 0.7, 1)
+    love.graphics.setLineWidth(3)
+    love.graphics.rectangle("line", barX, barY, barWidth, barHeight, 4, 4)
+    love.graphics.setLineWidth(1)
+    
+    -- HP text
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setNewFont(16)
+    local hpText = string.format("%d / %d", math.floor(self.boss.health), math.floor(self.boss.maxHealth))
+    local hpWidth = love.graphics.getFont():getWidth(hpText)
+    love.graphics.print(hpText, (w - hpWidth) / 2, barY + 7)
+    
+    -- Reset font
+    love.graphics.setNewFont(12)
 end
 
 return BossArenaScene

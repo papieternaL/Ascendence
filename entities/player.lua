@@ -1,5 +1,6 @@
 local Config = require("data.config")
 local PlayerAnimator = require("systems.player_animator")
+local StatusComponent = require("systems.status_component")
 
 -- Player Entity (Archer Class)
 local Player = {}
@@ -56,6 +57,8 @@ function Player:new(x, y)
         bowRecoilTime = 0,
         bowRecoilDuration = 0.08,
         -- Abilities with cooldowns
+        -- Unlock order: Dash (always), Power Shot OR Arrow Volley (Level 0 choice),
+        --               the other at Level 3 (auto), Frenzy at Level 6 (auto)
         abilities = {
             power_shot = {
                 name = "Power Shot",
@@ -63,7 +66,8 @@ function Player:new(x, y)
                 icon = "⚡",
                 cooldown = aCfg.powerShot.cooldown,
                 currentCooldown = 0,
-                unlocked = true,
+                unlocked = false,  -- Level 0 choice OR auto-unlock at Level 3
+                unlockLevel = 0,
             },
             arrow_volley = {
                 name = "Arrow Volley",
@@ -71,7 +75,8 @@ function Player:new(x, y)
                 icon = "🏹",
                 cooldown = 8.0,
                 currentCooldown = 0,
-                unlocked = true,
+                unlocked = false,  -- Level 0 choice OR auto-unlock at Level 3
+                unlockLevel = 0,
             },
             frenzy = {
                 name = "Frenzy",
@@ -79,7 +84,8 @@ function Player:new(x, y)
                 icon = "🔥",
                 cooldown = 15.0,
                 currentCooldown = 0,
-                unlocked = true,
+                unlocked = false,  -- Auto-unlock at Level 6 (ultimate)
+                unlockLevel = 6,
             },
             dash = {
                 name = "Dash",
@@ -87,7 +93,8 @@ function Player:new(x, y)
                 icon = "💨",
                 cooldown = cfg.dashCooldown,
                 currentCooldown = 0,
-                unlocked = true,
+                unlocked = false,  -- Always unlocked (utility ability)
+                unlockLevel = 0,
             },
         },
         -- Ability order for display
@@ -96,6 +103,14 @@ function Player:new(x, y)
         -- Animation
         animator = nil,
         facingDirection = "down",  -- down, right, up, left
+        
+        -- Status Component
+        statusComponent = StatusComponent:new(),
+        
+        -- Upgrade tracking
+        ownedUpgrades = {},
+        procs = {},
+        weaponMods = {},
         
         -- Frenzy VFX
         isFrenzyActive = false,
@@ -111,7 +126,21 @@ function Player:new(x, y)
     return player
 end
 
-function Player:update(dt)
+function Player:update(dt, particles)
+    -- Update status component
+    if self.statusComponent then
+        self.statusComponent:update(dt, self)
+    end
+    
+    -- Spawn Frenzy mist particles when active and moving
+    if self.isFrenzyActive and particles then
+        self.frenzyMistTimer = (self.frenzyMistTimer or 0) + dt
+        if self.frenzyMistTimer >= 0.05 then  -- Spawn every 0.05 seconds
+            particles:createFrenzyMist(self.x, self.y)
+            self.frenzyMistTimer = 0
+        end
+    end
+    
     -- Update invincibility
     if self.invincibleTime > 0 then
         self.invincibleTime = self.invincibleTime - dt
@@ -231,6 +260,11 @@ function Player:takeDamage(amount)
         self.health = self.health - amount
         self.invincibleTime = self.invincibleDuration
         
+        -- Break buffs that break on hit taken
+        if self.statusComponent then
+            self.statusComponent:checkBreakConditions("hit_taken")
+        end
+        
         if self.health <= 0 then
             self.health = 0
             return true -- Player died
@@ -246,23 +280,29 @@ function Player:draw()
     -- Draw Frenzy glow aura BEFORE the player sprite (additive blending)
     if self.isFrenzyActive then
         local time = love.timer.getTime()
-        local pulse = 0.6 + math.sin(time * 5) * 0.4  -- Fast pulsing
-        local outerPulse = 0.4 + math.sin(time * 3) * 0.3
+        local slowPulse = 0.5 + math.sin(time * 2) * 0.5
         
         love.graphics.setBlendMode("add")
         
-        -- Outer glow (golden/fiery)
-        love.graphics.setColor(1.0, 0.6, 0.1, outerPulse * 0.3)
-        love.graphics.circle("fill", self.x, drawY, self.size + 20)
+        -- Ground glow (beneath player)
+        love.graphics.setColor(1.0, 0.5, 0.1, slowPulse * 0.4)
+        love.graphics.circle("fill", self.x, self.y + 5, self.size + 15)
         
-        -- Middle glow
-        love.graphics.setColor(1.0, 0.7, 0.2, pulse * 0.5)
-        love.graphics.circle("fill", self.x, drawY, self.size + 12)
+        -- Expanding aura rings (multiple) - keep these
+        for i = 1, 3 do
+            local ringPhase = (time * 2 + i * 0.5) % 2
+            local ringRadius = self.size + 10 + (ringPhase * 25)
+            local ringAlpha = (1 - ringPhase / 2) * 0.4
+            
+            love.graphics.setColor(1.0, 0.6, 0.1, ringAlpha)
+            love.graphics.setLineWidth(3)
+            love.graphics.circle("line", self.x, drawY, ringRadius)
+        end
         
-        -- Inner glow (bright)
-        love.graphics.setColor(1.0, 0.9, 0.4, pulse * 0.7)
-        love.graphics.circle("fill", self.x, drawY, self.size + 6)
+        -- Removed: Filled circle glow layers that clashed with mist particles
+        -- The mist particles and expanding rings provide enough visual feedback
         
+        love.graphics.setLineWidth(1)
         love.graphics.setBlendMode("alpha")
     end
     
@@ -360,7 +400,16 @@ function Player:draw()
         )
     end
     
+    --[[ Health bar moved to UI layer (ability_hud.lua)
     -- Draw health bar above player (stylized)
+    -- #region agent log
+    local logfile = io.open("c:\\Users\\steven\\Desktop\\Cursor\\Shooter\\.cursor\\debug.log", "a")
+    if logfile then
+        logfile:write(string.format('{"sessionId":"debug-session","runId":"spawn-debug","hypothesisId":"H5","location":"player.lua:draw","message":"Player health bar","data":{"barY":%d,"worldSpace":true},"timestamp":%d}\n', drawY - self.size - 18, os.time() * 1000))
+        logfile:close()
+    end
+    -- #endregion
+    
     local barWidth = 50
     local barHeight = 8
     local barX = self.x - barWidth / 2
@@ -400,6 +449,9 @@ function Player:draw()
     love.graphics.setLineWidth(1.5)
     love.graphics.rectangle("line", barX, barY, barWidth, barHeight, 2, 2)
     love.graphics.setLineWidth(1)
+    ]]
+    
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 function Player:triggerBowRecoil()
@@ -434,10 +486,24 @@ function Player:getBowAngle()
     return self.bowAngle
 end
 
-function Player:useAbility(abilityId)
+function Player:useAbility(abilityId, playerStats)
     local ability = self.abilities[abilityId]
     if ability and ability.unlocked and ability.currentCooldown <= 0 then
-        ability.currentCooldown = ability.cooldown
+        -- Calculate effective cooldown with mods
+        local baseCooldown = ability.cooldown
+        local effectiveCooldown = baseCooldown
+        
+        if playerStats then
+            -- Apply cooldown_add (additive, reduces cooldown)
+            local cdAdd = playerStats:getAbilityModValue(abilityId, "cooldown_add", 0)
+            -- Apply cooldown_mul (multiplicative)
+            local cdMul = playerStats:getAbilityModValue(abilityId, "cooldown_mul", 1.0)
+            effectiveCooldown = (baseCooldown + cdAdd) * cdMul
+            -- Ensure minimum cooldown
+            effectiveCooldown = math.max(0.5, effectiveCooldown)
+        end
+        
+        ability.currentCooldown = effectiveCooldown
         return true
     end
     return false
@@ -448,7 +514,7 @@ function Player:isAbilityReady(abilityId)
     return ability and ability.unlocked and ability.currentCooldown <= 0
 end
 
-function Player:getAbilityCooldown(abilityId)
+function Player:getAbilityCooldown(abilityId, playerStats)
     local ability = self.abilities[abilityId]
     if ability then
         return ability.currentCooldown, ability.cooldown
@@ -457,4 +523,32 @@ function Player:getAbilityCooldown(abilityId)
 end
 
 function Player:setDashCooldown(cooldown)
-    if self.abili
+    if self.abilities.dash then
+        self.abilities.dash.currentCooldown = cooldown
+    end
+end
+
+function Player:applyRoot(duration)
+    -- Root the player (prevent movement for duration)
+    self.isRooted = true
+    self.rootDuration = duration
+    self.rootedAt = love.timer.getTime()
+end
+
+function Player:isDead()
+    return self.health <= 0
+end
+
+-- Trigger attack animation when shooting
+function Player:playAttackAnimation(onComplete)
+    if self.animator then
+        self.animator:attack(onComplete)
+    end
+end
+
+-- Check if currently playing attack animation
+function Player:isAttacking()
+    return self.animator and self.animator:isAttackPlaying()
+end
+
+return Player

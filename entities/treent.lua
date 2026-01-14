@@ -36,12 +36,19 @@ function Treent:new(x, y)
 
     rootedTime = 0,
     rootedDamageTakenMul = 1.0,
+    
+    -- Vine attack properties
+    vineAttackCooldown = 8 + math.random() * 4,  -- 8-12 seconds
+    vineAttackTimer = 5,  -- Start with 5 seconds until first vine
+    isVineCasting = false,
+    vineCastTime = 0,
+    vineCastDuration = 0.5,  -- 0.5s telegraph
   }
   setmetatable(t, Treent)
   return t
 end
 
-function Treent:update(dt, playerX, playerY)
+function Treent:update(dt, playerX, playerY, onVineAttack)
   if not self.isAlive then return end
 
   if self.flashTime > 0 then
@@ -50,6 +57,33 @@ function Treent:update(dt, playerX, playerY)
 
   self.knockbackX = self.knockbackX * (1 - self.knockbackDecay * dt)
   self.knockbackY = self.knockbackY * (1 - self.knockbackDecay * dt)
+  
+  -- Update vine attack timer
+  if not self.isVineCasting then
+    self.vineAttackTimer = self.vineAttackTimer - dt
+    if self.vineAttackTimer <= 0 then
+      -- Start vine cast
+      self.isVineCasting = true
+      self.vineCastTime = 0
+    end
+  end
+  
+  -- Handle vine casting
+  if self.isVineCasting then
+    self.vineCastTime = self.vineCastTime + dt
+    if self.vineCastTime >= self.vineCastDuration then
+      -- Cast complete, spawn vine
+      if onVineAttack then
+        onVineAttack(self.x, self.y, playerX, playerY)
+      end
+      self.isVineCasting = false
+      self.vineAttackTimer = self.vineAttackCooldown
+    end
+    -- Don't move while casting
+    self.x = self.x + (self.knockbackX * dt)
+    self.y = self.y + (self.knockbackY * dt)
+    return
+  end
 
   if self.rootedTime and self.rootedTime > 0 then
     self.rootedTime = math.max(0, self.rootedTime - dt)
@@ -110,6 +144,18 @@ end
 
 function Treent:draw()
   if not self.isAlive then return end
+  
+  -- Draw vine casting telegraph
+  if self.isVineCasting then
+    local progress = self.vineCastTime / self.vineCastDuration
+    local alpha = 0.3 + (progress * 0.4)
+    love.graphics.setColor(0.6, 0.3, 0.1, alpha)
+    love.graphics.circle("fill", self.x, self.y, self.size + 6)
+    love.graphics.setColor(0.8, 0.4, 0.2, alpha * 1.5)
+    love.graphics.setLineWidth(3)
+    love.graphics.circle("line", self.x, self.y, self.size + 8)
+    love.graphics.setLineWidth(1)
+  end
 
   if Treent.image then
     local img = Treent.image
