@@ -10,7 +10,9 @@ local Healer = require("entities.healer")
 local Imp = require("entities.imp")
 local Slime = require("entities.slime")
 local Bat = require("entities.bat")
+local Wolf = require("entities.wolf")
 local Skeleton = require("entities.skeleton")
+local DruidTreent = require("entities.druid_treent")
 local BarkProjectile = require("entities.bark_projectile")
 local VineLane = require("entities.vine_lane")
 local Arrow = require("entities.arrow")
@@ -64,7 +66,9 @@ function GameScene:new(gameState)
         imps = {},
         slimes = {},
         bats = {},
+        wolves = {},
         skeletons = {},
+        druids = {},
         barkProjectiles = {},
         vineLanes = {},
         arrowVolleys = {},
@@ -265,8 +269,10 @@ function GameScene:spawnEnemies()
     local numImps = 1 + math.floor(floor / 3)  -- Fast swarmers
     local numSlimes = math.floor(floor / 4)  -- Tanky
     local numBats = math.floor(floor / 4)  -- Erratic flyers
+    local numWolves = 3 + math.floor(floor / 2)  -- Lunging chargers (WAY MORE - dodge heavy)
     local numSkeletons = math.floor(floor / 3)  -- Medium threat
     local numHealers = math.max(0, math.floor((floor - 2) / 2))  -- Start floor 3, 1 per 2 floors
+    local numDruids = math.floor(floor / 6)  -- MCM: Healer support
     
     self.enemies = {}
     self.lungers = {}
@@ -277,7 +283,9 @@ function GameScene:spawnEnemies()
     self.imps = {}
     self.slimes = {}
     self.bats = {}
+    self.wolves = {}
     self.skeletons = {}
+    self.druids = {}
     self.barkProjectiles = {}
     self.vineLanes = {}
     
@@ -396,6 +404,20 @@ function GameScene:spawnEnemies()
         table.insert(self.bats, bat)
     end
 
+    -- Spawn Wolves (lunging chargers)
+    for i = 1, numWolves do
+        local angle = math.random() * math.pi * 2
+        local distance = math.random(300, 450)
+        local x = self.player.x + math.cos(angle) * distance
+        local y = self.player.y + math.sin(angle) * distance
+
+        local wolf = Wolf:new(x, y)
+        wolf.health = wolf.health * self.difficultyMult.enemyHealthMult * floorScale
+        wolf.maxHealth = wolf.health
+
+        table.insert(self.wolves, wolf)
+    end
+
     -- Spawn Skeletons (steady threat)
     for i = 1, numSkeletons do
         local angle = math.random() * math.pi * 2
@@ -416,12 +438,26 @@ function GameScene:spawnEnemies()
         local distance = math.random(350, 500)  -- Spawn further back
         local x = self.player.x + math.cos(angle) * distance
         local y = self.player.y + math.sin(angle) * distance
-        
+
         local healer = Healer:new(x, y)
         healer.health = healer.health * self.difficultyMult.enemyHealthMult * floorScale
         healer.maxHealth = healer.health
-        
+
         table.insert(self.healers, healer)
+    end
+
+    -- Spawn Druid Treents (MCM - healing support)
+    for i = 1, numDruids do
+        local angle = math.random() * math.pi * 2
+        local distance = math.random(350, 500)  -- Spawn further back like healers
+        local x = self.player.x + math.cos(angle) * distance
+        local y = self.player.y + math.sin(angle) * distance
+
+        local druid = DruidTreent:new(x, y)
+        druid.health = druid.health * self.difficultyMult.enemyHealthMult * floorScale
+        druid.maxHealth = druid.health
+
+        table.insert(self.druids, druid)
     end
 end
 
@@ -491,6 +527,18 @@ function GameScene:update(dt)
     if self.damageNumbers then
         self.damageNumbers:update(dt)
     end
+
+    -- Spawn ambient leaf particles occasionally (forest atmosphere)
+    if math.random() < 0.05 then  -- 5% chance per frame
+        local playerX = self.player.x
+        local playerY = self.player.y
+        local screenWidth = love.graphics.getWidth()
+        local screenHeight = love.graphics.getHeight()
+        -- Spawn near edges of screen
+        local spawnX = playerX + (math.random() - 0.5) * screenWidth
+        local spawnY = playerY - screenHeight / 2 + math.random() * 100
+        self.particles:createAmbientLeaves(spawnX, spawnY)
+    end
     
     -- Update new systems
     if self.enemySpawner then
@@ -504,8 +552,19 @@ function GameScene:update(dt)
     end
     if self.bossPortal then
         self.bossPortal:update(dt, self.player)
+
+        -- Auto-teleport when player walks over portal (collision-based)
+        local dx = self.player.x - self.bossPortal.x
+        local dy = self.player.y - self.bossPortal.y
+        local dist = math.sqrt(dx * dx + dy * dy)
+        if dist < self.bossPortal.radius and self.bossPortal.spawn_animation >= 0.9 then
+            if self.bossPortal:activate() then
+                -- Transition to boss fight
+                self.gameState:enterBossFight()
+            end
+        end
     end
-    
+
     -- Update run time
     self.timeAlive = self.timeAlive + dt
     
@@ -705,6 +764,47 @@ function GameScene:update(dt)
                 end
             end
         end
+
+        -- Check Wolves (lunging chargers)
+        for _, wolf in ipairs(self.wolves) do
+            if wolf.isAlive then
+                local wx, wy = wolf:getPosition()
+                local dx = wx - playerX
+                local dy = wy - playerY
+                local distance = math.sqrt(dx * dx + dy * dy)
+                if distance < nearestDistance then
+                    nearestEnemy = wolf
+                    nearestDistance = distance
+                end
+            end
+        end
+
+        -- Check Healers
+        for _, healer in ipairs(self.healers) do
+            if healer.isAlive then
+                local hx, hy = healer:getPosition()
+                local dx = hx - playerX
+                local dy = hy - playerY
+                local distance = math.sqrt(dx * dx + dy * dy)
+                if distance < nearestDistance then
+                    nearestEnemy = healer
+                    nearestDistance = distance
+                end
+            end
+        end
+
+        -- Check Druids
+        for _, druid in ipairs(self.druids) do
+            if druid.isAlive then
+                local dx2 = druid.x - playerX
+                local dy2 = druid.y - playerY
+                local distance = math.sqrt(dx2 * dx2 + dy2 * dy2)
+                if distance < nearestDistance then
+                    nearestEnemy = druid
+                    nearestDistance = distance
+                end
+            end
+        end
         
         -- Aim at nearest enemy for bow presentation + primary targeting
         if nearestEnemy then
@@ -716,7 +816,33 @@ function GameScene:update(dt)
                 local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult
                 local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
                 local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
-                local arrow = Arrow:new(sx, sy, ex, ey, { damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140 })
+
+                -- Check for on_primary_hit procs (e.g., Barbed Shafts bleed)
+                local statusToApply = nil
+                local procs = self.playerStats and self.playerStats.weaponMods and self.playerStats.weaponMods.procs
+                if procs then
+                    for _, proc in ipairs(procs) do
+                        if proc.trigger == "on_primary_hit" and proc.apply and proc.apply.kind == "status_apply" then
+                            -- Check chance (default 1.0 = 100%)
+                            local chance = proc.chance or 1.0
+                            if math.random() <= chance then
+                                statusToApply = {
+                                    status = proc.apply.status,
+                                    duration = proc.apply.duration
+                                }
+                                break  -- Only apply first matching proc
+                            end
+                        end
+                    end
+                end
+
+                local arrow = Arrow:new(sx, sy, ex, ey, {
+                    damage = baseDmg,
+                    pierce = pierce,
+                    kind = "primary",
+                    knockback = 140,
+                    appliesStatus = statusToApply  -- NEW: Pass status effect to arrow
+                })
                 table.insert(self.arrows, arrow)
                 self.fireCooldown = self.fireRate
                 if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
@@ -811,8 +937,14 @@ function GameScene:update(dt)
             for _, bat in ipairs(self.bats) do
                 if bat.isAlive then considerTarget(bat) end
             end
+            for _, wolf in ipairs(self.wolves) do
+                if wolf.isAlive then considerTarget(wolf) end
+            end
             for _, skel in ipairs(self.skeletons) do
                 if skel.isAlive then considerTarget(skel) end
+            end
+            for _, druid in ipairs(self.druids) do
+                if druid.isAlive then considerTarget(druid) end
             end
             if best then
                 self.player:useAbility("arrow_volley", self.playerStats)
@@ -953,14 +1085,14 @@ function GameScene:update(dt)
                         end
                         local died = enemy:takeDamage(dmg, ax, ay, arrow.knockback)
                         
-                        -- Apply status effect if applicable (e.g., shattered_armor)
+                        -- Apply status effect if applicable (e.g., bleed, shattered_armor)
                         if arrow.appliesStatus and enemy.statusComponent then
                             local statusData = arrow.appliesStatus
                             enemy.statusComponent:applyStatus(
                                 statusData.status,
                                 1,
                                 statusData.duration,
-                                statusData.status_effect
+                                { damage = arrow.damage }  -- Pass damage for DoT calculations
                             )
                         end
                         
@@ -1050,7 +1182,7 @@ function GameScene:update(dt)
                                     statusData.status,
                                     1,
                                     statusData.duration,
-                                    statusData.status_effect
+                                    { damage = arrow.damage }
                                 )
                             end
                             
@@ -1132,7 +1264,7 @@ function GameScene:update(dt)
                                     statusData.status,
                                     1,
                                     statusData.duration,
-                                    statusData.status_effect
+                                    { damage = arrow.damage }
                                 )
                             end
 
@@ -1205,7 +1337,7 @@ function GameScene:update(dt)
                                     statusData.status,
                                     1,
                                     statusData.duration,
-                                    statusData.status_effect
+                                    { damage = arrow.damage }
                                 )
                             end
 
@@ -1284,7 +1416,7 @@ function GameScene:update(dt)
                                     statusData.status,
                                     1,
                                     statusData.duration,
-                                    statusData.status_effect
+                                    { damage = arrow.damage }
                                 )
                             end
 
@@ -1363,7 +1495,7 @@ function GameScene:update(dt)
                                     statusData.status,
                                     1,
                                     statusData.duration,
-                                    statusData.status_effect
+                                    { damage = arrow.damage }
                                 )
                             end
 
@@ -1435,7 +1567,7 @@ function GameScene:update(dt)
                                     statusData.status,
                                     1,
                                     statusData.duration,
-                                    statusData.status_effect
+                                    { damage = arrow.damage }
                                 )
                             end
 
@@ -1507,7 +1639,7 @@ function GameScene:update(dt)
                                     statusData.status,
                                     1,
                                     statusData.duration,
-                                    statusData.status_effect
+                                    { damage = arrow.damage }
                                 )
                             end
 
@@ -1539,6 +1671,79 @@ function GameScene:update(dt)
                 end
             end
 
+            -- Check Wolves
+            if not hitEnemy then
+                for _, wolf in ipairs(self.wolves) do
+                    if wolf.isAlive then
+                        local wx, wy = wolf.x, wolf.y
+                        local dx = ax - wx
+                        local dy = ay - wy
+                        local distance = math.sqrt(dx * dx + dy * dy)
+
+                        if distance < wolf:getSize() + arrow:getSize() and arrow:canHit(wolf) then
+                            arrow:markHit(wolf)
+                            local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
+
+                            -- Apply elite/MCM damage bonus if applicable
+                            if arrow.eliteMcmDamageMul and (wolf.isElite or wolf.isMCM) then
+                                dmg = dmg * arrow.eliteMcmDamageMul
+                            end
+
+                            -- Juice effects based on hit type
+                            if arrow.kind == "power_shot" then
+                                JuiceManager.impact(wolf, 0.05, 10, 0.15, 0.1)
+                            elseif isCrit then
+                                JuiceManager.impact(wolf, 0.02, 4, 0.08, 0.06)
+                            else
+                                JuiceManager.flash(wolf, 0.04)
+                            end
+
+                            self.particles:createHitSpark(wx, wy, {1, 1, 0.6})
+                            if self.damageNumbers then
+                                self.damageNumbers:add(wx, wy - wolf:getSize(), dmg, { isCrit = isCrit })
+                            end
+                            local died = wolf:takeDamage(dmg, ax, ay, arrow.knockback)
+
+                            -- Apply status effect if applicable
+                            if arrow.appliesStatus and wolf.statusComponent then
+                                local statusData = arrow.appliesStatus
+                                wolf.statusComponent:applyStatus(
+                                    statusData.status,
+                                    1,
+                                    statusData.duration,
+                                    { damage = arrow.damage }
+                                )
+                            end
+
+                            -- Trigger upgrade procs
+                            if arrow.kind == "primary" then
+                                UpgradeApplication.checkProcs(self.player, "on_primary_hit", { target = wolf, damage = dmg, is_crit = isCrit })
+                                if isCrit then
+                                    UpgradeApplication.checkProcs(self.player, "on_crit_hit", { target = wolf, damage = dmg, is_crit = isCrit })
+                                end
+                            end
+
+                            if died then
+                                self.particles:createExplosion(wx, wy, {0.7, 0.7, 0.8})
+                                JuiceManager.shake(5, 0.14)
+                                local xpValue = 12 + math.random(0, 4)
+                                self.xpSystem:spawnOrb(wx, wy, xpValue)
+                                self:onEnemyKill()
+                            else
+                                self.screenShake:add(2, 0.10)
+                            end
+
+                            if arrow:consumePierce() then
+                                hitEnemy = false
+                            else
+                                hitEnemy = true
+                            end
+                            if hitEnemy then break end
+                        end
+                    end
+                end
+            end
+
             -- Check Skeletons
             if not hitEnemy then
                 for _, skel in ipairs(self.skeletons) do
@@ -1551,12 +1756,12 @@ function GameScene:update(dt)
                         if distance < skel:getSize() + arrow:getSize() and arrow:canHit(skel) then
                             arrow:markHit(skel)
                             local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
-                            
+
                             -- Apply elite/MCM damage bonus if applicable
                             if arrow.eliteMcmDamageMul and (skel.isElite or skel.isMCM) then
                                 dmg = dmg * arrow.eliteMcmDamageMul
                             end
-                            
+
                             -- Juice effects based on hit type
                             if arrow.kind == "power_shot" then
                                 JuiceManager.impact(skel, 0.05, 10, 0.15, 0.1)
@@ -1579,7 +1784,7 @@ function GameScene:update(dt)
                                     statusData.status,
                                     1,
                                     statusData.duration,
-                                    statusData.status_effect
+                                    { damage = arrow.damage }
                                 )
                             end
 
@@ -1623,12 +1828,12 @@ function GameScene:update(dt)
                         if distance < healer:getSize() + arrow:getSize() and arrow:canHit(healer) then
                             arrow:markHit(healer)
                             local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
-                            
+
                             -- Apply elite/MCM damage bonus if applicable
                             if arrow.eliteMcmDamageMul and (healer.isElite or healer.isMCM) then
                                 dmg = dmg * arrow.eliteMcmDamageMul
                             end
-                            
+
                             if arrow.kind == "power_shot" then
                                 JuiceManager.impact(healer, 0.05, 10, 0.15, 0.1)
                             elseif isCrit then
@@ -1636,13 +1841,13 @@ function GameScene:update(dt)
                             else
                                 JuiceManager.flash(healer, 0.04)
                             end
-                            
+
                             self.particles:createHitSpark(hx, hy, {0.5, 1, 0.7})
                             if self.damageNumbers then
                                 self.damageNumbers:add(hx, hy - healer:getSize(), dmg, { isCrit = isCrit })
                             end
                             local died = healer:takeDamage(dmg, ax, ay, arrow.knockback)
-                            
+
                             -- Apply status effect if applicable
                             if arrow.appliesStatus and healer.statusComponent then
                                 local statusData = arrow.appliesStatus
@@ -1650,7 +1855,7 @@ function GameScene:update(dt)
                                     statusData.status,
                                     1,
                                     statusData.duration,
-                                    statusData.status_effect
+                                    { damage = arrow.damage }
                                 )
                             end
 
@@ -1680,7 +1885,77 @@ function GameScene:update(dt)
                     end
                 end
             end
-            
+
+            -- Check Druid Treents
+            if not hitEnemy then
+                for _, druid in ipairs(self.druids) do
+                    if druid.isAlive then
+                        local dx2 = ax - druid.x
+                        local dy2 = ay - druid.y
+                        local distance = math.sqrt(dx2 * dx2 + dy2 * dy2)
+
+                        if distance < druid:getSize() + arrow:getSize() and arrow:canHit(druid) then
+                            arrow:markHit(druid)
+                            local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
+
+                            -- Apply elite/MCM damage bonus if applicable
+                            if arrow.eliteMcmDamageMul and (druid.isElite or druid.isMCM) then
+                                dmg = dmg * arrow.eliteMcmDamageMul
+                            end
+
+                            if arrow.kind == "power_shot" then
+                                JuiceManager.impact(druid, 0.05, 10, 0.15, 0.1)
+                            elseif isCrit then
+                                JuiceManager.impact(druid, 0.02, 4, 0.08, 0.06)
+                            else
+                                JuiceManager.flash(druid, 0.04)
+                            end
+
+                            self.particles:createHitSpark(druid.x, druid.y, {0.4, 0.9, 0.5})
+                            if self.damageNumbers then
+                                self.damageNumbers:add(druid.x, druid.y - druid:getSize(), dmg, { isCrit = isCrit })
+                            end
+                            local died = druid:takeDamage(dmg, ax, ay, arrow.knockback)
+
+                            -- Apply status effect if applicable
+                            if arrow.appliesStatus and druid.statusComponent then
+                                local statusData = arrow.appliesStatus
+                                druid.statusComponent:applyStatus(
+                                    statusData.status,
+                                    1,
+                                    statusData.duration,
+                                    { damage = arrow.damage }
+                                )
+                            end
+
+                            if arrow.kind == "primary" then
+                                UpgradeApplication.checkProcs(self.player, "on_primary_hit", { target = druid, damage = dmg, is_crit = isCrit })
+                                if isCrit then
+                                    UpgradeApplication.checkProcs(self.player, "on_crit_hit", { target = druid, damage = dmg, is_crit = isCrit })
+                                end
+                            end
+
+                            if died then
+                                self.particles:createExplosion(druid.x, druid.y, {0.4, 0.75, 0.3})
+                                JuiceManager.shake(5, 0.14)
+                                local xpValue = 18 + math.random(0, 6)
+                                self.xpSystem:spawnOrb(druid.x, druid.y, xpValue)
+                                self:onEnemyKill()
+                            else
+                                self.screenShake:add(2, 0.1)
+                            end
+
+                            if arrow:consumePierce() then
+                                hitEnemy = false
+                            else
+                                hitEnemy = true
+                            end
+                            if hitEnemy then break end
+                        end
+                    end
+                end
+            end
+
             if hitEnemy or arrow:isExpired() then
                 table.remove(self.arrows, i)
             end
@@ -1692,6 +1967,12 @@ function GameScene:update(dt)
             for _, e in ipairs(self.enemies) do if e.isAlive then inCombat = true break end end
             if not inCombat then
                 for _, e in ipairs(self.lungers) do if e.isAlive then inCombat = true break end end
+            end
+            if not inCombat then
+                for _, e in ipairs(self.wolves) do if e.isAlive then inCombat = true break end end
+            end
+            if not inCombat then
+                for _, e in ipairs(self.druids) do if e.isAlive then inCombat = true break end end
             end
             if inCombat then
                 local chargeGainMul = self.playerStats:getAbilityModValue("frenzy", "charge_gain_mul", 1.0)
@@ -1718,6 +1999,29 @@ function GameScene:update(dt)
         -- Update enemies
         for i, enemy in ipairs(self.enemies) do
             if enemy.isAlive then
+                -- Update status component with bleed damage callback
+                if enemy.statusComponent then
+                    enemy.statusComponent:update(dt, enemy, function(owner, damage, statusName)
+                        if statusName == "bleed" then
+                            local ex, ey = owner:getPosition()
+
+                            -- Spawn red damage number
+                            if self.damageNumbers then
+                                self.damageNumbers:add(ex, ey - owner:getSize(), damage, {
+                                    isCrit = false,
+                                    damageType = "bleed",
+                                    vy = -20,  -- Slower rise for DOT
+                                })
+                            end
+
+                            -- Spawn bleed particle droplets
+                            if self.particles then
+                                self.particles:createBleedEffect(ex, ey)
+                            end
+                        end
+                    end)
+                end
+
                 enemy:update(dt, playerX, playerY)
                 
                 -- Check collision with player
@@ -1747,6 +2051,29 @@ function GameScene:update(dt)
         -- Update lungers
         for i, lunger in ipairs(self.lungers) do
             if lunger.isAlive then
+                -- Update status component with bleed damage callback
+                if lunger.statusComponent then
+                    lunger.statusComponent:update(dt, lunger, function(owner, damage, statusName)
+                        if statusName == "bleed" then
+                            local ex, ey = owner:getPosition()
+
+                            -- Spawn red damage number
+                            if self.damageNumbers then
+                                self.damageNumbers:add(ex, ey - owner:getSize(), damage, {
+                                    isCrit = false,
+                                    damageType = "bleed",
+                                    vy = -20,
+                                })
+                            end
+
+                            -- Spawn bleed particle droplets
+                            if self.particles then
+                                self.particles:createBleedEffect(ex, ey)
+                            end
+                        end
+                    end)
+                end
+
                 lunger:update(dt, playerX, playerY)
                 
                 if not self.isDashing then
@@ -1788,7 +2115,26 @@ function GameScene:update(dt)
                     local vineLane = VineLane:new(playerY, 1, 300, 18)  -- y, laneIndex, speed, damage
                     table.insert(self.vineLanes, vineLane)
                 end
-                
+
+                -- Update status component with bleed damage callback
+                if treent.statusComponent then
+                    treent.statusComponent:update(dt, treent, function(owner, damage, statusName)
+                        if statusName == "bleed" and self.damageNumbers then
+                            local ex, ey = owner:getPosition()
+                            self.damageNumbers:add(ex, ey - owner:getSize(), damage, {
+                                isCrit = false,
+                                damageType = "bleed",
+                                vy = -20,
+                            })
+
+                            -- Spawn bleed particle droplets
+                            if self.particles then
+                                self.particles:createBleedEffect(ex, ey)
+                            end
+                        end
+                    end)
+                end
+
                 treent:update(dt, playerX, playerY, onVineAttack)
 
                 if not self.isDashing then
@@ -1820,6 +2166,26 @@ function GameScene:update(dt)
                     local bark = BarkProjectile:new(sx, sy, tx, ty)
                     table.insert(self.barkProjectiles, bark)
                 end
+
+                -- Update status component with bleed damage callback
+                if st.statusComponent then
+                    st.statusComponent:update(dt, st, function(owner, damage, statusName)
+                        if statusName == "bleed" and self.damageNumbers then
+                            local ex, ey = owner:getPosition()
+                            self.damageNumbers:add(ex, ey - owner:getSize(), damage, {
+                                isCrit = false,
+                                damageType = "bleed",
+                                vy = -20,
+                            })
+
+                            -- Spawn bleed particle droplets
+                            if self.particles then
+                                self.particles:createBleedEffect(ex, ey)
+                            end
+                        end
+                    end)
+                end
+
                 st:update(dt, playerX, playerY, onShoot)
 
                 if not self.isDashing then
@@ -1870,6 +2236,26 @@ function GameScene:update(dt)
                         end
                     end
                 end
+
+                -- Update status component with bleed damage callback
+                if wiz.statusComponent then
+                    wiz.statusComponent:update(dt, wiz, function(owner, damage, statusName)
+                        if statusName == "bleed" and self.damageNumbers then
+                            local ex, ey = owner:getPosition()
+                            self.damageNumbers:add(ex, ey - owner:getSize(), damage, {
+                                isCrit = false,
+                                damageType = "bleed",
+                                vy = -20,
+                            })
+
+                            -- Spawn bleed particle droplets
+                            if self.particles then
+                                self.particles:createBleedEffect(ex, ey)
+                            end
+                        end
+                    end)
+                end
+
                 wiz:update(dt, playerX, playerY, onConeAttack)
 
                 if not self.isDashing then
@@ -1897,6 +2283,25 @@ function GameScene:update(dt)
         -- Update Imps
         for _, imp in ipairs(self.imps) do
             if imp.isAlive then
+                -- Update status component with bleed damage callback
+                if imp.statusComponent then
+                    imp.statusComponent:update(dt, imp, function(owner, damage, statusName)
+                        if statusName == "bleed" and self.damageNumbers then
+                            local ex, ey = owner:getPosition()
+                            self.damageNumbers:add(ex, ey - owner:getSize(), damage, {
+                                isCrit = false,
+                                damageType = "bleed",
+                                vy = -20,
+                            })
+
+                            -- Spawn bleed particle droplets
+                            if self.particles then
+                                self.particles:createBleedEffect(ex, ey)
+                            end
+                        end
+                    end)
+                end
+
                 imp:update(dt, playerX, playerY)
 
                 if not self.isDashing then
@@ -1924,6 +2329,25 @@ function GameScene:update(dt)
         -- Update Slimes
         for _, slime in ipairs(self.slimes) do
             if slime.isAlive then
+                -- Update status component with bleed damage callback
+                if slime.statusComponent then
+                    slime.statusComponent:update(dt, slime, function(owner, damage, statusName)
+                        if statusName == "bleed" and self.damageNumbers then
+                            local ex, ey = owner:getPosition()
+                            self.damageNumbers:add(ex, ey - owner:getSize(), damage, {
+                                isCrit = false,
+                                damageType = "bleed",
+                                vy = -20,
+                            })
+
+                            -- Spawn bleed particle droplets
+                            if self.particles then
+                                self.particles:createBleedEffect(ex, ey)
+                            end
+                        end
+                    end)
+                end
+
                 slime:update(dt, playerX, playerY)
 
                 if not self.isDashing then
@@ -1951,6 +2375,25 @@ function GameScene:update(dt)
         -- Update Bats
         for _, bat in ipairs(self.bats) do
             if bat.isAlive then
+                -- Update status component with bleed damage callback
+                if bat.statusComponent then
+                    bat.statusComponent:update(dt, bat, function(owner, damage, statusName)
+                        if statusName == "bleed" and self.damageNumbers then
+                            local ex, ey = owner:getPosition()
+                            self.damageNumbers:add(ex, ey - owner:getSize(), damage, {
+                                isCrit = false,
+                                damageType = "bleed",
+                                vy = -20,
+                            })
+
+                            -- Spawn bleed particle droplets
+                            if self.particles then
+                                self.particles:createBleedEffect(ex, ey)
+                            end
+                        end
+                    end)
+                end
+
                 bat:update(dt, playerX, playerY)
 
                 if not self.isDashing then
@@ -1978,6 +2421,25 @@ function GameScene:update(dt)
         -- Update Skeletons
         for _, skel in ipairs(self.skeletons) do
             if skel.isAlive then
+                -- Update status component with bleed damage callback
+                if skel.statusComponent then
+                    skel.statusComponent:update(dt, skel, function(owner, damage, statusName)
+                        if statusName == "bleed" and self.damageNumbers then
+                            local ex, ey = owner:getPosition()
+                            self.damageNumbers:add(ex, ey - owner:getSize(), damage, {
+                                isCrit = false,
+                                damageType = "bleed",
+                                vy = -20,
+                            })
+
+                            -- Spawn bleed particle droplets
+                            if self.particles then
+                                self.particles:createBleedEffect(ex, ey)
+                            end
+                        end
+                    end)
+                end
+
                 skel:update(dt, playerX, playerY)
 
                 if not self.isDashing then
@@ -1996,6 +2458,59 @@ function GameScene:update(dt)
                         end
                         if not self.player:isInvincible() then
                             self.screenShake:add(4, 0.15)
+                        end
+                    end
+                end
+            end
+        end
+
+        -- Update Wolves (lunging chargers)
+        for _, wolf in ipairs(self.wolves) do
+            if wolf.isAlive then
+                -- Update status component with bleed damage callback
+                if wolf.statusComponent then
+                    wolf.statusComponent:update(dt, wolf, function(owner, damage, statusName)
+                        if statusName == "bleed" and self.damageNumbers then
+                            local ex, ey = owner:getPosition()
+                            self.damageNumbers:add(ex, ey - owner:getSize(), damage, {
+                                isCrit = false,
+                                damageType = "bleed",
+                                vy = -20,
+                            })
+
+                            -- Spawn bleed particle droplets
+                            if self.particles then
+                                self.particles:createBleedEffect(ex, ey)
+                            end
+                        end
+                    end)
+                end
+
+                wolf:update(dt, playerX, playerY)
+
+                if not self.isDashing then
+                    local wx, wy = wolf.x, wolf.y
+                    local dx = playerX - wx
+                    local dy = playerY - wy
+                    local distance = math.sqrt(dx * dx + dy * dy)
+                    if distance < self.player:getSize() + wolf:getSize() then
+                        local damage = wolf.damage * self.difficultyMult.enemyDamageMult
+                        if self.frenzyActive then damage = damage * 1.15 end
+                        local before = self.player.health
+
+                        -- Apply knockback based on wolf state
+                        local knockbackForce = wolf:getKnockbackForce()
+                        local knockbackX = (dx / distance) * knockbackForce
+                        local knockbackY = (dy / distance) * knockbackForce
+                        self.player:takeDamage(damage)
+
+                        local wasHit = self.player.health < before
+                        if wasHit and self.playerStats then
+                            self.playerStats:update(0, { wasHit = true, didRoll = false, inFrenzy = self.frenzyActive })
+                        end
+                        if not self.player:isInvincible() then
+                            local shakeAmount = wolf.state == "lunging" and 6 or 4
+                            self.screenShake:add(shakeAmount, 0.15)
                         end
                     end
                 end
@@ -2080,14 +2595,96 @@ function GameScene:update(dt)
                 for _, e in ipairs(self.imps) do table.insert(allEnemies, e) end
                 for _, e in ipairs(self.slimes) do table.insert(allEnemies, e) end
                 for _, e in ipairs(self.bats) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.wolves) do table.insert(allEnemies, e) end
                 for _, e in ipairs(self.skeletons) do table.insert(allEnemies, e) end
-                
+                for _, e in ipairs(self.druids) do table.insert(allEnemies, e) end
+
+                -- Update status component with bleed damage callback
+                if healer.statusComponent then
+                    healer.statusComponent:update(dt, healer, function(owner, damage, statusName)
+                        if statusName == "bleed" and self.damageNumbers then
+                            local ex, ey = owner:getPosition()
+                            self.damageNumbers:add(ex, ey - owner:getSize(), damage, {
+                                isCrit = false,
+                                damageType = "bleed",
+                                vy = -20,
+                            })
+
+                            -- Spawn bleed particle droplets
+                            if self.particles then
+                                self.particles:createBleedEffect(ex, ey)
+                            end
+                        end
+                    end)
+                end
+
                 healer:update(dt, playerX, playerY, allEnemies)
-                
+
                 -- Healers don't attack player (support only)
             end
         end
-        
+
+        -- Update Druid Treents (MCM - healing support)
+        for _, druid in ipairs(self.druids) do
+            if druid.isAlive then
+                -- Build list of all enemies for druid AI
+                local allEnemies = {}
+                for _, e in ipairs(self.enemies) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.lungers) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.treents) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.smallTreents) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.wizards) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.healers) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.imps) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.slimes) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.bats) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.wolves) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.skeletons) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.druids) do table.insert(allEnemies, e) end
+
+                -- Update status component with bleed damage callback
+                if druid.statusComponent then
+                    druid.statusComponent:update(dt, druid, function(owner, damage, statusName)
+                        if statusName == "bleed" and self.damageNumbers then
+                            local ex, ey = owner:getPosition()
+                            self.damageNumbers:add(ex, ey - owner:getSize(), damage, {
+                                isCrit = false,
+                                damageType = "bleed",
+                                vy = -20,
+                            })
+
+                            -- Spawn bleed particle droplets
+                            if self.particles then
+                                self.particles:createBleedEffect(ex, ey)
+                            end
+                        end
+                    end)
+                end
+
+                druid:update(dt, playerX, playerY, allEnemies)
+
+                -- Druids have contact damage
+                if not self.isDashing then
+                    local dx = playerX - druid.x
+                    local dy = playerY - druid.y
+                    local distance = math.sqrt(dx * dx + dy * dy)
+                    if distance < self.player:getSize() + druid:getSize() then
+                        local damage = druid.damage * self.difficultyMult.enemyDamageMult
+                        if self.frenzyActive then damage = damage * 1.15 end
+                        local before = self.player.health
+                        self.player:takeDamage(damage)
+                        local wasHit = self.player.health < before
+                        if wasHit and self.playerStats then
+                            self.playerStats:update(0, { wasHit = true, didRoll = false, inFrenzy = self.frenzyActive })
+                        end
+                        if not self.player:isInvincible() then
+                            self.screenShake:add(4, 0.15)
+                        end
+                    end
+                end
+            end
+        end
+
         -- Update Arrow Volleys
         for i = #self.arrowVolleys, 1, -1 do
             local volley = self.arrowVolleys[i]
@@ -2106,7 +2703,9 @@ function GameScene:update(dt)
                 for _, e in ipairs(self.imps) do table.insert(allEnemies, e) end
                 for _, e in ipairs(self.slimes) do table.insert(allEnemies, e) end
                 for _, e in ipairs(self.bats) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.wolves) do table.insert(allEnemies, e) end
                 for _, e in ipairs(self.skeletons) do table.insert(allEnemies, e) end
+                for _, e in ipairs(self.druids) do table.insert(allEnemies, e) end
                 
                 local hitEnemies = volley:getEnemiesInRadius(allEnemies)
                 for _, enemy in ipairs(hitEnemies) do
@@ -2184,6 +2783,11 @@ function GameScene:update(dt)
             end
         end
         if allDead then
+            for _, wolf in ipairs(self.wolves) do
+                if wolf.isAlive then allDead = false break end
+            end
+        end
+        if allDead then
             for _, skel in ipairs(self.skeletons) do
                 if skel.isAlive then allDead = false break end
             end
@@ -2193,7 +2797,12 @@ function GameScene:update(dt)
                 if healer.isAlive then allDead = false break end
             end
         end
-        
+        if allDead then
+            for _, druid in ipairs(self.druids) do
+                if druid.isAlive then allDead = false break end
+            end
+        end
+
         if allDead then
             self:advanceFloor()
         end
@@ -2405,6 +3014,13 @@ function GameScene:draw()
         end
     end
 
+    -- Add Wolves
+    for _, wolf in ipairs(self.wolves) do
+        if wolf.isAlive then
+            table.insert(drawables, {entity = wolf, y = wolf.y, type = "wolf"})
+        end
+    end
+
     -- Add Skeletons
     for _, skel in ipairs(self.skeletons) do
         if skel.isAlive then
@@ -2418,7 +3034,14 @@ function GameScene:draw()
             table.insert(drawables, {entity = healer, y = healer.y, type = "healer"})
         end
     end
-    
+
+    -- Add Druid Treents
+    for _, druid in ipairs(self.druids) do
+        if druid.isAlive then
+            table.insert(drawables, {entity = druid, y = druid.y, type = "druid"})
+        end
+    end
+
     -- Add player
     if self.player then
         table.insert(drawables, {entity = self.player, y = self.player.y, type = "player", isDashing = self.isDashing})
@@ -2563,8 +3186,8 @@ function GameScene:keypressed(key)
         return true
     end
 
-    -- Stats overlay (Tab)
-    if key == "tab" and self.statsOverlay then
+    -- Stats overlay (P for character Panel)
+    if key == "p" and self.statsOverlay then
         self.statsOverlay:toggle()
         return true
     end
@@ -2608,14 +3231,6 @@ function GameScene:keypressed(key)
     
     if key == "space" then
         self:startDash()
-    end
-    
-    -- Activate boss portal
-    if key == "e" and self.bossPortal and self.bossPortal:canActivate(self.player) then
-        if self.bossPortal:activate() then
-            -- Transition to boss fight
-            self.gameState:enterBossFight()
-        end
     end
 end
 

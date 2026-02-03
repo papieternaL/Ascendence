@@ -26,6 +26,22 @@ This file is the **single source of truth** for coordination between multiple Cu
 - Chaos via quantity, not unreadable mechanics
 - Boss difficulty comes from execution, not HP inflation
 
+### Enemy System Consistency Checklist
+When adding a new enemy type, ensure it is added to **ALL** of these locations in `game_scene.lua`:
+
+1. **Table initialization** (~line 277-288): `self.newEnemyType = {}`
+2. **Spawning logic** (~line 260-461): Create instances and insert into table
+3. **Primary targeting loop** (~line 640-810): Include in nearest enemy search for auto-aim
+4. **Arrow collision detection** (~line 1000-1900): Handle arrow hits with damage, particles, XP
+5. **Arrow Volley targeting** (~line 863-907): Include in `considerTarget()` loop
+6. **Win condition check** (~line 2700-2750): Check if any alive before floor clear
+7. **Update loop** (~line 2000-2600): Update entity state, status effects, AI
+8. **Drawing loop** (~line 2920-3000): Add to drawables with Y-sort
+9. **Combat check** (~line 1920-1935): Include in `inCombat` check
+10. **allEnemies lists** (healer/druid AI, ~line 2545-2670): Add to consolidated lists
+
+**Pattern**: When adding enemy type `foo`, grep for an existing type like `wolves` and ensure `foo` appears in all the same locations.
+
 ## Confirmed Design Decisions (as of 2025-12-30)
 
 ### Combat & Input Split
@@ -100,6 +116,10 @@ Files touched/added:
 7. **Meta-progression scaffold**: Add gear profile screen (Universal + Class relics); wire win/loss → keep/lose relics.
 
 ## Changelog
+- 2026-02-03: **Bug fix: Wolves/Healers/Druids now targetable**:
+  - Fixed bug where wolves, healers, and druids were missing from primary attack targeting loop.
+  - Arrows now correctly auto-aim at these enemy types.
+  - Added "Enemy System Consistency Checklist" to prevent future targeting bugs.
 - 2025-12-30 (experimental branch): **Boss Test Mode added**:
   - New "BOSS TEST" button on main menu for instant boss access.
   - Skips character/biome/difficulty selection.
