@@ -42,7 +42,7 @@ function UpgradeUI:show(options, onSelect)
   self.onSelect = onSelect
   self.showTime = 0
   
-  -- Initialize card animations (stagger entrance)
+  -- Initialize card animations (stagger entrance + flip)
   self.cardAnimations = {}
   for i = 1, #self.options do
     self.cardAnimations[i] = {
@@ -51,8 +51,16 @@ function UpgradeUI:show(options, onSelect)
       scale = 0.8,
       targetScale = 1.0,
       delay = (i - 1) * 0.1,
+      -- Flip animation states
+      flipState = "entering",  -- entering, waiting, flipping, revealed
+      flipProgress = 0.0,      -- 0.0 to 1.0 during flip
+      flipDelay = 0.5 + (i - 1) * 0.3,  -- Staggered: 0.5s, 0.8s, 1.1s
+      showFront = false,       -- false = back, true = front
     }
   end
+
+  -- Sound effect for card flip
+  self.flipSound = nil
 end
 
 function UpgradeUI:hide()
@@ -63,14 +71,35 @@ end
 
 function UpgradeUI:update(dt)
   if not self.visible then return end
-  
+
   self.showTime = self.showTime + dt
-  
+
   -- Animate cards
   for i, anim in ipairs(self.cardAnimations) do
+    -- Entrance animation
     if self.showTime > anim.delay then
       anim.y = anim.y + (anim.targetY - anim.y) * dt * 10
       anim.scale = anim.scale + (anim.targetScale - anim.scale) * dt * 10
+    end
+
+    -- Flip state machine
+    if anim.flipState == "entering" then
+      if math.abs(anim.y - anim.targetY) < 1 and math.abs(anim.scale - anim.targetScale) < 0.01 then
+        anim.flipState = "waiting"
+      end
+    elseif anim.flipState == "waiting" then
+      if self.showTime > anim.flipDelay then
+        anim.flipState = "flipping"
+        anim.flipProgress = 0.0
+      end
+    elseif anim.flipState == "flipping" then
+      anim.flipProgress = anim.flipProgress + (dt / 0.4)  -- 0.4s flip duration
+      if anim.flipProgress >= 1.0 then
+        anim.flipProgress = 1.0
+        anim.flipState = "revealed"
+        anim.showFront = true
+        self:playFlipSound()  -- Sound at flip completion
+      end
     end
   end
 end
@@ -101,12 +130,12 @@ function UpgradeUI:draw()
   local cardY = (screenHeight - cardHeight) / 2
   
   for i, upgrade in ipairs(self.options) do
-    local anim = self.cardAnimations[i] or { y = 0, scale = 1 }
+    local anim = self.cardAnimations[i] or { y = 0, scale = 1, flipProgress = 0, showFront = true }
     local cardX = startX + (i - 1) * (cardWidth + cardSpacing)
     local isSelected = (i == self.selectedIndex)
     local isHovered = (i == self.hoveredIndex)
-    
-    self:drawCard(upgrade, cardX, cardY + anim.y, cardWidth, cardHeight, anim.scale, isSelected or isHovered)
+
+    self:drawCard(upgrade, cardX, cardY + anim.y, cardWidth, cardHeight, anim.scale, isSelected or isHovered, i)
   end
   
   -- Instructions
@@ -118,11 +147,38 @@ function UpgradeUI:draw()
   love.graphics.setColor(1, 1, 1, 1)
 end
 
-function UpgradeUI:drawCard(upgrade, x, y, width, height, scale, isSelected)
+function UpgradeUI:drawCard(upgrade, x, y, width, height, scale, isSelected, cardIndex)
+  local anim = self.cardAnimations[cardIndex]
+
   love.graphics.push()
   love.graphics.translate(x + width / 2, y + height / 2)
-  love.graphics.scale(scale, scale)
+
+  -- Calculate flip scale (simulate 3D rotation)
+  local flipScaleX = 1.0
+  local showFront = anim and anim.showFront or false
+  if anim and anim.flipProgress < 0.5 then
+    flipScaleX = 1.0 - (anim.flipProgress * 2.0)  -- Shrink to 0
+    showFront = false
+  elseif anim and anim.flipProgress >= 0.5 then
+    flipScaleX = (anim.flipProgress - 0.5) * 2.0  -- Expand from 0
+    showFront = true
+  end
+
+  love.graphics.scale(scale * flipScaleX, scale)
   love.graphics.translate(-width / 2, -height / 2)
+
+  if showFront then
+    -- Draw front face (upgrade details)
+    self:drawCardFront(upgrade, width, height, isSelected)
+  else
+    -- Draw card back
+    self:drawCardBack(width, height, isSelected)
+  end
+
+  love.graphics.pop()
+end
+
+function UpgradeUI:drawCardFront(upgrade, width, height, isSelected)
   
   local rarity = upgrade.rarity or "common"
   local color = rarityColors[rarity] or rarityColors.common
@@ -195,11 +251,58 @@ function UpgradeUI:drawCard(upgrade, x, y, width, height, scale, isSelected)
     end
     love.graphics.print(tagText, width / 2 - tagWidth / 2, height - 25)
   end
-  
-  love.graphics.pop()
+end
+
+function UpgradeUI:drawCardBack(width, height, isSelected)
+  -- Dark background
+  love.graphics.setColor(0.15, 0.15, 0.2, 0.95)
+  love.graphics.rectangle("fill", 0, 0, width, height, 8, 8)
+
+  -- Mystery symbol
+  love.graphics.setColor(0.5, 0.5, 0.6, 0.8)
+  local oldFont = love.graphics.getFont()
+  love.graphics.setNewFont(64)
+  local text = "?"
+  local font = love.graphics.getFont()
+  local tw = font:getWidth(text)
+  love.graphics.print(text, width/2 - tw/2, height/2 - 40)
+  love.graphics.setFont(oldFont)
+
+  -- Border with glow if selected
+  if isSelected then
+    love.graphics.setLineWidth(3)
+    love.graphics.setColor(0.5, 0.5, 0.6, 1)
+  else
+    love.graphics.setLineWidth(2)
+    love.graphics.setColor(0.4, 0.4, 0.5, 1)
+  end
+  love.graphics.rectangle("line", 0, 0, width, height, 8, 8)
+  love.graphics.setLineWidth(1)
+end
+
+function UpgradeUI:playFlipSound()
+  if not self.flipSound then
+    local success, sound = pcall(love.audio.newSource, "assets/Audio/Interface Sounds/card_flip.ogg", "static")
+    if success then
+      self.flipSound = sound
+    else
+      return  -- Gracefully fail if sound missing
+    end
+  end
+
+  if self.flipSound then
+    self.flipSound:stop()
+    self.flipSound:play()
+  end
 end
 
 function UpgradeUI:getUpgradeDescription(upgrade)
+  -- Use pre-written description if available (preferred)
+  if upgrade.description then
+    return upgrade.description
+  end
+  
+  -- Fallback to dynamic generation for backwards compatibility
   if not upgrade.effects or #upgrade.effects == 0 then
     return "No effect"
   end

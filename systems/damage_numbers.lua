@@ -20,13 +20,26 @@ local function ensureFonts(self)
   end
 end
 
--- opts: { isCrit=true/false, color={r,g,b,a}, vx, vy }
+-- opts: { isCrit=true/false, color={r,g,b,a}, vx, vy, damageType="normal"|"bleed"|"burn" }
 function DamageNumbers:add(x, y, amount, opts)
   ensureFonts(self)
   opts = opts or {}
 
   local isCrit = opts.isCrit == true
+  local damageType = opts.damageType or "normal"
   local txt = tostring(math.floor(amount + 0.5))
+
+  -- Auto-select color based on damage type
+  local color = opts.color
+  if not color then
+    if damageType == "bleed" then
+      color = {0.8, 0.1, 0.1, 1}  -- Red for bleed
+    elseif isCrit then
+      color = {1, 0.9, 0.2, 1}    -- Golden for crit
+    else
+      color = {1, 1, 1, 1}        -- White for normal
+    end
+  end
 
   self.items[#self.items+1] = {
     x = x,
@@ -37,7 +50,8 @@ function DamageNumbers:add(x, y, amount, opts)
     age = 0,
     lifetime = isCrit and 0.85 or 0.65,
     isCrit = isCrit,
-    color = opts.color or (isCrit and {1, 0.9, 0.2, 1} or {1, 1, 1, 1}),
+    color = color,
+    damageType = damageType,
   }
 end
 

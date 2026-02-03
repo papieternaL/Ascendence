@@ -33,6 +33,12 @@ function SmallTreent:new(x, y)
         wobbleAngle = math.random() * math.pi * 2,
         wobbleSpeed = 4,
         wobbleRadius = 30,
+
+        -- Bark throw
+        barkCooldown = 2.4 + math.random() * 0.8,
+        barkTimer = 0.6 + math.random() * 0.6,
+        barkRange = 260,
+        barkMinRange = 80,
         
         -- Visual feedback
         flashTime = 0,
@@ -66,6 +72,17 @@ function SmallTreent:update(dt, playerX, playerY, onShoot)
     local dy = playerY - self.y
     local distance = math.sqrt(dx * dx + dy * dy)
     
+    -- Bark throw (only if player is in a reasonable range)
+    if self.barkTimer > 0 then
+        self.barkTimer = self.barkTimer - dt
+    end
+    if onShoot and distance > 0 then
+        if distance <= self.barkRange and distance >= self.barkMinRange and self.barkTimer <= 0 then
+            onShoot(self.x, self.y, playerX, playerY)
+            self.barkTimer = self.barkCooldown + math.random() * 0.4
+        end
+    end
+
     -- Erratic movement: move towards player with wobble
     if distance > 0 then
         dx = dx / distance

@@ -83,7 +83,7 @@ function Particles:createFrenzyMist(x, y)
         local offsetY = (math.random() - 0.5) * 20
         local speed = 20 + math.random() * 30
         local angle = math.random() * math.pi * 2
-        
+
         table.insert(self.particles, {
             x = x + offsetX,
             y = y + offsetY,
@@ -102,33 +102,78 @@ function Particles:createFrenzyMist(x, y)
     end
 end
 
+function Particles:createBleedEffect(x, y)
+    -- Red dripping blood droplets
+    for i = 1, 3 do
+        local offsetX = (math.random() - 0.5) * 10  -- Slight spread
+        table.insert(self.particles, {
+            x = x + offsetX,
+            y = y,
+            vx = (math.random() - 0.5) * 15,
+            vy = math.random() * 25 + 10,  -- Drip downward
+            size = math.random() + 1.5,  -- 1.5-2.5px droplets
+            lifetime = 0.8,
+            age = 0,
+            color = {0.8, 0.1, 0.1},  -- Dark red
+            bleedParticle = true,  -- Flag for special rendering with gravity
+        })
+    end
+end
+
 function Particles:update(dt)
     for i = #self.particles, 1, -1 do
         local p = self.particles[i]
         p.x = p.x + p.vx * dt
         p.y = p.y + p.vy * dt
-        p.vx = p.vx * 0.95 -- Friction
-        p.vy = p.vy * 0.95
+
+        if p.bleedParticle then
+            -- Bleed particles have gravity
+            p.vy = p.vy + 80 * dt
+        else
+            -- Regular particles have friction
+            p.vx = p.vx * 0.95
+            p.vy = p.vy * 0.95
+        end
+
         p.age = p.age + dt
-        
+
         if p.age >= p.lifetime then
             table.remove(self.particles, i)
         end
     end
 end
 
+function Particles:createAmbientLeaves(x, y)
+    -- Floating leaf particles for ambient forest feel
+    table.insert(self.particles, {
+        x = x,
+        y = y,
+        vx = (math.random() - 0.5) * 20,
+        vy = -10 - math.random() * 15,
+        size = 2 + math.random() * 2,
+        lifetime = 2.0 + math.random() * 1.0,
+        age = 0,
+        color = {0.3 + math.random() * 0.3, 0.6 + math.random() * 0.2, 0.2},
+        ambientParticle = true
+    })
+end
+
 function Particles:draw()
     for i, p in ipairs(self.particles) do
         local alpha = 1 - (p.age / p.lifetime)
-        
+
         if p.mistParticle then
             -- Mist particles have softer, glowing appearance
             love.graphics.setColor(p.color[1], p.color[2], p.color[3], alpha * 0.6)
             love.graphics.circle("fill", p.x, p.y, p.size * alpha * 1.5)
-            
+
             -- Inner glow
             love.graphics.setColor(p.color[1], p.color[2], p.color[3], alpha * 0.3)
             love.graphics.circle("fill", p.x, p.y, p.size * alpha * 2.5)
+        elseif p.ambientParticle then
+            -- Ambient particles (leaves) have softer rendering
+            love.graphics.setColor(p.color[1], p.color[2], p.color[3], alpha * 0.4)
+            love.graphics.circle("fill", p.x, p.y, p.size)
         else
             -- Regular particles
             love.graphics.setColor(p.color[1], p.color[2], p.color[3], alpha)

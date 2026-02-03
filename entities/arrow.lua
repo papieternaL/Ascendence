@@ -47,7 +47,7 @@ function Arrow:new(x, y, targetX, targetY, opts)
     local arrow = {
         x = x,
         y = y,
-        size = opts.size or 10,
+        size = opts.size or 12,
         speed = speed, -- faster than fireballs
         vx = (dx / distance) * speed,
         vy = (dy / distance) * speed,
@@ -95,10 +95,10 @@ function Arrow:draw()
     
     -- Tint/scale by kind so abilities don't look identical
     local r, g, b = 1, 1, 1
-    local scale = 0.04  -- Reduced scale for cleaner look
+    local scale = 0.055  -- Slightly larger for readability
     if self.kind == "power_shot" then
         r, g, b = 1, 0.9, 0.25
-        scale = 0.06  -- Slightly larger for power shot
+        scale = 0.075  -- Larger for power shot
     end
     
     -- Draw the arrow sprite rotated to face direction

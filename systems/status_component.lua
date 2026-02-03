@@ -73,38 +73,43 @@ function StatusComponent:consumeCharge(status_name)
   return false
 end
 
-function StatusComponent:update(dt, owner)
+function StatusComponent:update(dt, owner, onDamageCallback)
   local statuses_to_remove = {}
-  
+
   for status_name, status in pairs(self.active_statuses) do
     local def = StatusEffects[status_name]
-    
+
     status.duration = status.duration - dt
     if status.duration <= 0 then
       table.insert(statuses_to_remove, status_name)
       goto continue
     end
-    
+
     if def.type == "dot" then
       self.dot_timers[status_name] = self.dot_timers[status_name] + dt
       if self.dot_timers[status_name] >= def.tick_interval then
         self.dot_timers[status_name] = self.dot_timers[status_name] - def.tick_interval
-        
+
         local tick_damage = def.damage_per_tick(status.source_data.damage)
         local total_damage = tick_damage * status.stacks
-        
+
         if owner.takeDamage then
           owner:takeDamage(total_damage, "dot")
         end
         if owner.spawnDamageNumber then
           owner:spawnDamageNumber(total_damage, false, true)
         end
+
+        -- Emit damage event via callback
+        if onDamageCallback then
+          onDamageCallback(owner, total_damage, status_name)
+        end
       end
     end
-    
+
     ::continue::
   end
-  
+
   for _, status_name in ipairs(statuses_to_remove) do
     self:removeStatus(status_name)
   end

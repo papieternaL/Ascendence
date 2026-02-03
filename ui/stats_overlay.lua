@@ -1,5 +1,5 @@
 -- ui/stats_overlay.lua
--- Run stats overlay (toggle with Tab). Shows computed stats + acquired upgrades.
+-- Run stats overlay (toggle with P). Shows computed stats + acquired upgrades.
 
 local StatsOverlay = {}
 StatsOverlay.__index = StatsOverlay
@@ -72,6 +72,39 @@ local function rarityColor(rarity)
   return 0.85, 0.85, 0.85
 end
 
+-- Helper: Group upgrades by ability
+local function groupAbilityUpgrades(upgrades)
+  local abilityUpgrades = {
+    power_shot = {},
+    arrow_volley = {},
+    frenzy = {},
+    other = {}
+  }
+
+  for _, upgrade in ipairs(upgrades) do
+    if not upgrade.effects then
+      table.insert(abilityUpgrades.other, upgrade)
+    else
+      local hasAbilityMod = false
+      for _, effect in ipairs(upgrade.effects) do
+        if effect.kind == "ability_mod" then
+          local ability = effect.ability
+          if abilityUpgrades[ability] then
+            table.insert(abilityUpgrades[ability], upgrade)
+            hasAbilityMod = true
+            break
+          end
+        end
+      end
+      if not hasAbilityMod then
+        table.insert(abilityUpgrades.other, upgrade)
+      end
+    end
+  end
+
+  return abilityUpgrades
+end
+
 function StatsOverlay:draw(playerStats, xpSystem)
   if not self.visible then return end
   if not playerStats then return end
@@ -82,8 +115,8 @@ function StatsOverlay:draw(playerStats, xpSystem)
 
   local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
   local pad = 18
-  local panelW = math.min(760, sw - pad * 2)
-  local panelH = math.min(520, sh - pad * 2)
+  local panelW = math.min(900, sw - pad * 2)
+  local panelH = math.min(600, sh - pad * 2)
   local x = (sw - panelW) / 2
   local y = (sh - panelH) / 2
 
@@ -92,86 +125,201 @@ function StatsOverlay:draw(playerStats, xpSystem)
   -- Header
   love.graphics.setFont(self.fontTitle)
   love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("RUN STATS", x + 16, y + 12)
+  love.graphics.print("CHARACTER", x + 16, y + 12)
 
   love.graphics.setFont(self.fontSmall)
   love.graphics.setColor(1, 1, 1, 0.75)
   local levelText = xpSystem and ("Level " .. tostring(xpSystem.level)) or ""
-  love.graphics.print(levelText, x + panelW - 140, y + 18)
+  love.graphics.print(levelText .. "  (Press P to close)", x + panelW - 220, y + 18)
 
-  -- Columns
-  local colGap = 18
-  local leftW = math.floor(panelW * 0.42)
-  local rightW = panelW - leftW - colGap - 32
-  local leftX = x + 16
-  local rightX = leftX + leftW + colGap
   local contentY = y + 52
   local contentH = panelH - 68
 
-  -- Left: key stats
-  love.graphics.setFont(self.fontBody)
-  love.graphics.setColor(1, 1, 1, 0.95)
-  love.graphics.print("Stats", leftX, contentY)
+  -- THREE COLUMN LAYOUT
+  local colGap = 20
+  local col1W = 220  -- Stats column
+  local col2W = 300  -- Ability upgrades column
+  local col3W = panelW - col1W - col2W - colGap * 3 - 32  -- Stat upgrades column
 
-  local lineY = contentY + 22
-  local lineH = 18
+  local col1X = x + 16
+  local col2X = col1X + col1W + colGap
+  local col3X = col2X + col2W + colGap
+
+  -- ==== COLUMN 1: CORE STATS ====
+  love.graphics.setFont(self.fontBody)
+  love.graphics.setColor(0.5, 0.8, 1, 1)
+  love.graphics.print("STATS", col1X, contentY)
+
+  local lineY = contentY + 24
+  local lineH = 17
 
   local statsOrder = {
-    { key="primary_damage", label="Primary Damage", fmt=num },
+    { key="primary_damage", label="Damage", fmt=num },
     { key="attack_speed", label="Attack Speed", fmt=num },
     { key="move_speed", label="Move Speed", fmt=num },
     { key="range", label="Range", fmt=num },
     { key="crit_chance", label="Crit Chance", fmt=pct },
     { key="crit_damage", label="Crit Damage", fmt=function(v) return string.format("%.2fx", v or 0) end },
-    { key="roll_cooldown", label="Roll Cooldown", fmt=function(v) return string.format("%.2fs", v or 0) end },
-    { key="xp_pickup_radius", label="XP Pickup Radius", fmt=num },
+    { key="roll_cooldown", label="Roll CD", fmt=function(v) return string.format("%.2fs", v or 0) end },
   }
 
+  love.graphics.setFont(self.fontSmall)
   for _, s in ipairs(statsOrder) do
-    local v = getStat(s.key)
-    love.graphics.setColor(1, 1, 1, 0.85)
-    love.graphics.print(s.label .. ":", leftX, lineY)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print(s.fmt(v), leftX + 170, lineY)
+    local base = playerStats:getBase(s.key)
+    local current = getStat(s.key)
+    local delta = current - base
+
+    -- Label
+    love.graphics.setColor(1, 1, 1, 0.75)
+    love.graphics.print(s.label, col1X, lineY)
+
+    -- Base value (gray)
+    love.graphics.setColor(0.7, 0.7, 0.7, 1)
+    love.graphics.print(s.fmt(base), col1X + 110, lineY)
+
+    -- Arrow and current value if there's a change
+    if math.abs(delta) > 0.01 then
+      love.graphics.setColor(0.6, 0.6, 0.6, 1)
+      love.graphics.print(" → ", col1X + 145, lineY)
+
+      -- Green if increased, red if decreased
+      if delta > 0 then
+        love.graphics.setColor(0.3, 1, 0.3, 1)
+      elseif delta < 0 then
+        love.graphics.setColor(1, 0.4, 0.4, 1)
+      else
+        love.graphics.setColor(1, 1, 1, 1)
+      end
+      love.graphics.print(s.fmt(current), col1X + 170, lineY)
+    end
+
     lineY = lineY + lineH
   end
 
-  -- Weapon mods summary
-  lineY = lineY + 8
-  love.graphics.setColor(1, 1, 1, 0.95)
-  love.graphics.print("Weapon Mods", leftX, lineY)
-  lineY = lineY + 22
+  -- Weapon mods
+  lineY = lineY + 10
+  love.graphics.setFont(self.fontBody)
+  love.graphics.setColor(0.5, 0.8, 1, 1)
+  love.graphics.print("WEAPON MODS", col1X, lineY)
+  lineY = lineY + 24
 
-  local pierce = playerStats:getWeaponMod("pierce")
-  local bounces = playerStats:getWeaponMod("ricochet_bounces")
-  local bonusProj = playerStats:getWeaponMod("bonus_projectiles")
-  love.graphics.setColor(1, 1, 1, 0.85)
-  love.graphics.print("Pierce:", leftX, lineY); love.graphics.setColor(1, 1, 1, 1); love.graphics.print(tostring(pierce), leftX + 170, lineY); lineY = lineY + lineH
-  love.graphics.setColor(1, 1, 1, 0.85)
-  love.graphics.print("Ricochet Bounces:", leftX, lineY); love.graphics.setColor(1, 1, 1, 1); love.graphics.print(tostring(bounces), leftX + 170, lineY); lineY = lineY + lineH
-  love.graphics.setColor(1, 1, 1, 0.85)
-  love.graphics.print("Bonus Projectiles:", leftX, lineY); love.graphics.setColor(1, 1, 1, 1); love.graphics.print(tostring(bonusProj), leftX + 170, lineY); lineY = lineY + lineH
+  love.graphics.setFont(self.fontSmall)
+  local weaponMods = {
+    {label = "Pierce", key = "pierce", base = 0},
+    {label = "Ricochet", key = "ricochet_bounces", base = 0},
+    {label = "Bonus Proj", key = "bonus_projectiles", base = 0},
+  }
 
-  -- Right: acquired upgrades list
-  love.graphics.setColor(1, 1, 1, 0.95)
-  love.graphics.print("Upgrades This Run", rightX, contentY)
+  for _, mod in ipairs(weaponMods) do
+    local current = playerStats:getWeaponMod(mod.key)
+
+    love.graphics.setColor(1, 1, 1, 0.75)
+    love.graphics.print(mod.label, col1X, lineY)
+
+    if current > mod.base then
+      love.graphics.setColor(0.7, 0.7, 0.7, 1)
+      love.graphics.print(tostring(mod.base), col1X + 110, lineY)
+      love.graphics.setColor(0.6, 0.6, 0.6, 1)
+      love.graphics.print(" → ", col1X + 145, lineY)
+      love.graphics.setColor(0.3, 1, 0.3, 1)
+      love.graphics.print(tostring(current), col1X + 170, lineY)
+    else
+      love.graphics.setColor(1, 1, 1, 1)
+      love.graphics.print(tostring(current), col1X + 110, lineY)
+    end
+
+    lineY = lineY + lineH
+  end
+
+  -- ==== COLUMN 2: ABILITY UPGRADES ====
+  love.graphics.setFont(self.fontBody)
+  love.graphics.setColor(1, 0.7, 0.3, 1)
+  love.graphics.print("ABILITY UPGRADES", col2X, contentY)
 
   local upgrades = (playerStats.getUpgradeLog and playerStats:getUpgradeLog()) or {}
-  local total = #upgrades
+  local grouped = groupAbilityUpgrades(upgrades)
+
+  local abilityY = contentY + 24
+  local abilityLineH = 16
+
+  -- Power Shot
+  love.graphics.setFont(self.fontSmall)
+  love.graphics.setColor(0.9, 0.6, 0.2, 1)
+  love.graphics.print("Power Shot [Q]", col2X, abilityY)
+  abilityY = abilityY + 18
+
+  if #grouped.power_shot == 0 then
+    love.graphics.setColor(1, 1, 1, 0.5)
+    love.graphics.print("  No upgrades", col2X, abilityY)
+    abilityY = abilityY + abilityLineH
+  else
+    for _, u in ipairs(grouped.power_shot) do
+      local r, g, b = rarityColor(u.rarity)
+      love.graphics.setColor(r, g, b, 1)
+      love.graphics.print("  " .. (u.name or "Unknown"), col2X, abilityY)
+      abilityY = abilityY + abilityLineH
+    end
+  end
+
+  abilityY = abilityY + 8
+
+  -- Arrow Volley
+  love.graphics.setColor(0.9, 0.6, 0.2, 1)
+  love.graphics.print("Arrow Volley [W]", col2X, abilityY)
+  abilityY = abilityY + 18
+
+  if #grouped.arrow_volley == 0 then
+    love.graphics.setColor(1, 1, 1, 0.5)
+    love.graphics.print("  No upgrades", col2X, abilityY)
+    abilityY = abilityY + abilityLineH
+  else
+    for _, u in ipairs(grouped.arrow_volley) do
+      local r, g, b = rarityColor(u.rarity)
+      love.graphics.setColor(r, g, b, 1)
+      love.graphics.print("  " .. (u.name or "Unknown"), col2X, abilityY)
+      abilityY = abilityY + abilityLineH
+    end
+  end
+
+  abilityY = abilityY + 8
+
+  -- Frenzy
+  love.graphics.setColor(0.9, 0.6, 0.2, 1)
+  love.graphics.print("Frenzy [R]", col2X, abilityY)
+  abilityY = abilityY + 18
+
+  if #grouped.frenzy == 0 then
+    love.graphics.setColor(1, 1, 1, 0.5)
+    love.graphics.print("  No upgrades", col2X, abilityY)
+    abilityY = abilityY + abilityLineH
+  else
+    for _, u in ipairs(grouped.frenzy) do
+      local r, g, b = rarityColor(u.rarity)
+      love.graphics.setColor(r, g, b, 1)
+      love.graphics.print("  " .. (u.name or "Unknown"), col2X, abilityY)
+      abilityY = abilityY + abilityLineH
+    end
+  end
+
+  -- ==== COLUMN 3: ALL OTHER UPGRADES (STAT UPGRADES) ====
+  love.graphics.setFont(self.fontBody)
+  love.graphics.setColor(0.5, 1, 0.5, 1)
+  love.graphics.print("STAT UPGRADES", col3X, contentY)
+
+  local total = #grouped.other
   love.graphics.setFont(self.fontSmall)
   love.graphics.setColor(1, 1, 1, 0.7)
-  love.graphics.print(("Total: %d   (Tab to close, ↑/↓ to scroll)"):format(total), rightX, contentY + 18)
+  love.graphics.print(("Total: %d (↑/↓ to scroll)"):format(total), col3X, contentY + 18)
 
-  love.graphics.setFont(self.fontBody)
-  local listY = contentY + 44
+  love.graphics.setFont(self.fontSmall)
+  local listY = contentY + 40
   local listBottom = y + panelH - 16
-  local maxLines = math.floor((listBottom - listY) / 18)
-  maxLines = math.max(3, maxLines)
+  local maxLines = math.floor((listBottom - listY) / abilityLineH)
+  maxLines = math.max(10, maxLines)
 
-  -- Keep scrollIndex valid
   if total <= 0 then
-    love.graphics.setColor(1, 1, 1, 0.8)
-    love.graphics.print("No upgrades yet.", rightX, listY)
+    love.graphics.setColor(1, 1, 1, 0.7)
+    love.graphics.print("No stat upgrades yet.", col3X, listY)
   else
     self.scrollIndex = clamp(self.scrollIndex, 1, total)
     local startIdx = self.scrollIndex
@@ -179,21 +327,16 @@ function StatsOverlay:draw(playerStats, xpSystem)
 
     local yy = listY
     for i = startIdx, endIdx do
-      local u = upgrades[i]
+      local u = grouped.other[i]
       local r, g, b = rarityColor(u.rarity)
       love.graphics.setColor(r, g, b, 1)
-      love.graphics.print(string.upper(u.rarity or "common"), rightX, yy)
-      love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.print(u.name or u.id or "Unknown", rightX + 80, yy)
-      yy = yy + 18
+      love.graphics.print(u.name or u.id or "Unknown", col3X, yy)
+      yy = yy + abilityLineH
     end
 
-    -- Scroll hint
     if endIdx < total then
-      love.graphics.setFont(self.fontSmall)
       love.graphics.setColor(1, 1, 1, 0.6)
-      love.graphics.print(("... %d more"):format(total - endIdx), rightX, yy + 4)
-      love.graphics.setFont(self.fontBody)
+      love.graphics.print(("... %d more"):format(total - endIdx), col3X, yy + 4)
     end
   end
 

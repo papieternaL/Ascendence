@@ -91,6 +91,11 @@ function PlayerStats:getPermanent(stat)
   return (base + add) * mul
 end
 
+-- Get base stat value (before any modifiers)
+function PlayerStats:getBase(stat)
+  return self.base[stat] or 0
+end
+
 -- Get a weapon mod value
 function PlayerStats:getWeaponMod(modName)
   return self.weaponMods[modName] or 0

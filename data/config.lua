@@ -19,14 +19,16 @@ Config.game_balance = {
   },
   
   enemies = {
-    slime = { health = 30, damage = 8, move_speed = 80, xp_value = 10 },
-    bat = { health = 20, damage = 6, move_speed = 120, xp_value = 12 },
-    skeleton = { health = 35, damage = 10, move_speed = 90, xp_value = 15 },
-    imp = { health = 25, damage = 12, move_speed = 100, xp_value = 18 },
-    lunger = { health = 40, damage = 15, move_speed = 150, xp_value = 50 },
-    small_treent = { health = 45, damage = 10, move_speed = 60, xp_value = 50 },
-    wizard = { health = 35, damage = 12, move_speed = 70, xp_value = 50 },
-    treent = { health = 150, damage = 20, move_speed = 50, xp_value = 100 }
+    slime = { health = 30, damage = 8, move_speed = 100, xp_value = 10 },
+    bat = { health = 20, damage = 6, move_speed = 150, xp_value = 12 },
+    wolf = { health = 40, damage = 12, move_speed = 110, xp_value = 40 },
+    skeleton = { health = 35, damage = 10, move_speed = 110, xp_value = 15 },
+    imp = { health = 25, damage = 12, move_speed = 130, xp_value = 18 },
+    lunger = { health = 40, damage = 15, move_speed = 180, xp_value = 50 },
+    small_treent = { health = 45, damage = 10, move_speed = 75, xp_value = 50 },
+    wizard = { health = 35, damage = 12, move_speed = 85, xp_value = 50 },
+    druid_treent = { health = 55, damage = 8, move_speed = 65, xp_value = 60 },
+    treent = { health = 150, damage = 20, move_speed = 65, xp_value = 100 }
   },
   
   boss = {
@@ -83,14 +85,14 @@ Config.TreentOverlord = {
   damage = 40,
   size = 48,
   
-  -- Phase 1 (sped up)
-  lungeCooldown = 1.5,           -- Was 2.0
-  lungeChargeDuration = 0.8,     -- Was 1.2
-  lungeDuration = 0.4,           -- Was 0.5
-  lungeSpeed = 900,              -- Was 800
+  -- Phase 1 (more frequent, shorter lunges)
+  lungeCooldown = 1.1,           -- Was 1.5, now ~25% faster
+  lungeChargeDuration = 0.6,     -- Was 0.8, quicker telegraph
+  lungeDuration = 0.28,          -- Was 0.4, ~30% shorter travel
+  lungeSpeed = 900,              -- Keep same speed
   
   barkBarrageCooldown = 2.0,     -- Was 3.0
-  barkBarrageCount = 10,         -- Was 8
+  barkBarrageCount = 8,          -- Reduced from 10 for tighter, more dodgeable cone
   barkBarrageDelay = 0.06,       -- Was 0.08
   
   -- Phase 2 (sped up)

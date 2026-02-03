@@ -13,6 +13,10 @@ local ScreenShake = require("systems.screen_shake")
 local DamageNumbers = require("systems.damage_numbers")
 local JuiceManager = require("systems.juice_manager")
 local VineLane = require("entities.vine_lane")
+local FallingTrunk = require("entities.falling_trunk")
+local AbilityHUD = require("ui.ability_hud")
+local BuffBar = require("ui.buff_bar")
+local StatsOverlay = require("ui.stats_overlay")
 
 local BossArenaScene = {}
 BossArenaScene.__index = BossArenaScene
@@ -46,11 +50,22 @@ function BossArenaScene:new(player, playerStats, gameState, xpSystem, rarityChar
         typingSequence = {},  -- 6 random letters to type
         typingProgress = 0,   -- How many letters typed correctly
         typingStartTime = 0,
-        
+
+        -- Falling trunks (Phase 2 mechanic)
+        fallingTrunks = {},           -- Array of FallingTrunk entities
+        trunkSpawnTimer = 0,          -- Timer for continuous spawning
+        trunkSpawnInterval = 1.5,     -- Spawn 1 trunk every 1.5 seconds
+        trunksEnabled = false,        -- Only spawn in Phase 2
+
         -- Systems
         particles = Particles:new(),
         screenShake = ScreenShake:new(),
         damageNumbers = DamageNumbers:new(),
+        
+        -- UI Components (reuse from main game)
+        abilityHUD = AbilityHUD:new(),
+        buffBar = BuffBar:new(),
+        statsOverlay = StatsOverlay:new(),
         
         -- Combat state
         fireCooldown = 0,
@@ -76,6 +91,10 @@ function BossArenaScene:new(player, playerStats, gameState, xpSystem, rarityChar
         -- Victory/Defeat
         victoryTimer = 0,
         defeatTimer = 0,
+        
+        -- Arena decorative props
+        arenaProps = {},
+        propImages = {},
     }
     
     setmetatable(scene, BossArenaScene)
@@ -133,6 +152,115 @@ function BossArenaScene:initialize()
         self.player.abilities.dash.currentCooldown = 0
         self.player.abilities.dash.cooldown = Config.Player.dashCooldown
     end
+    
+    -- Load decorative props for arena edges
+    self:loadArenaProps()
+end
+
+function BossArenaScene:loadArenaProps()
+    local tilePath = "assets/2D assets/Monochrome RPG Tileset/Dot Matrix/Tiles/"
+    
+    -- Load tile images for props (trees, rocks, stumps, bushes)
+    local propTiles = {
+        tree1 = "tile_0003.png",    -- Tree
+        tree2 = "tile_0004.png",    -- Tree variant
+        rock1 = "tile_0018.png",    -- Rock
+        rock2 = "tile_0019.png",    -- Rock variant
+        stump = "tile_0020.png",    -- Stump
+        bush1 = "tile_0021.png",    -- Bush
+        bush2 = "tile_0022.png",    -- Bush variant
+    }
+    
+    for name, file in pairs(propTiles) do
+        local success, img = pcall(love.graphics.newImage, tilePath .. file)
+        if success then
+            self.propImages[name] = img
+        end
+    end
+    
+    -- Create prop positions around arena edges
+    local screenWidth = love.graphics.getWidth()
+    local screenHeight = love.graphics.getHeight()
+    local margin = 60
+    local propTypes = {"tree1", "tree2", "rock1", "rock2", "stump", "bush1", "bush2"}
+    
+    -- Top edge props
+    for i = 1, 6 do
+        local propType = propTypes[math.random(#propTypes)]
+        table.insert(self.arenaProps, {
+            image = propType,
+            x = margin + (i - 1) * ((screenWidth - margin * 2) / 5) + math.random(-20, 20),
+            y = margin + math.random(-10, 10),
+            scale = 2.5 + math.random() * 0.5,
+            tint = {0.7 + math.random() * 0.2, 0.8 + math.random() * 0.15, 0.6 + math.random() * 0.15}
+        })
+    end
+    
+    -- Bottom edge props
+    for i = 1, 6 do
+        local propType = propTypes[math.random(#propTypes)]
+        table.insert(self.arenaProps, {
+            image = propType,
+            x = margin + (i - 1) * ((screenWidth - margin * 2) / 5) + math.random(-20, 20),
+            y = screenHeight - margin + math.random(-10, 10),
+            scale = 2.5 + math.random() * 0.5,
+            tint = {0.7 + math.random() * 0.2, 0.8 + math.random() * 0.15, 0.6 + math.random() * 0.15}
+        })
+    end
+    
+    -- Left edge props
+    for i = 1, 4 do
+        local propType = propTypes[math.random(#propTypes)]
+        table.insert(self.arenaProps, {
+            image = propType,
+            x = margin + math.random(-10, 10),
+            y = margin * 2 + (i - 1) * ((screenHeight - margin * 4) / 3) + math.random(-15, 15),
+            scale = 2.5 + math.random() * 0.5,
+            tint = {0.7 + math.random() * 0.2, 0.8 + math.random() * 0.15, 0.6 + math.random() * 0.15}
+        })
+    end
+    
+    -- Right edge props
+    for i = 1, 4 do
+        local propType = propTypes[math.random(#propTypes)]
+        table.insert(self.arenaProps, {
+            image = propType,
+            x = screenWidth - margin + math.random(-10, 10),
+            y = margin * 2 + (i - 1) * ((screenHeight - margin * 4) / 3) + math.random(-15, 15),
+            scale = 2.5 + math.random() * 0.5,
+            tint = {0.7 + math.random() * 0.2, 0.8 + math.random() * 0.15, 0.6 + math.random() * 0.15}
+        })
+    end
+    
+    -- Corner accent props (larger trees in corners)
+    local corners = {
+        {x = 40, y = 40},
+        {x = screenWidth - 40, y = 40},
+        {x = 40, y = screenHeight - 40},
+        {x = screenWidth - 40, y = screenHeight - 40},
+    }
+    
+    for _, corner in ipairs(corners) do
+        table.insert(self.arenaProps, {
+            image = math.random() > 0.5 and "tree1" or "tree2",
+            x = corner.x,
+            y = corner.y,
+            scale = 3.5,
+            tint = {0.6, 0.75, 0.5}
+        })
+    end
+end
+
+function BossArenaScene:drawArenaProps()
+    for _, prop in ipairs(self.arenaProps) do
+        local img = self.propImages[prop.image]
+        if img then
+            love.graphics.setColor(prop.tint[1], prop.tint[2], prop.tint[3], 0.85)
+            local imgW, imgH = img:getDimensions()
+            love.graphics.draw(img, prop.x, prop.y, 0, prop.scale, prop.scale, imgW / 2, imgH / 2)
+        end
+    end
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 function BossArenaScene:generateTypingSequence()
@@ -146,6 +274,11 @@ end
 
 function BossArenaScene:update(dt)
     if self.isPaused then return end
+    
+    -- Pause while stats overlay is open
+    if self.statsOverlay and self.statsOverlay:isVisible() then
+        return
+    end
     
     -- Hit-stop freeze (JuiceManager) - skip game logic but still update visuals
     if JuiceManager.isFrozen() then
@@ -211,9 +344,9 @@ function BossArenaScene:update(dt)
         -- Aim at target
         if targetX and targetY then
             self.player:aimAt(targetX, targetY)
-            
-            -- Auto-fire primary
-            if self.fireCooldown <= 0 and not self.isDashing then
+
+            -- Auto-fire primary (blocked during typing test - boss is invulnerable)
+            if self.fireCooldown <= 0 and not self.isDashing and not self.typingTestActive then
                 local baseDmg = (self.player.attackDamage or 10) * 1.0
                 local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
                 local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
@@ -224,9 +357,9 @@ function BossArenaScene:update(dt)
                 if self.player.playAttackAnimation then self.player:playAttackAnimation() end
             end
         end
-        
-        -- Auto-cast Power Shot
-        if self.player and self.player:isAbilityReady("power_shot") and not self.isDashing then
+
+        -- Auto-cast Power Shot (blocked during typing test)
+        if self.player and self.player:isAbilityReady("power_shot") and not self.isDashing and not self.typingTestActive then
             local psTargetX, psTargetY = nil, nil
             local psCfg = Config.Abilities.powerShot
             
@@ -286,8 +419,8 @@ function BossArenaScene:update(dt)
             end
         end
         
-        -- Auto-cast Arrow Volley (targets boss)
-        if self.player and self.player:isAbilityReady("arrow_volley") then
+        -- Auto-cast Arrow Volley (targets boss, blocked during typing test)
+        if self.player and self.player:isAbilityReady("arrow_volley") and not self.typingTestActive then
             local volleyRange = 300
             
             -- Target boss
@@ -367,8 +500,8 @@ function BossArenaScene:update(dt)
         
         -- Update boss
         if self.boss and self.boss.isAlive then
-            local onBarkShoot = function(sx, sy, tx, ty)
-                local bark = BarkProjectile:new(sx, sy, tx, ty)
+            local onBarkShoot = function(sx, sy, tx, ty, speed)
+                local bark = BarkProjectile:new(sx, sy, tx, ty, speed)
                 bark.damage = 25 -- Boss bark does more damage
                 table.insert(self.barkProjectiles, bark)
             end
@@ -376,26 +509,15 @@ function BossArenaScene:update(dt)
             local onPhaseTransition = function()
                 self.screenShake:add(12, 0.5)
                 self.particles:createExplosion(self.boss.x, self.boss.y, {1, 0.3, 0.3})
+
+                -- Enable falling trunks in Phase 2 (enraged mode)
+                self.trunksEnabled = true
+                self.trunkSpawnTimer = 0
             end
             
             local onEncompassRoot = function(px, py)
-                -- Root the player
-                if self.player and self.player.applyRoot then
-                    self.player:applyRoot(999) -- Long duration, unlocked by typing
-                end
-                
-                -- Start typing test
-                self.typingTestActive = true
-                self.typingSequence = self:generateTypingSequence()
-                self.typingProgress = 0
-                self.typingStartTime = love.timer.getTime()
-                
-                -- Pick safe lane NOW so player sees it during typing (1 out of 5 lanes)
-                local cfg = Config.TreentOverlord
-                self.safeLaneIndex = math.random(1, cfg.vineLaneCount or 5)
-                
-                self.screenShake:add(8, 0.3)
-                self.particles:createExplosion(px, py, {0.6, 0.3, 0.1})
+                -- This is now UNUSED - typing test is handled by onTypingTest callback
+                -- Kept for backwards compatibility but does nothing
             end
             
             local onVineLanes = function(phase)
@@ -437,8 +559,49 @@ function BossArenaScene:update(dt)
                     self.safeLaneIndex = nil
                 end
             end
-            
-            self.boss:update(dt, playerX, playerY, onBarkShoot, onPhaseTransition, onEncompassRoot, onVineLanes)
+
+            local onTypingTest = function(phase)
+                if phase == "start" then
+                    -- Start typing test
+                    self.typingTestActive = true
+                    self.typingProgress = 0
+                    self.typingStartTime = love.timer.getTime()
+
+                    -- ROOT THE PLAYER (they must type to escape)
+                    if self.player and self.player.applyRoot then
+                        self.player:applyRoot(999) -- Long duration, unlocked by typing
+                    end
+
+                    -- Teleport boss to center of arena and freeze
+                    if self.boss then
+                        local screenWidth = love.graphics.getWidth()
+                        local screenHeight = love.graphics.getHeight()
+                        self.boss.x = screenWidth / 2
+                        self.boss.y = screenHeight / 2
+
+                        -- Stop all boss movement
+                        self.boss.lungeState = "idle"
+                        self.boss.knockbackX = 0
+                        self.boss.knockbackY = 0
+                    end
+
+                    -- Pick safe lane NOW so player knows where to go after typing
+                    local cfg = Config.TreentOverlord
+                    self.safeLaneIndex = math.random(1, cfg.vineLaneCount or 5)
+
+                    -- Generate 6 random letters (only qwerasdf keys)
+                    local letters = {"q", "w", "e", "r", "a", "s", "d", "f"}
+                    self.typingSequence = {}
+                    for i = 1, 6 do
+                        table.insert(self.typingSequence, letters[math.random(#letters)])
+                    end
+
+                    self.screenShake:add(8, 0.3)
+                    self.particles:createExplosion(self.player.x, self.player.y, {0.6, 0.3, 0.1})
+                end
+            end
+
+            self.boss:update(dt, playerX, playerY, onBarkShoot, onPhaseTransition, onEncompassRoot, onVineLanes, onTypingTest)
             
             -- Boss collision with player
             if not self.isDashing then
@@ -487,8 +650,8 @@ function BossArenaScene:update(dt)
         end
         
         -- Update vine lanes and check collision
-        if self.vineLanesActive then
-            -- Update all vine lanes
+        if self.vineLanesActive and not self.typingTestActive then
+            -- Update all vine lanes (paused during typing test)
             for i = #self.vineLanes, 1, -1 do
                 local vine = self.vineLanes[i]
                 vine:update(dt)
@@ -529,7 +692,48 @@ function BossArenaScene:update(dt)
                 self.safeLaneIndex = nil
             end
         end
-        
+
+        -- Update falling trunks (Phase 2 mechanic, paused during typing test)
+        if self.trunksEnabled and not self.typingTestActive then
+            -- Spawn new trunks continuously
+            self.trunkSpawnTimer = self.trunkSpawnTimer + dt
+            if self.trunkSpawnTimer >= self.trunkSpawnInterval then
+                self.trunkSpawnTimer = 0
+
+                -- Spawn trunk at random position in arena
+                local screenWidth = love.graphics.getWidth()
+                local screenHeight = love.graphics.getHeight()
+                local margin = 100
+                local targetX = margin + math.random() * (screenWidth - margin * 2)
+                local targetY = margin + math.random() * (screenHeight - margin * 2)
+
+                local trunk = FallingTrunk:new(targetX, targetY, 60)
+                table.insert(self.fallingTrunks, trunk)
+            end
+
+            -- Update all trunks
+            for i = #self.fallingTrunks, 1, -1 do
+                local trunk = self.fallingTrunks[i]
+                trunk:update(dt)
+
+                -- Check player collision during impact
+                if trunk:isInImpactPhase() and self.player then
+                    if trunk:isPlayerInDanger(playerX, playerY) then
+                        local damage = trunk:getDamage()
+                        if self.frenzyActive then damage = damage * Config.Abilities.frenzy.damageTakenMult end
+                        self.player:takeDamage(damage)
+                        self.screenShake:add(10, 0.3)
+                        self.particles:createExplosion(playerX, playerY, {0.8, 0.5, 0.2})
+                    end
+                end
+
+                -- Remove finished trunks
+                if trunk.isFinished then
+                    table.remove(self.fallingTrunks, i)
+                end
+            end
+        end
+
         -- Update arrows
         for i = #self.arrows, 1, -1 do
             local arrow = self.arrows[i]
@@ -615,9 +819,31 @@ function BossArenaScene:update(dt)
 end
 
 function BossArenaScene:draw()
-    -- Background
-    love.graphics.setColor(0.15, 0.1, 0.08, 1)
-    love.graphics.rectangle("fill", 0, 0, love.graphics.getWidth(), love.graphics.getHeight())
+    local screenWidth = love.graphics.getWidth()
+    local screenHeight = love.graphics.getHeight()
+    
+    -- Background: Rich forest green floor (contrasts with brown boss)
+    love.graphics.setColor(0.12, 0.22, 0.10, 1)  -- Dark forest green base
+    love.graphics.rectangle("fill", 0, 0, screenWidth, screenHeight)
+    
+    -- Add subtle grass texture pattern
+    love.graphics.setColor(0.15, 0.28, 0.12, 0.3)  -- Lighter green accents
+    for row = 0, screenHeight / 32 do
+        for col = 0, screenWidth / 32 do
+            if (row + col) % 3 == 0 then
+                love.graphics.rectangle("fill", col * 32, row * 32, 32, 32)
+            end
+        end
+    end
+    
+    -- Arena border (darker edge gradient effect)
+    love.graphics.setColor(0.06, 0.12, 0.05, 0.8)
+    love.graphics.setLineWidth(20)
+    love.graphics.rectangle("line", 10, 10, screenWidth - 20, screenHeight - 20)
+    love.graphics.setLineWidth(1)
+    
+    -- Draw decorative props (behind entities)
+    self:drawArenaProps()
     
     -- Apply screen shake
     love.graphics.push()
@@ -650,12 +876,12 @@ function BossArenaScene:draw()
             local laneY = startY + (i - 1) * spacing
             
             if i ~= self.safeLaneIndex then
-                -- DANGER LANE - red blinking warning (just the flashing zone, no text/arrows)
-                love.graphics.setColor(1, 0.1, 0.1, blinkAlpha * 0.5)
+                -- DANGER LANE - bright red/orange warning (visible on green)
+                love.graphics.setColor(1, 0.2, 0.1, blinkAlpha * 0.6)
                 love.graphics.rectangle("fill", 0, laneY - 35, screenWidth, 70)
                 
-                -- Danger border (bright red, pulsing)
-                love.graphics.setColor(1, 0.2, 0.2, blinkAlpha)
+                -- Danger border (bright orange, pulsing - high contrast on green)
+                love.graphics.setColor(1, 0.4, 0.1, blinkAlpha)
                 love.graphics.setLineWidth(4)
                 love.graphics.line(0, laneY - 35, screenWidth, laneY - 35)
                 love.graphics.line(0, laneY + 35, screenWidth, laneY + 35)
@@ -669,7 +895,15 @@ function BossArenaScene:draw()
     for _, vine in ipairs(self.vineLanes) do
         vine:draw()
     end
-    
+
+    -- Draw falling trunks (ground telegraphs first, then falling trunks later)
+    -- Draw telegraphs on ground (before entities)
+    for _, trunk in ipairs(self.fallingTrunks) do
+        if trunk.state == "telegraph" or trunk.state == "falling" then
+            trunk:draw()
+        end
+    end
+
     -- Y-sort drawing
     local drawables = {}
     
@@ -696,8 +930,32 @@ function BossArenaScene:draw()
             end
         end
         drawable.entity:draw()
+
+        -- Draw invulnerability shield on boss during typing test
+        if drawable.type == "boss" and self.boss and self.boss.isInvulnerable then
+            local bx, by = self.boss.x, self.boss.y
+            local radius = self.boss.size * 1.3
+            local pulse = math.sin(love.timer.getTime() * 5) * 0.2 + 0.8
+
+            -- Shield glow
+            love.graphics.setColor(0.9, 0.7, 0.2, 0.3 * pulse)
+            love.graphics.circle("fill", bx, by, radius + 10)
+
+            -- Shield ring
+            love.graphics.setColor(1, 0.8, 0.3, 0.8 * pulse)
+            love.graphics.setLineWidth(4)
+            love.graphics.circle("line", bx, by, radius)
+
+            -- Inner shield ring
+            love.graphics.setColor(1, 0.9, 0.5, 0.5 * pulse)
+            love.graphics.setLineWidth(2)
+            love.graphics.circle("line", bx, by, radius - 8)
+
+            love.graphics.setLineWidth(1)
+            love.graphics.setColor(1, 1, 1, 1)
+        end
     end
-    
+
     -- Draw projectiles (always on top)
     for _, arrow in ipairs(self.arrows) do
         arrow:draw()
@@ -711,140 +969,139 @@ function BossArenaScene:draw()
     if self.damageNumbers then
         self.damageNumbers:draw()
     end
-    
+
+    -- Draw trunk impact effects (on top of everything)
+    for _, trunk in ipairs(self.fallingTrunks) do
+        if trunk.state == "impact" then
+            trunk:draw()
+        end
+    end
+
     love.graphics.pop()
     
     -- UI (not affected by shake)
     self:drawUI()
+    
+    -- Draw stats overlay on top of everything
+    if self.statsOverlay and self.statsOverlay:isVisible() then
+        self.statsOverlay:draw(self.playerStats, self.xpSystem)
+    end
 end
 
 function BossArenaScene:drawUI()
     if not self.player then return end
-    
-    local w = love.graphics.getWidth()
-    local h = love.graphics.getHeight()
     
     -- Draw boss health bar at top
     if self.boss and self.boss.isAlive then
         self:drawBossHealthBar()
     end
     
-    -- Typing Test UI (top of screen)
+    -- Typing Test UI (center-lower screen for better visibility)
     if self.typingTestActive then
         local screenWidth = love.graphics.getWidth()
-        
-        -- Background panel
-        love.graphics.setColor(0, 0, 0, 0.8)
-        love.graphics.rectangle("fill", screenWidth/2 - 200, 30, 400, 80, 10, 10)
-        
-        -- Title
-        love.graphics.setColor(1, 0.3, 0.3, 1)
-        love.graphics.setNewFont(20)
-        love.graphics.printf("TYPE TO ESCAPE!", 0, 40, screenWidth, "center")
-        
-        -- Letters
-        love.graphics.setNewFont(36)
-        local letterSpacing = 50
+        local screenHeight = love.graphics.getHeight()
+
+        -- Center position (lower third of screen)
+        local panelY = screenHeight * 0.6
+
+        -- Larger background panel with glow
+        love.graphics.setColor(0.05, 0.05, 0.1, 0.95)
+        love.graphics.rectangle("fill", screenWidth/2 - 280, panelY - 20, 560, 140, 15, 15)
+
+        -- Outer glow (pulsing)
+        local glowPulse = 0.3 + math.sin(love.timer.getTime() * 3) * 0.2
+        love.graphics.setColor(1, 0.3, 0.3, glowPulse)
+        love.graphics.setLineWidth(6)
+        love.graphics.rectangle("line", screenWidth/2 - 280, panelY - 20, 560, 140, 15, 15)
+        love.graphics.setLineWidth(1)
+
+        -- Title (vibrant red with glow)
+        love.graphics.setNewFont(24)
+        love.graphics.setColor(1, 0.1, 0.1, 0.8)
+        love.graphics.printf("TYPE TO ESCAPE!", 0, panelY - 5, screenWidth, "center")
+        love.graphics.setColor(1, 0.4, 0.2, 1)
+        love.graphics.printf("TYPE TO ESCAPE!", 0, panelY - 8, screenWidth, "center")
+
+        -- Letters (much larger and more vibrant)
+        love.graphics.setNewFont(54)
+        local letterSpacing = 70
         local startX = screenWidth/2 - (#self.typingSequence * letterSpacing / 2)
-        
+        local letterY = panelY + 45
+
         for i, letter in ipairs(self.typingSequence) do
             local x = startX + (i-1) * letterSpacing
-            
+
             if i <= self.typingProgress then
-                -- Completed letters (green)
+                -- Completed letters (bright green with glow)
+                love.graphics.setColor(0, 0.8, 0, 0.4)
+                love.graphics.print(string.upper(letter), x + 2, letterY + 2)
                 love.graphics.setColor(0.2, 1, 0.3, 1)
+                love.graphics.print(string.upper(letter), x, letterY)
+
             elseif i == self.typingProgress + 1 then
-                -- Current letter (yellow + pulse)
-                local pulse = 0.7 + math.sin(love.timer.getTime() * 10) * 0.3
-                love.graphics.setColor(1, 1, 0, pulse)
+                -- Current letter (bright cyan/yellow + strong pulse + glow)
+                local pulse = 0.8 + math.sin(love.timer.getTime() * 12) * 0.2
+                local colorShift = math.sin(love.timer.getTime() * 8) * 0.5 + 0.5
+
+                -- Glow behind
+                love.graphics.setColor(1, 1, 0, pulse * 0.6)
+                love.graphics.circle("fill", x + 22, letterY + 30, 35)
+
+                -- Shadow
+                love.graphics.setColor(0.3, 0.3, 0, 0.8)
+                love.graphics.print(string.upper(letter), x + 3, letterY + 3)
+
+                -- Main letter (color shifts yellow -> cyan)
+                love.graphics.setColor(1 - colorShift * 0.3, 1, colorShift * 0.5, 1)
+                love.graphics.print(string.upper(letter), x, letterY)
+
             else
-                -- Pending letters (white)
-                love.graphics.setColor(1, 1, 1, 0.5)
+                -- Pending letters (dim white)
+                love.graphics.setColor(0.4, 0.4, 0.4, 0.4)
+                love.graphics.print(string.upper(letter), x, letterY)
             end
-            
-            love.graphics.print(string.upper(letter), x, 75)
         end
-        
+
         love.graphics.setNewFont(12)
     end
     
-    -- U-shaped HUD background (from main build)
-    local hudWidth = 400
-    local hudHeight = 90
-    local hudX = (w - hudWidth) / 2
-    local hudY = h - hudHeight - 10
-    
-    -- Draw curved background shape
-    love.graphics.setColor(0, 0, 0, 0.7)
-    -- Main rectangle
-    love.graphics.rectangle("fill", hudX + 30, hudY + 20, hudWidth - 60, hudHeight - 20, 8, 8)
-    -- Left curve
-    love.graphics.arc("fill", hudX + 38, hudY + 28, 30, math.pi, math.pi * 1.5)
-    love.graphics.rectangle("fill", hudX + 8, hudY + 28, 30, hudHeight - 28)
-    -- Right curve
-    love.graphics.arc("fill", hudX + hudWidth - 38, hudY + 28, 30, math.pi * 1.5, math.pi * 2)
-    love.graphics.rectangle("fill", hudX + hudWidth - 38, hudY + 28, 30, hudHeight - 28)
-    
-    -- Health bar
-    local healthBarWidth = hudWidth - 80
-    local healthBarHeight = 16
-    local healthBarX = hudX + 40
-    local healthBarY = hudY + 25
-    
-    -- Health bar background
-    love.graphics.setColor(0.2, 0.05, 0.05, 1)
-    love.graphics.rectangle("fill", healthBarX, healthBarY, healthBarWidth, healthBarHeight, 4, 4)
-    
-    -- Health bar fill
-    local healthPercent = self.player.health / self.player.maxHealth
-    local healthColor = {0.2, 0.8, 0.2}
-    if healthPercent < 0.3 then
-        healthColor = {0.9, 0.2, 0.2}
-    elseif healthPercent < 0.6 then
-        healthColor = {0.9, 0.7, 0.2}
-    end
-    love.graphics.setColor(healthColor[1], healthColor[2], healthColor[3], 1)
-    love.graphics.rectangle("fill", healthBarX + 2, healthBarY + 2, (healthBarWidth - 4) * healthPercent, healthBarHeight - 4, 3, 3)
-    
-    -- Health bar shine
-    love.graphics.setColor(1, 1, 1, 0.2)
-    love.graphics.rectangle("fill", healthBarX + 2, healthBarY + 2, (healthBarWidth - 4) * healthPercent, (healthBarHeight - 4) / 2, 3, 3)
-    
-    -- Health bar border
-    love.graphics.setColor(0.4, 0.4, 0.4, 1)
-    love.graphics.setLineWidth(2)
-    love.graphics.rectangle("line", healthBarX, healthBarY, healthBarWidth, healthBarHeight, 4, 4)
-    love.graphics.setLineWidth(1)
-    
-    -- Health text
-    love.graphics.setColor(1, 1, 1, 1)
-    local font = love.graphics.getFont()
-    local healthText = math.floor(self.player.health) .. "/" .. self.player.maxHealth
-    local textWidth = font:getWidth(healthText)
-    love.graphics.print(healthText, healthBarX + healthBarWidth/2 - textWidth/2, healthBarY + 1)
-    
-    -- Draw abilities below health bar
-    local abilitySize = 44
-    local abilitySpacing = 12
-    local numAbilities = #self.player.abilityOrder
-    local abilitiesWidth = numAbilities * abilitySize + (numAbilities - 1) * abilitySpacing
-    local abilitiesX = (w - abilitiesWidth) / 2
-    local abilitiesY = healthBarY + healthBarHeight + 10
-    
-    for i, abilityId in ipairs(self.player.abilityOrder) do
-        local ability = self.player.abilities[abilityId]
-        if ability then
-            local x = abilitiesX + (i - 1) * (abilitySize + abilitySpacing)
-            UIUtils.drawAbilityIcon(ability, x, abilitiesY, abilitySize)
+    -- Draw ability HUD (corner-based layout: health bottom-left, abilities bottom-right)
+    if self.abilityHUD then
+        -- Update frenzy charge for display
+        if self.player.abilities.frenzy then
+            self.player.abilities.frenzy.charge = self.frenzyCharge
+            self.player.abilities.frenzy.chargeMax = self.frenzyChargeMax
         end
+        self.abilityHUD:draw(self.player, self.xpSystem)
     end
     
-    -- Boss title removed - now drawn in drawBossHealthBar()
+    -- Draw active buffs
+    if self.buffBar and self.playerStats then
+        local buffs = self.playerStats:getActiveBuffs()
+        self.buffBar:draw(buffs)
+    end
     
     love.graphics.setColor(1, 1, 1, 1)
 end
 
 function BossArenaScene:keypressed(key)
+    -- Stats overlay (Tab key)
+    if key == "tab" and self.statsOverlay then
+        self.statsOverlay:toggle()
+        return true
+    end
+    
+    -- Stats overlay scroll
+    if self.statsOverlay and self.statsOverlay:isVisible() then
+        if key == "up" then
+            self.statsOverlay:scroll(-1, #(self.playerStats:getUpgradeLog() or {}))
+            return true
+        elseif key == "down" then
+            self.statsOverlay:scroll(1, #(self.playerStats:getUpgradeLog() or {}))
+            return true
+        end
+    end
+    
     -- Typing test input (Phase 2 mechanic)
     if self.typingTestActive then
         local expectedKey = self.typingSequence[self.typingProgress + 1]
@@ -854,11 +1111,21 @@ function BossArenaScene:keypressed(key)
             
             -- Check if completed
             if self.typingProgress >= #self.typingSequence then
-                -- SUCCESS! Unroot player
+                -- SUCCESS! Unroot player and trigger vine attack
                 self.typingTestActive = false
                 if self.player then
                     self.player.isRooted = false
                     self.player.rootDuration = 0
+                end
+                if self.boss then
+                    self.boss.isInvulnerable = false
+
+                    -- Trigger vine lane attack after short delay (player has time to move to safety)
+                    self.boss.earthquakeCasting = true
+                    self.boss.earthquakeCastProgress = 0
+                    self.boss.earthquakeTimer = 0
+                    self.boss.earthquakeActive = false
+                    self.boss.isInvulnerable = true  -- Boss invulnerable during vine attack
                 end
                 self.screenShake:add(4, 0.15)
                 self.particles:createExplosion(self.player.x, self.player.y, {0.2, 1, 0.3})
@@ -871,8 +1138,8 @@ function BossArenaScene:keypressed(key)
         return true  -- Consume input
     end
     
-    -- Manual abilities
-    if key == "r" and self.player and self.player:isAbilityReady("frenzy") and self.frenzyCharge >= self.frenzyChargeMax then
+    -- Manual abilities (blocked during typing test)
+    if key == "r" and self.player and self.player:isAbilityReady("frenzy") and self.frenzyCharge >= self.frenzyChargeMax and not self.typingTestActive then
         self.player:useAbility("frenzy", self.playerStats)
         self.frenzyCharge = self.frenzyCharge - self.frenzyChargeMax
         local fCfg = Config.Abilities.frenzy

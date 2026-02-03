@@ -23,8 +23,8 @@ function VineLane:new(y, laneIndex, speed, damage)
         waveSpeed = 4,                   -- How fast the wave moves
         
         -- Visual properties
-        thickness = 12,                  -- Base thickness of the vine
-        color = {0.2, 0.7, 0.2},         -- Green color
+        thickness = 16,                  -- Base thickness of the vine (thicker for root look)
+        color = {0.35, 0.25, 0.15},      -- Brown/bark color for roots
         segments = 60,                   -- Number of line segments to draw
         
         -- State
@@ -104,38 +104,49 @@ function VineLane:draw()
     end
     
     if #points < 4 then return end
-    
-    -- Draw thick vine body (dark green)
-    love.graphics.setColor(0.1, 0.4, 0.1, 0.9)
-    love.graphics.setLineWidth(self.thickness + 4)
+
+    -- Draw thick root shadow/depth (very dark brown)
+    love.graphics.setColor(0.15, 0.10, 0.05, 0.95)
+    love.graphics.setLineWidth(self.thickness + 6)
     love.graphics.line(points)
-    
-    -- Draw main vine (green)
+
+    -- Draw main root (brown/bark color)
     love.graphics.setColor(self.color[1], self.color[2], self.color[3], 1)
     love.graphics.setLineWidth(self.thickness)
     love.graphics.line(points)
-    
-    -- Draw highlight (lighter green)
-    love.graphics.setColor(0.4, 0.9, 0.4, 0.6)
-    love.graphics.setLineWidth(self.thickness / 3)
+
+    -- Draw highlight (lighter bark texture)
+    love.graphics.setColor(0.5, 0.38, 0.25, 0.7)
+    love.graphics.setLineWidth(self.thickness / 2.5)
     love.graphics.line(points)
-    
-    -- Draw thorns/bumps at intervals
-    love.graphics.setColor(0.15, 0.5, 0.15, 1)
-    for i = 1, #points - 2, 8 do
+
+    -- Draw root nodes/knots at intervals (darker spots along root)
+    love.graphics.setColor(0.2, 0.15, 0.1, 1)
+    for i = 1, #points - 2, 12 do
         local px, py = points[i], points[i + 1]
-        -- Small circles as "nodes" on the vine
-        love.graphics.circle("fill", px, py - self.thickness/2 - 3, 4)
-        love.graphics.circle("fill", px, py + self.thickness/2 + 3, 4)
+        -- Oval-shaped knots on the root
+        love.graphics.ellipse("fill", px, py, 6, 4)
+        -- Small root tendrils
+        local angleOffset = (i % 2 == 0) and -0.6 or 0.6
+        local tendrilLength = 8
+        love.graphics.line(px, py, px + math.cos(angleOffset) * tendrilLength, py + math.sin(angleOffset) * tendrilLength)
     end
-    
-    -- Draw leading edge (vine head - slightly larger and pulsing)
+
+    -- Draw leading edge (root tip - pointed and gnarled)
     local headY = self:getWaveY(self.headX)
-    local pulse = 1 + math.sin(self.waveTime * 6) * 0.2
-    love.graphics.setColor(0.3, 0.8, 0.3, 1)
+    local pulse = 1 + math.sin(self.waveTime * 6) * 0.15
+
+    -- Root tip shadow
+    love.graphics.setColor(0.2, 0.15, 0.1, 0.9)
+    love.graphics.circle("fill", self.headX, headY, (self.thickness + 2) * pulse)
+
+    -- Root tip main
+    love.graphics.setColor(0.4, 0.3, 0.2, 1)
     love.graphics.circle("fill", self.headX, headY, self.thickness * pulse)
-    love.graphics.setColor(0.1, 0.5, 0.1, 1)
-    love.graphics.circle("line", self.headX, headY, self.thickness * pulse)
+
+    -- Root tip highlight
+    love.graphics.setColor(0.55, 0.42, 0.28, 0.8)
+    love.graphics.circle("fill", self.headX - 2, headY - 2, (self.thickness * 0.4) * pulse)
     
     love.graphics.setLineWidth(1)
     love.graphics.setColor(1, 1, 1, 1)

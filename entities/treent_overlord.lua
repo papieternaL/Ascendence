@@ -39,7 +39,12 @@ function TreentOverlord:new(x, y)
         -- Phase tracking
         phase = 1,
         phaseTransitionTriggered = false,
-        
+
+        -- Typing test HP thresholds (50%, 25%, 5%)
+        typingTest50Triggered = false,
+        typingTest25Triggered = false,
+        typingTest5Triggered = false,
+
         -- Phase 1: Lunge
         lungeState = "idle", -- idle, charging, lunging, cooldown
         lungeTimer = 0,
@@ -53,14 +58,16 @@ function TreentOverlord:new(x, y)
         lungeDirY = 0,
         lungeSpeed = cfg.lungeSpeed,
         
-        -- Phase 1: Bark Barrage
+        -- Bark Barrage (horizontal burst attack - used in both phases)
         barkBarrageTimer = 0,
         barkBarrageCooldown = cfg.barkBarrageCooldown,
-        barkBarrageCount = cfg.barkBarrageCount,
+        barkBarrageCount = 5,  -- 5 shots per burst (horizontal line)
         barkBarrageDelay = cfg.barkBarrageDelay,
         barkBarrageIndex = 0,  -- Current projectile being fired
         barkBarrageActive = false,
         barkBarrageInternalTimer = 0,
+        barkBarrageBurstCount = 0,  -- How many bursts fired in current attack
+        barkBarrageMaxBursts = 1,   -- Phase 1: 1 burst, Phase 2: 2 bursts
         
         -- Phase 2: Root status
         rootDuration = 0,
@@ -90,7 +97,7 @@ function TreentOverlord:new(x, y)
     return boss
 end
 
-function TreentOverlord:update(dt, playerX, playerY, onBarkShoot, onPhaseTransition, onEncompassRoot, onVineLanes)
+function TreentOverlord:update(dt, playerX, playerY, onBarkShoot, onPhaseTransition, onEncompassRoot, onVineLanes, onTypingTest)
     if not self.isAlive then return end
     
     -- Check for phase transition (50% HP)
@@ -117,14 +124,20 @@ function TreentOverlord:update(dt, playerX, playerY, onBarkShoot, onPhaseTransit
     if self.flashTime > 0 then
         self.flashTime = self.flashTime - dt
     end
-    
-    -- Apply knockback friction
-    self.knockbackX = self.knockbackX * Config.Vfx.knockbackFriction
-    self.knockbackY = self.knockbackY * Config.Vfx.knockbackFriction
-    
-    -- Apply knockback movement
-    self.x = self.x + self.knockbackX * dt
-    self.y = self.y + self.knockbackY * dt
+
+    -- Apply knockback friction (but not during invulnerability - boss is frozen)
+    if not self.isInvulnerable then
+        self.knockbackX = self.knockbackX * Config.Vfx.knockbackFriction
+        self.knockbackY = self.knockbackY * Config.Vfx.knockbackFriction
+
+        -- Apply knockback movement
+        self.x = self.x + self.knockbackX * dt
+        self.y = self.y + self.knockbackY * dt
+    else
+        -- Boss is frozen during typing test
+        self.knockbackX = 0
+        self.knockbackY = 0
+    end
     
     -- Root status (only for Phase 2 mechanics)
     if self.isRooted then
@@ -142,7 +155,7 @@ function TreentOverlord:update(dt, playerX, playerY, onBarkShoot, onPhaseTransit
     
     -- === PHASE 2 LOGIC ===
     if self.phase == 2 then
-        self:updatePhase2(dt, playerX, playerY, onEncompassRoot, onVineLanes)
+        self:updatePhase2(dt, playerX, playerY, onEncompassRoot, onVineLanes, onBarkShoot, onTypingTest)
     end
 end
 
@@ -183,80 +196,105 @@ function TreentOverlord:updatePhase1(dt, playerX, playerY, onBarkShoot)
         end
     end
     
-    -- Bark Barrage attack (ONLY when not lunging)
-    if self.lungeState == "idle" then
-        if not self.barkBarrageActive then
-            self.barkBarrageTimer = self.barkBarrageTimer + dt
-            if self.barkBarrageTimer >= self.barkBarrageCooldown then
-                -- Start barrage
-                self.barkBarrageActive = true
-                self.barkBarrageIndex = 0
-                self.barkBarrageInternalTimer = 0
-                self.barkBarrageTimer = 0
-            end
-        else
-            -- Fire projectiles in sequence (CONE ATTACK toward player)
-            self.barkBarrageInternalTimer = self.barkBarrageInternalTimer + dt
-            if self.barkBarrageInternalTimer >= self.barkBarrageDelay and self.barkBarrageIndex < self.barkBarrageCount then
-                self.barkBarrageInternalTimer = 0
-                self.barkBarrageIndex = self.barkBarrageIndex + 1
+    -- Bark Barrage attack (runs when not lunging)
+    self:updateBarkBarrage(dt, playerX, playerY, onBarkShoot)
+end
+
+-- Shared bark barrage logic (called by both phase 1 and phase 2)
+function TreentOverlord:updateBarkBarrage(dt, playerX, playerY, onBarkShoot)
+    if self.lungeState ~= "idle" then return end
+    
+    if not self.barkBarrageActive then
+        self.barkBarrageTimer = self.barkBarrageTimer + dt
+        if self.barkBarrageTimer >= self.barkBarrageCooldown then
+            -- Start barrage
+            self.barkBarrageActive = true
+            self.barkBarrageIndex = 0
+            self.barkBarrageInternalTimer = 0
+            self.barkBarrageTimer = 0
+            self.barkBarrageBurstCount = 0
+            -- Phase 2: 2 bursts per attack, Phase 1: 1 burst
+            self.barkBarrageMaxBursts = (self.phase == 2) and 2 or 1
+        end
+    else
+        -- Fire projectiles in sequence (HORIZONTAL BURST toward player)
+        self.barkBarrageInternalTimer = self.barkBarrageInternalTimer + dt
+
+        -- 5 shots per burst
+        local shotsPerBurst = 5
+        
+        if self.barkBarrageInternalTimer >= self.barkBarrageDelay and self.barkBarrageIndex < shotsPerBurst then
+            self.barkBarrageInternalTimer = 0
+            self.barkBarrageIndex = self.barkBarrageIndex + 1
+
+            -- Fire one projectile in horizontal line toward player
+            if onBarkShoot then
+                -- Calculate horizontal direction (left or right based on player position)
+                local dx = playerX - self.x
+                local horizontalDir = dx >= 0 and 1 or -1
                 
-                -- Fire one projectile in cone toward player
-                if onBarkShoot then
-                    -- Calculate base angle toward player
-                    local dx = playerX - self.x
-                    local dy = playerY - self.y
-                    local baseAngle = math.atan2(dy, dx)
-                    
-                    -- Cone spread: 60 degrees total (30 degrees each side)
-                    local coneSpread = math.rad(60)
-                    local spreadOffset = (self.barkBarrageIndex / self.barkBarrageCount - 0.5) * coneSpread
-                    local angle = baseAngle + spreadOffset
-                    
-                    local targetX = self.x + math.cos(angle) * 500
-                    local targetY = self.y + math.sin(angle) * 500
-                    onBarkShoot(self.x, self.y, targetX, targetY)
-                end
+                -- Vertical spread: shots form a horizontal line with slight vertical offset
+                local verticalSpread = 40  -- Total spread in pixels
+                local offsetY = (self.barkBarrageIndex - 3) * (verticalSpread / 4)  -- -2, -1, 0, 1, 2 → spread
+                
+                -- Target is directly horizontal with vertical offset
+                local targetX = self.x + horizontalDir * 600
+                local targetY = self.y + offsetY
+                
+                -- Phase 2: faster bark speed (280 vs 220)
+                local barkSpeed = (self.phase == 2) and 280 or 220
+                onBarkShoot(self.x, self.y, targetX, targetY, barkSpeed)
             end
+        end
+
+        -- Check if current burst is complete
+        if self.barkBarrageIndex >= shotsPerBurst then
+            self.barkBarrageBurstCount = self.barkBarrageBurstCount + 1
             
-            -- End barrage when all projectiles fired
-            if self.barkBarrageIndex >= self.barkBarrageCount then
+            if self.barkBarrageBurstCount >= self.barkBarrageMaxBursts then
+                -- All bursts complete
                 self.barkBarrageActive = false
+            else
+                -- Reset for next burst (with short delay)
+                self.barkBarrageIndex = 0
+                self.barkBarrageInternalTimer = -0.3  -- 0.3s delay between bursts
             end
         end
     end
 end
 
-function TreentOverlord:updatePhase2(dt, playerX, playerY, onEncompassRoot, onVineLanes)
-    -- Encompass Root: Boss roots the player and starts earthquake sequence
-    if not self.encompassRootActive then
-        self.encompassRootTimer = self.encompassRootTimer + dt
-        if self.encompassRootTimer >= 3.0 then -- Every 3s, attempt sequence
-            self.encompassRootActive = true
-            self.encompassRootTimer = 0
-            
-            -- SYNC EARTHQUAKE START (Pressure!)
-            self.earthquakeCasting = true
-            self.earthquakeCastProgress = 0
-            self.earthquakeTimer = 0
-            self.earthquakeActive = false
-            self.isInvulnerable = true  -- Boss is invulnerable during earthquake mechanic
-            
-            if onEncompassRoot then
-                onEncompassRoot(playerX, playerY)
-            end
+function TreentOverlord:updatePhase2(dt, playerX, playerY, onEncompassRoot, onVineLanes, onBarkShoot, onTypingTest)
+    local healthPercent = self.health / self.maxHealth
+
+    -- Check for typing test triggers at 50% (phase start), 25%, and 5%
+    if healthPercent <= 0.50 and not self.typingTest50Triggered then
+        self.typingTest50Triggered = true
+        self.isInvulnerable = true
+        if onTypingTest then
+            onTypingTest("start")
         end
-    else
-        -- Sequence is active, count down duration (boss can lunge/bark during this)
-        self.encompassRootTimer = self.encompassRootTimer + dt
-        if self.encompassRootTimer >= self.encompassRootDuration then
-            self.encompassRootActive = false
-            self.encompassRootTimer = 0
-            self.isInvulnerable = false  -- End invulnerability when mechanic ends
-        end
+        return  -- Stop all other mechanics during typing test
     end
-    
-    -- Territory Control: Vine Lanes attack with cast time
+
+    if healthPercent <= 0.25 and not self.typingTest25Triggered then
+        self.typingTest25Triggered = true
+        self.isInvulnerable = true
+        if onTypingTest then
+            onTypingTest("start")
+        end
+        return  -- Stop all other mechanics during typing test
+    end
+
+    if healthPercent <= 0.05 and not self.typingTest5Triggered then
+        self.typingTest5Triggered = true
+        self.isInvulnerable = true
+        if onTypingTest then
+            onTypingTest("start")
+        end
+        return  -- Stop all other mechanics during typing test
+    end
+
+    -- Territory Control: Vine Lanes attack with cast time (ALWAYS UPDATE, even when invulnerable)
     if self.earthquakeCasting then
         -- Casting vine attack (show cast bar)
         self.earthquakeCastProgress = self.earthquakeCastProgress + dt
@@ -275,11 +313,20 @@ function TreentOverlord:updatePhase2(dt, playerX, playerY, onEncompassRoot, onVi
         if self.earthquakeElapsed >= self.earthquakeDuration then
             self.earthquakeActive = false
             self.earthquakeTimer = 0
+            self.isInvulnerable = false  -- End invulnerability when vines finish
             if onVineLanes then
                 onVineLanes("end")
             end
         end
     end
+
+    -- If invulnerable (typing test active or vine attack), block attack mechanics
+    if self.isInvulnerable then
+        return
+    end
+
+    -- Phase 2 ENRAGED: Use all Phase 1 attacks with amplified stats (only when NOT invulnerable)
+    self:updatePhase1(dt, playerX, playerY, onBarkShoot)
 end
 
 function TreentOverlord:draw()

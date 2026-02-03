@@ -52,11 +52,12 @@ function AbilityHUD:draw(player, xpSystem)
     local screenWidth = love.graphics.getWidth()
     local screenHeight = love.graphics.getHeight()
     
-    -- ===== HEALTH BAR (bottom-center, above abilities) =====
+    -- ===== HEALTH BAR (bottom-left corner) =====
     local healthBarWidth = 300
     local healthBarHeight = 24
-    local healthBarX = screenWidth / 2 - healthBarWidth / 2
-    local healthBarY = screenHeight - 120
+    local padding = 30
+    local healthBarX = padding
+    local healthBarY = screenHeight - padding - healthBarHeight
     local healthPercent = player.health / player.maxHealth
     
     -- Low health pulse
@@ -96,30 +97,36 @@ function AbilityHUD:draw(player, xpSystem)
     local textHeight = font:getHeight()
     love.graphics.print(hpText, healthBarX + healthBarWidth / 2 - textWidth / 2, healthBarY + healthBarHeight / 2 - textHeight / 2)
     
-    -- ===== ABILITY ICONS (hexagonal frames) =====
+    -- ===== ABILITY ICONS (hexagonal frames, bottom-right corner) =====
     local iconSize = 45
-    local spacing = 75
-    local startX = screenWidth / 2 - (spacing * 1.5)
-    local yPos = screenHeight - 75
-    
+    local spacing = 60  -- Reduced from 75 for compactness
+
+    -- Count unlocked abilities
+    local unlockedAbilities = {}
     local abilityOrder = player.abilityOrder or {"power_shot", "dash", "arrow_volley", "frenzy"}
-    
+    for _, aid in ipairs(abilityOrder) do
+        if player.abilities[aid] and player.abilities[aid].unlocked then
+            table.insert(unlockedAbilities, aid)
+        end
+    end
+
+    local numUnlocked = #unlockedAbilities
+    local totalWidth = numUnlocked * iconSize + (numUnlocked - 1) * spacing
+    local startX = screenWidth - padding - totalWidth
+    local yPos = screenHeight - padding - iconSize / 2 - 10
+
     -- #region agent log
     local logFile = io.open("c:\\Users\\steven\\Desktop\\Cursor\\Shooter\\.cursor\\debug.log", "a")
-    if logFile then 
-        local unlockedCount = 0
-        for _, aid in ipairs(abilityOrder) do
-            if player.abilities[aid] and player.abilities[aid].unlocked then unlockedCount = unlockedCount + 1 end
-        end
-        logFile:write('{"hypothesisId":"H3","location":"ability_hud.lua:draw","message":"abilities check","data":{"unlockedCount":'..unlockedCount..',"totalAbilities":4},"timestamp":'..os.time()..'}\n') 
-        logFile:close() 
+    if logFile then
+        logFile:write('{"hypothesisId":"H3","location":"ability_hud.lua:draw","message":"abilities check","data":{"unlockedCount":'..numUnlocked..',"totalAbilities":4},"timestamp":'..os.time()..'}\n')
+        logFile:close()
     end
     -- #endregion
-    
-    for i, abilityId in ipairs(abilityOrder) do
+
+    for idx, abilityId in ipairs(unlockedAbilities) do
         local ability = player.abilities[abilityId]
-        if ability and ability.unlocked then
-            local x = startX + (i - 1) * spacing
+        if ability then
+            local x = startX + (idx - 1) * (iconSize + spacing)
             local y = yPos
             
             -- Calculate cooldown/charge progress
@@ -194,11 +201,11 @@ function AbilityHUD:draw(player, xpSystem)
         end
     end
     
-    -- ===== PLAYER LEVEL BADGE (bottom-left) =====
+    -- ===== PLAYER LEVEL BADGE (bottom-left, above health bar) =====
     if xpSystem then
-        local levelBadgeX = 50
-        local levelBadgeY = screenHeight - 50
         local levelBadgeRadius = 35
+        local levelBadgeX = padding + levelBadgeRadius + 10
+        local levelBadgeY = screenHeight - padding - healthBarHeight - 60
         
         -- Outer glow ring
         love.graphics.setColor(0.3, 0.5, 0.8, 0.4)

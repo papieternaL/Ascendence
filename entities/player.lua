@@ -56,6 +56,8 @@ function Player:new(x, y)
         bowOffsetDist = 10,  -- Much closer to body
         bowRecoilTime = 0,
         bowRecoilDuration = 0.08,
+        bowShotTime = 0,
+        bowShotDuration = 0.06,
         -- Abilities with cooldowns
         -- Unlock order: Dash (always), Power Shot OR Arrow Volley (Level 0 choice),
         --               the other at Level 3 (auto), Frenzy at Level 6 (auto)
@@ -157,6 +159,9 @@ function Player:update(dt, particles)
     -- Bow recoil decay
     if self.bowRecoilTime and self.bowRecoilTime > 0 then
         self.bowRecoilTime = math.max(0, self.bowRecoilTime - dt)
+    end
+    if self.bowShotTime and self.bowShotTime > 0 then
+        self.bowShotTime = math.max(0, self.bowShotTime - dt)
     end
     
     -- Update ability cooldowns
@@ -399,6 +404,16 @@ function Player:draw()
             imgW / 2, imgH / 2 -- Center origin
         )
     end
+
+    -- Bow shot flash (short-lived) to sell arrow release
+    if self.bowShotTime and self.bowShotTime > 0 then
+        local t = self.bowShotTime / (self.bowShotDuration or 0.06)
+        local flashSize = 6 + (1 - t) * 6
+        local fx, fy = self:getBowTip()
+        love.graphics.setColor(1, 0.85, 0.4, 0.7 * t)
+        love.graphics.circle("fill", fx, fy, flashSize)
+        love.graphics.setColor(1, 1, 1, 1)
+    end
     
     --[[ Health bar moved to UI layer (ability_hud.lua)
     -- Draw health bar above player (stylized)
@@ -456,11 +471,12 @@ end
 
 function Player:triggerBowRecoil()
     self.bowRecoilTime = self.bowRecoilDuration or 0.08
+    self.bowShotTime = self.bowShotDuration or 0.06
 end
 
 -- Returns a good arrow spawn point (near the bow, in aim direction).
 function Player:getBowTip()
-    local offset = math.max(self.size + 8, (self.bowOffsetDist or (self.size + 5)) + 6)
+    local offset = math.max(self.size + 10, (self.bowOffsetDist or (self.size + 5)) + 10)
     return self.x + math.cos(self.bowAngle) * offset,
            self.y + math.sin(self.bowAngle) * offset
 end

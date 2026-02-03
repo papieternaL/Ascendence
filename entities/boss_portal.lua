@@ -143,7 +143,7 @@ function BossPortal:draw()
   end
   
   if self.show_prompt and scale >= 0.9 then
-    local prompt_text = "[E] Enter Boss Fight"
+    local prompt_text = "Walk Over to Enter Boss Fight"
     local font = love.graphics.getFont()
     local text_width = font:getWidth(prompt_text)
     local text_height = font:getHeight()

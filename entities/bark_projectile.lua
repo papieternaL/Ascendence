@@ -1,8 +1,8 @@
--- Bark Projectile (thrown by Small Treent)
+-- Bark Projectile (thrown by Small Treent and Treent Overlord)
 local BarkProjectile = {}
 BarkProjectile.__index = BarkProjectile
 
-function BarkProjectile:new(x, y, targetX, targetY)
+function BarkProjectile:new(x, y, targetX, targetY, customSpeed)
     local dx = targetX - x
     local dy = targetY - y
     local distance = math.sqrt(dx * dx + dy * dy)
@@ -12,7 +12,7 @@ function BarkProjectile:new(x, y, targetX, targetY)
     end
     
     local angle = math.atan2(dy, dx)
-    local speed = 180
+    local speed = customSpeed or 180  -- Use custom speed if provided
     
     local bark = {
         x = x,

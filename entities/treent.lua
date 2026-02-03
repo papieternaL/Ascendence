@@ -21,7 +21,7 @@ function Treent:new(x, y)
   local t = {
     x = x or 0,
     y = y or 0,
-    size = 18,
+    size = 26,
     speed = 30,
     maxHealth = 80,
     health = 80,
