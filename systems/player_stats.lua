@@ -149,7 +149,52 @@ function PlayerStats:applyEffect(effect)
     -- Store proc effects for the combat system to check
     self.weaponMods.procs = self.weaponMods.procs or {}
     table.insert(self.weaponMods.procs, effect)
+
+  elseif effect.kind == "ability_mod" then
+    -- Store ability modifications keyed by ability name
+    self.weaponMods.abilityMods = self.weaponMods.abilityMods or {}
+    local ability = effect.ability or "unknown"
+    self.weaponMods.abilityMods[ability] = self.weaponMods.abilityMods[ability] or {}
+    table.insert(self.weaponMods.abilityMods[ability], effect)
   end
+end
+
+-- Get all ability modifications for a specific ability
+function PlayerStats:getAbilityMods(abilityName)
+  if not self.weaponMods.abilityMods then return {} end
+  return self.weaponMods.abilityMods[abilityName] or {}
+end
+
+-- Compute a final ability stat by applying all matching mods
+-- Returns the modified value after applying all cooldown_add, cooldown_mul, damage_mul, range_mul, etc.
+function PlayerStats:getAbilityValue(abilityName, modType, baseValue)
+  local mods = self:getAbilityMods(abilityName)
+  local value = baseValue
+  for _, mod in ipairs(mods) do
+    if mod.mod == modType then
+      if modType == "cooldown_add" then
+        value = value + (mod.value or 0)
+      elseif modType == "cooldown_mul" then
+        value = value * (mod.value or 1)
+      elseif modType == "damage_mul" then
+        value = value * (mod.value or 1)
+      elseif modType == "range_mul" then
+        value = value * (mod.value or 1)
+      elseif modType == "charge_gain_mul" then
+        value = value * (mod.value or 1)
+      elseif modType == "duration_add" then
+        value = value + (mod.value or 0)
+      elseif modType == "crit_chance_add" then
+        value = value + (mod.value or 0)
+      elseif modType == "move_speed_mul" then
+        value = value * (mod.value or 1)
+      else
+        -- Generic additive for unknown mods
+        value = value + (mod.value or 0)
+      end
+    end
+  end
+  return value
 end
 
 -- Add a temporary buff

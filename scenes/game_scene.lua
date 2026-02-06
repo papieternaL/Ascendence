@@ -341,6 +341,29 @@ function GameScene:update(dt)
                 local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
                 local arrow = Arrow:new(sx, sy, ex, ey, { damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140 })
                 table.insert(self.arrows, arrow)
+
+                -- Bonus projectiles from weapon mods
+                local bonusProj = (self.playerStats and self.playerStats:getWeaponMod("bonus_projectiles")) or 0
+                if bonusProj > 0 then
+                    local spreadDeg = (self.playerStats and self.playerStats.weaponMods.projectile_spread) or 10
+                    local spreadRad = math.rad(spreadDeg)
+                    local baseAngle = math.atan2(ey - sy, ex - sx)
+                    for p = 1, bonusProj do
+                        local offset = spreadRad * p * (p % 2 == 0 and 1 or -1)
+                        local bx = sx + math.cos(baseAngle + offset) * 10
+                        local by = sy + math.sin(baseAngle + offset) * 10
+                        local tx = sx + math.cos(baseAngle + offset) * 300
+                        local ty = sy + math.sin(baseAngle + offset) * 300
+                        local bonusArrow = Arrow:new(bx, by, tx, ty, {
+                            damage = baseDmg * 0.7,
+                            pierce = pierce,
+                            kind = "primary",
+                            knockback = 100,
+                        })
+                        table.insert(self.arrows, bonusArrow)
+                    end
+                end
+
                 self.fireCooldown = self.fireRate
                 if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
             end
@@ -353,12 +376,20 @@ function GameScene:update(dt)
             self.player:aimAt(ex, ey)
             self.player:useAbility("power_shot")
             local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
-            local base = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult * 3.0
+            local baseDmgMul = 3.0
+            if self.playerStats then
+                baseDmgMul = self.playerStats:getAbilityValue("power_shot", "damage_mul", baseDmgMul)
+            end
+            local base = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult * baseDmgMul
+            local psRange = 1.0
+            if self.playerStats then
+                psRange = self.playerStats:getAbilityValue("power_shot", "range_mul", psRange)
+            end
             local ps = Arrow:new(sx, sy, ex, ey, {
                 damage = base,
                 speed = 760,
                 size = 12,
-                lifetime = 1.8,
+                lifetime = 1.8 * psRange,
                 pierce = 999,
                 alwaysCrit = true,
                 kind = "power_shot",
@@ -373,8 +404,13 @@ function GameScene:update(dt)
         if self.player and self.player:isAbilityReady("entangle") then
             local px, py = playerX, playerY
             local entangleRange = 260
+            -- Apply radius_add ability mod
+            if self.playerStats then
+                entangleRange = self.playerStats:getAbilityValue("entangle", "radius_add", entangleRange)
+            end
             local best, bestDist = nil, entangleRange
             local function considerTarget(t, bonus)
+                if t.isBoss then return end -- Entangle does NOT affect bosses
                 local ex, ey = t:getPosition()
                 local dx = ex - px
                 local dy = ey - py
@@ -390,10 +426,18 @@ function GameScene:update(dt)
             for _, enemy in ipairs(self.enemies) do
                 if enemy.isAlive then considerTarget(enemy, 0) end
             end
+            for _, treent in ipairs(self.treents) do
+                if treent.isAlive then considerTarget(treent, 0) end
+            end
             if best and best.applyRoot then
                 self.player:useAbility("entangle")
                 local dur = (best.state ~= nil) and 1.0 or 1.8
-                best:applyRoot(dur, 1.15)
+                -- Apply damage_taken_mul from Thorned Bind
+                local rootDmgMul = 1.15
+                if self.playerStats then
+                    rootDmgMul = self.playerStats:getAbilityValue("entangle", "damage_taken_mul", rootDmgMul)
+                end
+                best:applyRoot(dur, rootDmgMul)
                 local tx, ty = best:getPosition()
                 self.particles:createExplosion(tx, ty, {0.2, 1, 0.3})
                 self.screenShake:add(2, 0.1)
@@ -456,12 +500,16 @@ function GameScene:update(dt)
 
                             -- Frenzy charge on kill
                             if not self.frenzyActive then
-                                self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + self.frenzyKillGain)
+                                local killGain = self.frenzyKillGain
+                                if self.playerStats then
+                                    killGain = self.playerStats:getAbilityValue("frenzy", "charge_gain_mul", killGain)
+                                end
+                                self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + killGain)
                             end
                         else
                             self.screenShake:add(2, 0.1)
                         end
-                        
+
                         if arrow:consumePierce() then
                             hitEnemy = false
                         else
@@ -471,7 +519,7 @@ function GameScene:update(dt)
                     end
                 end
             end
-            
+
             -- Check lungers
             if not hitEnemy then
                 for j, lunger in ipairs(self.lungers) do
@@ -480,7 +528,7 @@ function GameScene:update(dt)
                         local dx = ax - lx
                         local dy = ay - ly
                         local distance = math.sqrt(dx * dx + dy * dy)
-                        
+
                         if distance < lunger:getSize() + arrow:getSize() and arrow:canHit(lunger) then
                             arrow:markHit(lunger)
                             local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
@@ -489,21 +537,25 @@ function GameScene:update(dt)
                                 self.damageNumbers:add(lx, ly - lunger:getSize(), dmg, { isCrit = isCrit })
                             end
                             local died = lunger:takeDamage(dmg, ax, ay, arrow.knockback)
-                            
+
                             if died then
                                 self.particles:createExplosion(lx, ly, {0.8, 0.3, 0.8})
                                 self.screenShake:add(6, 0.25)
-                                
+
                                 -- Drop XP orbs (lungers drop more)
                                 local xpValue = 25 + math.random(0, 15)
                                 self.xpSystem:spawnOrb(lx, ly, xpValue)
-                                
+
                                 -- Lungers are MCM-type enemies, add rarity charge
                                 self.rarityCharge:add(love.timer.getTime(), 2)
 
                                 -- Frenzy charge on kill (lungers count as bigger kills)
                                 if not self.frenzyActive then
-                                    self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + (self.frenzyKillGain + 5))
+                                    local killGain = self.frenzyKillGain + 5
+                                    if self.playerStats then
+                                        killGain = self.playerStats:getAbilityValue("frenzy", "charge_gain_mul", killGain)
+                                    end
+                                    self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + killGain)
                                 end
                             else
                                 self.screenShake:add(2, 0.1)
@@ -740,17 +792,34 @@ end
 
 function GameScene:applyStatsToPlayer()
     if not self.player or not self.playerStats then return end
-    
+
     -- Update player with computed stats
     self.player.attackDamage = self.playerStats:get("primary_damage")
     self.player.speed = self.playerStats:get("move_speed")
     self.attackRange = self.playerStats:get("range")
-    
+
     -- Attack speed affects fire rate (higher = faster)
     local attackSpeed = self.playerStats:get("attack_speed")
     self.fireRate = 0.4 / attackSpeed  -- Base 0.4s cooldown, modified by attack speed
-    
-    -- TODO: Apply weapon mods like pierce, ricochet, etc.
+
+    -- Apply ability mods to player ability cooldowns
+    if self.player.abilities then
+        -- Power Shot cooldown mods
+        local basePSCooldown = 6.0
+        basePSCooldown = self.playerStats:getAbilityValue("power_shot", "cooldown_add", basePSCooldown)
+        basePSCooldown = self.playerStats:getAbilityValue("power_shot", "cooldown_mul", basePSCooldown)
+        self.player.abilities.power_shot.cooldown = math.max(1.0, basePSCooldown)
+
+        -- Entangle cooldown mods
+        local baseEntCooldown = 8.0
+        baseEntCooldown = self.playerStats:getAbilityValue("entangle", "cooldown_add", baseEntCooldown)
+        baseEntCooldown = self.playerStats:getAbilityValue("entangle", "cooldown_mul", baseEntCooldown)
+        self.player.abilities.entangle.cooldown = math.max(1.0, baseEntCooldown)
+
+        -- Roll cooldown from stats
+        local rollCD = self.playerStats:get("roll_cooldown")
+        self.player.abilities.dash.cooldown = math.max(0.3, rollCD)
+    end
 end
 
 function GameScene:draw()
@@ -935,9 +1004,15 @@ function GameScene:keypressed(key)
     -- Ultimate (Frenzy) is user-activated
     if key == "r" and self.playerStats and (not self.frenzyActive) and self.frenzyCharge >= self.frenzyChargeMax then
         self.frenzyCharge = self.frenzyCharge - self.frenzyChargeMax
-        self.playerStats:addBuff("frenzy", 8.0, {
-            { stat = "move_speed", mul = 1.25 },
-            { stat = "crit_chance", add = 0.25 },
+
+        -- Apply ability mods to Frenzy parameters
+        local frenzyDuration = self.playerStats:getAbilityValue("frenzy", "duration_add", 8.0)
+        local frenzyMoveMul = self.playerStats:getAbilityValue("frenzy", "move_speed_mul", 1.25)
+        local frenzyCritAdd = self.playerStats:getAbilityValue("frenzy", "crit_chance_add", 0.25)
+
+        self.playerStats:addBuff("frenzy", frenzyDuration, {
+            { stat = "move_speed", mul = frenzyMoveMul },
+            { stat = "crit_chance", add = frenzyCritAdd },
         }, { break_on_hit_taken = true })
         self.frenzyActive = true
         self.screenShake:add(4, 0.15)

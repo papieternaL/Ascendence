@@ -1,21 +1,10 @@
 -- Treent Enemy - Tanky forest bruiser
+-- NOTE: Sprite visuals intentionally removed. Will be re-implemented
+-- in the visual overhaul phase to match Ember Knights pixel art direction.
 local Treent = {}
 Treent.__index = Treent
 
-Treent.image = nil
-
-local function loadImageOnce()
-  if Treent.image then return end
-  -- Keep enemy visuals "pixel clean" by using the same Kenney Monochrome RPG tileset style.
-  local success, img = pcall(love.graphics.newImage, "assets/2D assets/Monochrome RPG Tileset/Dot Matrix/Sprites/enemy2.png")
-  if success and img then
-    Treent.image = img
-    Treent.image:setFilter("nearest", "nearest")
-  end
-end
-
 function Treent:new(x, y)
-  loadImageOnce()
   local t = {
     x = x or 0,
     y = y or 0,
@@ -109,25 +98,14 @@ end
 function Treent:draw()
   if not self.isAlive then return end
 
-  if Treent.image then
-    local img = Treent.image
-    local w, h = img:getWidth(), img:getHeight()
-    local scale = 1.6
-    if self.flashTime > 0 then
-      love.graphics.setColor(1, 1, 1, 1)
-    else
-      -- Slight green tint to read as "forest bruiser"
-      love.graphics.setColor(0.7, 1.0, 0.75, 1)
-    end
-    love.graphics.draw(img, self.x, self.y, 0, scale, scale, w/2, h/2)
-    love.graphics.setColor(1, 1, 1, 1)
-    return
-  end
-
-  -- Fallback: big green square
+  -- Placeholder shape (sprite to be added in visual overhaul)
   local r, g, b = 0.2, 0.8, 0.2
   if self.flashTime > 0 then r, g, b = 1, 1, 1 end
+  if self.rootedTime and self.rootedTime > 0 then
+    r, g, b = r * 0.6, g + 0.2, b * 0.6
+  end
   love.graphics.setColor(r, g, b, 1)
+  -- Larger square to convey tankiness
   love.graphics.rectangle("fill", self.x - self.size, self.y - self.size, self.size*2, self.size*2)
   love.graphics.setColor(1, 1, 1, 1)
 end

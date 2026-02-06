@@ -4,11 +4,13 @@
 local GameState = require("systems.game_state")
 local Menu = require("ui.menu")
 local GameScene = require("scenes.game_scene")
+local Audio = require("systems.audio")
 
 -- Global game objects
 local gameState
 local menu
 local gameScene
+local audio
 
 function love.load()
     -- Set up window
@@ -19,10 +21,14 @@ function love.load()
     
     -- Initialize game state
     gameState = GameState:new()
-    
+
     -- Initialize menu
     menu = Menu:new(gameState)
-    
+
+    -- Initialize audio system
+    audio = Audio:new()
+    audio:playMenuMusic()
+
     -- Game scene will be initialized when game starts
     gameScene = nil
 end
@@ -33,28 +39,36 @@ function love.update(dt)
     
     -- Update game state transitions
     gameState:update(dt)
-    
+
+    -- Update audio system (handles fading)
+    if audio then audio:update(dt) end
+
     local state = gameState:getState()
     local States = gameState.States
-    
+
     if state == States.PLAYING then
         -- Initialize game scene if needed
         if not gameScene then
             gameScene = GameScene:new(gameState)
             gameScene:load()
+            -- Switch to gameplay music
+            if audio then audio:playGameplayMusic() end
         end
         gameScene:update(dt)
-        
+
         -- Check for game over
         if gameScene.player and gameScene.player.health <= 0 then
             gameState:transitionTo(States.GAME_OVER)
+            if audio then audio:playGameOverMusic() end
         end
-    elseif state == States.MENU or state == States.CHARACTER_SELECT or 
+    elseif state == States.MENU or state == States.CHARACTER_SELECT or
            state == States.BIOME_SELECT or state == States.DIFFICULTY_SELECT then
         menu:update(dt)
         -- Reset game scene when in menu
         if gameScene then
             gameScene = nil
+            -- Return to menu music
+            if audio then audio:playMenuMusic() end
         end
     elseif state == States.GAME_OVER or state == States.VICTORY then
         menu:update(dt)
@@ -270,9 +284,15 @@ function drawAbilityIcon(ability, x, y, size)
 end
 
 function love.keypressed(key)
+    -- Global mute toggle
+    if key == "m" and audio then
+        audio:toggleMute()
+        return
+    end
+
     local state = gameState:getState()
     local States = gameState.States
-    
+
     if state == States.PLAYING then
         -- Let the scene handle overlay/upgrade inputs first
         if gameScene and gameScene.keypressed then

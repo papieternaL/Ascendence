@@ -1,20 +1,10 @@
--- Enemy Entity (red square)
+-- Enemy Entity (basic melee)
+-- NOTE: Sprite visuals intentionally removed. Will be re-implemented
+-- in the visual overhaul phase to match Ember Knights pixel art direction.
 local Enemy = {}
 Enemy.__index = Enemy
 
-Enemy.image = nil
-
-local function loadEnemyImageOnce()
-    if Enemy.image then return end
-    local success, img = pcall(love.graphics.newImage, "assets/2D assets/Monochrome RPG Tileset/Dot Matrix/Sprites/enemy0.png")
-    if success and img then
-        Enemy.image = img
-        Enemy.image:setFilter("nearest", "nearest")
-    end
-end
-
 function Enemy:new(x, y)
-    loadEnemyImageOnce()
     local enemy = {
         x = x or 0,
         y = y or 0,
@@ -117,23 +107,12 @@ end
 function Enemy:draw()
     if not self.isAlive then return end
 
-    if Enemy.image then
-        local img = Enemy.image
-        local w, h = img:getWidth(), img:getHeight()
-        local scale = 1.2
-        if self.flashTime > 0 then
-            love.graphics.setColor(1, 1, 1, 1)
-        else
-            love.graphics.setColor(1, 0.75, 0.75, 1)
-        end
-        love.graphics.draw(img, self.x, self.y, 0, scale, scale, w/2, h/2)
-        love.graphics.setColor(1, 1, 1, 1)
-        return
-    end
-
-    -- Fallback: red square
+    -- Placeholder shape (sprite to be added in visual overhaul)
     local r, g, b = 0.9, 0.1, 0.1
     if self.flashTime > 0 then r, g, b = 1, 1, 1 end
+    if self.rootedTime and self.rootedTime > 0 then
+        r, g, b = r * 0.6, g + 0.3, b * 0.6
+    end
     love.graphics.setColor(r, g, b, 1)
     love.graphics.rectangle("fill", self.x - self.size, self.y - self.size, self.size * 2, self.size * 2)
     love.graphics.setColor(1, 1, 1, 1)

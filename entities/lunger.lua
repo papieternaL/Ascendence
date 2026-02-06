@@ -1,20 +1,10 @@
 -- Lunger Enemy - Charges at the player
+-- NOTE: Sprite visuals intentionally removed. Will be re-implemented
+-- in the visual overhaul phase to match Ember Knights pixel art direction.
 local Lunger = {}
 Lunger.__index = Lunger
 
-Lunger.image = nil
-
-local function loadLungerImageOnce()
-    if Lunger.image then return end
-    local success, img = pcall(love.graphics.newImage, "assets/2D assets/Monochrome RPG Tileset/Dot Matrix/Sprites/enemy1.png")
-    if success and img then
-        Lunger.image = img
-        Lunger.image:setFilter("nearest", "nearest")
-    end
-end
-
 function Lunger:new(x, y)
-    loadLungerImageOnce()
     local lunger = {
         x = x or 0,
         y = y or 0,
@@ -199,74 +189,39 @@ end
 function Lunger:draw()
     if not self.isAlive then return end
 
-    if Lunger.image then
-        local img = Lunger.image
-        local w, h = img:getWidth(), img:getHeight()
-        local scale = 1.25
-
-        if self.flashTime > 0 then
-            love.graphics.setColor(1, 1, 1, 1)
-        elseif self.state == "charging" then
-            love.graphics.setColor(1, 0.6, 0.6, 1)
-        elseif self.state == "lunging" then
-            love.graphics.setColor(1, 0.35, 0.35, 1)
-        elseif self.state == "cooldown" then
-            love.graphics.setColor(0.8, 0.6, 0.9, 1)
-        else
-            love.graphics.setColor(0.95, 0.85, 1.0, 1)
-        end
-
-        love.graphics.draw(img, self.x, self.y, 0, scale, scale, w/2, h/2)
-
-        -- Direction indicator when charging (keep it)
-        if self.state == "charging" then
-            love.graphics.setColor(1, 0, 0, 0.5)
-            local indicatorLength = 50 * (self.chargeTime / self.chargeDuration)
-            love.graphics.line(
-                self.x,
-                self.y,
-                self.x + self.lungeVx * indicatorLength,
-                self.y + self.lungeVy * indicatorLength
-            )
-        end
-
-        love.graphics.setColor(1, 1, 1, 1)
-        return
-    end
-    
+    -- Placeholder shape (sprite to be added in visual overhaul)
     -- Determine color based on state
     local r, g, b = 0.8, 0.4, 0.8 -- Purple for lunger
-    
+
     if self.flashTime > 0 then
-        -- Flash white when hit
         r, g, b = 1, 1, 1
     elseif self.state == "charging" then
-        -- Pulsing red when charging
         local pulse = math.sin(self.chargeTime * 15) * 0.3 + 0.7
         r, g, b = 1, pulse * 0.3, pulse * 0.3
     elseif self.state == "lunging" then
-        -- Bright red when lunging
         r, g, b = 1, 0.1, 0.1
     elseif self.state == "cooldown" then
-        -- Dim when cooling down
         r, g, b = 0.5, 0.3, 0.5
     end
-    
+
+    if self.rootedTime and self.rootedTime > 0 then
+        r, g, b = r * 0.6, g + 0.3, b * 0.6
+    end
+
     love.graphics.setColor(r, g, b, 1)
-    
+
     -- Draw as a diamond shape (rotated square)
     local size = self.size
     if self.state == "charging" then
-        -- Grow slightly when charging
         size = self.size * (1 + self.chargeTime / self.chargeDuration * 0.3)
     end
-    
+
     love.graphics.push()
     love.graphics.translate(self.x, self.y)
-    love.graphics.rotate(math.pi / 4) -- Rotate 45 degrees
+    love.graphics.rotate(math.pi / 4)
     love.graphics.rectangle("fill", -size, -size, size * 2, size * 2)
     love.graphics.pop()
-    
+
     -- Draw direction indicator when charging
     if self.state == "charging" then
         love.graphics.setColor(1, 0, 0, 0.5)
@@ -278,6 +233,8 @@ function Lunger:draw()
             self.y + self.lungeVy * indicatorLength
         )
     end
+
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 function Lunger:getPosition()
