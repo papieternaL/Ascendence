@@ -96,8 +96,6 @@ function Menu:draw()
         self:drawCharacterSelect()
     elseif state == States.BIOME_SELECT then
         self:drawBiomeSelect()
-    elseif state == States.DIFFICULTY_SELECT then
-        self:drawDifficultySelect()
     elseif state == States.GAME_OVER then
         self:drawGameOver()
     elseif state == States.VICTORY then
@@ -362,92 +360,6 @@ function Menu:drawBiomeCard(biomeData, x, y, w, h, isSelected)
     end
 end
 
-function Menu:drawDifficultySelect()
-    local w, h = love.graphics.getWidth(), love.graphics.getHeight()
-    
-    self:drawBackground()
-    
-    -- Header
-    love.graphics.setFont(self.headerFont)
-    local header = "CHOOSE YOUR TRIAL"
-    local headerW = self.headerFont:getWidth(header)
-    love.graphics.setColor(1, 0.9, 0.7, 1)
-    love.graphics.print(header, w/2 - headerW/2, 40)
-    
-    -- Difficulty options
-    local difficulties = {"ADEPT", "VETERAN", "ASCENDANT"}
-    local cardWidth = 200
-    local cardHeight = 120
-    local spacing = 40
-    local totalWidth = #difficulties * cardWidth + (#difficulties - 1) * spacing
-    local startX = w/2 - totalWidth/2
-    
-    local diffColors = {
-        {0.4, 0.7, 0.4}, -- Green for easy
-        {0.7, 0.6, 0.2}, -- Yellow for medium
-        {0.8, 0.2, 0.2}  -- Red for hard
-    }
-    
-    for i, diffKey in ipairs(difficulties) do
-        local diffData = self.gameState.Difficulties[diffKey]
-        local x = startX + (i - 1) * (cardWidth + spacing)
-        local y = h/2 - cardHeight/2
-        local isSelected = self.selectedIndex == i
-        
-        self:drawDifficultyCard(diffData, x, y, cardWidth, cardHeight, isSelected, diffColors[i])
-    end
-    
-    -- Instructions
-    love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(0.5, 0.5, 0.5, 0.7)
-    love.graphics.print("ESC to go back | ENTER to begin your ascent", 20, h - 30)
-end
-
-function Menu:drawDifficultyCard(diffData, x, y, w, h, isSelected, color)
-    -- Card glow if selected
-    if isSelected then
-        for i = 3, 1, -1 do
-            love.graphics.setColor(color[1], color[2], color[3], 0.15 * i)
-            love.graphics.rectangle("fill", x - i * 4, y - i * 4, w + i * 8, h + i * 8, 10, 10)
-        end
-    end
-    
-    -- Card background
-    love.graphics.setColor(0.1, 0.1, 0.12, 0.95)
-    love.graphics.rectangle("fill", x, y, w, h, 8, 8)
-    
-    -- Card border
-    if isSelected then
-        love.graphics.setColor(color[1], color[2], color[3], 1)
-        love.graphics.setLineWidth(3)
-    else
-        love.graphics.setColor(0.3, 0.3, 0.35, 1)
-        love.graphics.setLineWidth(1)
-    end
-    love.graphics.rectangle("line", x, y, w, h, 8, 8)
-    love.graphics.setLineWidth(1)
-    
-    -- Difficulty name
-    love.graphics.setFont(self.headerFont)
-    local nameW = self.headerFont:getWidth(diffData.name)
-    love.graphics.setColor(color[1], color[2], color[3], 1)
-    love.graphics.print(diffData.name, x + w/2 - nameW/2, y + 15)
-    
-    -- Subtitle
-    love.graphics.setFont(self.smallFont)
-    local subW = self.smallFont:getWidth(diffData.subtitle)
-    love.graphics.setColor(0.7, 0.7, 0.7, 0.8)
-    love.graphics.print(diffData.subtitle, x + w/2 - subW/2, y + 50)
-    
-    -- Description
-    love.graphics.setColor(0.5, 0.5, 0.5, 0.9)
-    local descLines = self:wrapText(diffData.description, w - 20)
-    for i, line in ipairs(descLines) do
-        local lineW = self.smallFont:getWidth(line)
-        love.graphics.print(line, x + w/2 - lineW/2, y + 75 + (i-1) * 16)
-    end
-end
-
 function Menu:drawGameOver()
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
     
@@ -599,7 +511,7 @@ function Menu:keypressed(key)
                 self.gameState.bossTestMode = true
                 self.gameState:selectHeroClass("ARCHER")
                 self.gameState:selectBiome("DEEPWOOD")
-                self.gameState:selectDifficulty("VETERAN")
+                self.gameState:setDefaultDifficulty()
                 self.gameState:initFloor(5)
                 self.gameState:transitionTo(States.BOSS_FIGHT)
             end
@@ -630,26 +542,12 @@ function Menu:keypressed(key)
             if self.selectedIndex > #biomes then self.selectedIndex = 1 end
         elseif key == "return" or key == "space" then
             self.gameState:selectBiome(biomes[self.selectedIndex])
-            self.gameState:transitionTo(States.DIFFICULTY_SELECT)
+            self.gameState:setDefaultDifficulty()
+            self.gameState:initFloor(1)
+            self.gameState:transitionTo(States.PLAYING)
             self.selectedIndex = 1
         elseif key == "escape" then
             self.gameState:transitionTo(States.CHARACTER_SELECT)
-            self.selectedIndex = 1
-        end
-    elseif state == States.DIFFICULTY_SELECT then
-        local difficulties = {"ADEPT", "VETERAN", "ASCENDANT"}
-        if key == "left" then
-            self.selectedIndex = self.selectedIndex - 1
-            if self.selectedIndex < 1 then self.selectedIndex = #difficulties end
-        elseif key == "right" then
-            self.selectedIndex = self.selectedIndex + 1
-            if self.selectedIndex > #difficulties then self.selectedIndex = 1 end
-        elseif key == "return" or key == "space" then
-            self.gameState:selectDifficulty(difficulties[self.selectedIndex])
-            self.gameState:initFloor(1)
-            self.gameState:transitionTo(States.PLAYING)
-        elseif key == "escape" then
-            self.gameState:transitionTo(States.BIOME_SELECT)
             self.selectedIndex = 1
         end
     elseif state == States.GAME_OVER then
@@ -702,7 +600,7 @@ function Menu:mousepressed(x, y, button)
             self.gameState.bossTestMode = true
             self.gameState:selectHeroClass("ARCHER")
             self.gameState:selectBiome("DEEPWOOD")
-            self.gameState:selectDifficulty("VETERAN")
+            self.gameState:setDefaultDifficulty()
             self.gameState:initFloor(5)
             self.gameState:transitionTo(States.BOSS_FIGHT)
         end
@@ -743,29 +641,10 @@ function Menu:mousepressed(x, y, button)
             
             if x >= cardX and x <= cardX + cardWidth and y >= cardY and y <= cardY + cardHeight then
                 self.gameState:selectBiome(biomeKey)
-                self.gameState:transitionTo(States.DIFFICULTY_SELECT)
-                self.selectedIndex = 1
-                return
-            end
-        end
-        
-    elseif state == States.DIFFICULTY_SELECT then
-        -- Check difficulty cards
-        local difficulties = {"ADEPT", "VETERAN", "ASCENDANT"}
-        local cardWidth = 200
-        local cardHeight = 120
-        local spacing = 40
-        local totalWidth = #difficulties * cardWidth + (#difficulties - 1) * spacing
-        local startX = w/2 - totalWidth/2
-        
-        for i, diffKey in ipairs(difficulties) do
-            local cardX = startX + (i - 1) * (cardWidth + spacing)
-            local cardY = h/2 - cardHeight/2
-            
-            if x >= cardX and x <= cardX + cardWidth and y >= cardY and y <= cardY + cardHeight then
-                self.gameState:selectDifficulty(diffKey)
+                self.gameState:setDefaultDifficulty()
                 self.gameState:initFloor(1)
                 self.gameState:transitionTo(States.PLAYING)
+                self.selectedIndex = 1
                 return
             end
         end
@@ -821,24 +700,6 @@ function Menu:mousemoved(x, y)
         local startX = w/2 - totalWidth/2
         
         for i, biomeKey in ipairs(biomes) do
-            local cardX = startX + (i - 1) * (cardWidth + spacing)
-            local cardY = h/2 - cardHeight/2
-            
-            if x >= cardX and x <= cardX + cardWidth and y >= cardY and y <= cardY + cardHeight then
-                self.selectedIndex = i
-                return
-            end
-        end
-        
-    elseif state == States.DIFFICULTY_SELECT then
-        local difficulties = {"ADEPT", "VETERAN", "ASCENDANT"}
-        local cardWidth = 200
-        local cardHeight = 120
-        local spacing = 40
-        local totalWidth = #difficulties * cardWidth + (#difficulties - 1) * spacing
-        local startX = w/2 - totalWidth/2
-        
-        for i, diffKey in ipairs(difficulties) do
             local cardX = startX + (i - 1) * (cardWidth + spacing)
             local cardY = h/2 - cardHeight/2
             

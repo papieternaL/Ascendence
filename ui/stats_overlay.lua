@@ -105,7 +105,7 @@ local function groupAbilityUpgrades(upgrades)
   return abilityUpgrades
 end
 
-function StatsOverlay:draw(playerStats, xpSystem)
+function StatsOverlay:draw(playerStats, xpSystem, player)
   if not self.visible then return end
   if not playerStats then return end
 
@@ -161,6 +161,7 @@ function StatsOverlay:draw(playerStats, xpSystem)
     { key="crit_chance", label="Crit Chance", fmt=pct },
     { key="crit_damage", label="Crit Damage", fmt=function(v) return string.format("%.2fx", v or 0) end },
     { key="roll_cooldown", label="Roll CD", fmt=function(v) return string.format("%.2fs", v or 0) end },
+    { key="xp_pickup_radius", label="XP Radius", fmt=num },
   }
 
   love.graphics.setFont(self.fontSmall)
@@ -229,6 +230,32 @@ function StatsOverlay:draw(playerStats, xpSystem)
     end
 
     lineY = lineY + lineH
+  end
+
+  -- Active buffs (when player is passed)
+  if player and player.statusComponent then
+    local activeBuffs = player.statusComponent:getActiveBuffs()
+    if #activeBuffs > 0 then
+      lineY = lineY + 10
+      love.graphics.setFont(self.fontBody)
+      love.graphics.setColor(0.5, 0.8, 1, 1)
+      love.graphics.print("ACTIVE BUFFS", col1X, lineY)
+      lineY = lineY + 24
+      love.graphics.setFont(self.fontSmall)
+      for _, buff in ipairs(activeBuffs) do
+        local r, g, b = 1, 1, 1
+        if buff.color and type(buff.color) == "table" then
+          r = buff.color[1] or 1
+          g = buff.color[2] or 1
+          b = buff.color[3] or 1
+        end
+        love.graphics.setColor(r, g, b, 1)
+        local name = buff.display_name or buff.name or "Buff"
+        local timeStr = buff.duration and string.format(" (%.1fs)", buff.duration) or ""
+        love.graphics.print("  " .. name .. timeStr, col1X, lineY)
+        lineY = lineY + lineH
+      end
+    end
   end
 
   -- ==== COLUMN 2: ABILITY UPGRADES ====

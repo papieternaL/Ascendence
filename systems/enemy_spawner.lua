@@ -1,6 +1,9 @@
 -- systems/enemy_spawner.lua
 -- Continuous enemy spawning system
 
+local Config = require("data.config")
+local cfg = Config.enemy_spawner or {}
+
 local EnemySpawner = {}
 EnemySpawner.__index = EnemySpawner
 
@@ -8,19 +11,23 @@ function EnemySpawner:new(game_scene)
   local spawner = {
     game_scene = game_scene,
     spawn_timer = 0,
-    base_spawn_interval = 2.5,
+    base_spawn_interval = cfg.base_spawn_interval or 1.8,
     current_enemy_count = 0,
-    max_enemies = 60,
-    min_enemies = 12,
+    max_enemies = cfg.max_enemies or 80,
+    min_enemies = cfg.min_enemies or 18,
+    min_enemies_start = cfg.min_enemies_start or 4,
+    min_enemies_max = cfg.min_enemies_max or 24,
+    min_enemies_ramp_seconds = cfg.min_enemies_ramp_seconds or 120,
     time_alive = 0,
     difficulty_multiplier = 1.0,
-    difficulty_scale_rate = 0.008,
+    difficulty_scale_rate = cfg.difficulty_scale_rate or 0.008,
     
     enemy_weights = {
       slime = 10,
       bat = 6,
       skeleton = 5,
       imp = 4,
+      wolf = 4,
       lunger = 1.5,
       small_treent = 1.5,
       wizard = 1.0,
@@ -29,7 +36,7 @@ function EnemySpawner:new(game_scene)
     
     map_width = 2000,
     map_height = 2000,
-    spawn_margin = 100,
+    spawn_margin = cfg.spawn_margin or 250,  -- Off-screen; enemies always move toward player
     
     active = true,
     paused = false
@@ -52,6 +59,10 @@ function EnemySpawner:update(dt)
   self.time_alive = self.time_alive + dt
   self.difficulty_multiplier = 1.0 + (self.time_alive * self.difficulty_scale_rate)
   
+  -- Steady increase: effective min ramps from start to max over ramp_seconds
+  local ramp_t = math.min(1, self.time_alive / self.min_enemies_ramp_seconds)
+  local effective_min = self.min_enemies_start + (self.min_enemies_max - self.min_enemies_start) * ramp_t
+  
   self.spawn_timer = self.spawn_timer + dt
   local scaled_interval = self.base_spawn_interval / math.min(self.difficulty_multiplier, 2.5)
   
@@ -69,11 +80,11 @@ function EnemySpawner:update(dt)
     end
   end
   
-  if self.current_enemy_count < self.min_enemies then
+  if self.current_enemy_count < effective_min then
     -- #region agent log
     local logfile = io.open("c:\\Users\\steven\\Desktop\\Cursor\\Shooter\\.cursor\\debug.log", "a")
     if logfile then
-      logfile:write(string.format('{"sessionId":"debug-session","runId":"spawn-debug","hypothesisId":"H2","location":"enemy_spawner.lua:minEnemies","message":"Below min enemies, forcing spawn","data":{"current_enemy_count":%d,"min_enemies":%d},"timestamp":%d}\n', self.current_enemy_count, self.min_enemies, os.time() * 1000))
+      logfile:write(string.format('{"sessionId":"debug-session","runId":"spawn-debug","hypothesisId":"H2","location":"enemy_spawner.lua:minEnemies","message":"Below min enemies, forcing spawn","data":{"current_enemy_count":%d,"effective_min":%d},"timestamp":%d}\n', self.current_enemy_count, math.floor(effective_min), os.time() * 1000))
       logfile:close()
     end
     -- #endregion

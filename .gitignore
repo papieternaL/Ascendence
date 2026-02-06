@@ -1,0 +1,15 @@
+# Temp files
+nul
+tmpclaude-*
+*.log
+
+# Editor directories
+.cursor/
+.claude/
+
+# LÖVE build files
+*.love
+
+# OS files
+.DS_Store
+Thumbs.db

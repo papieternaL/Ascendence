@@ -60,6 +60,9 @@ function UpgradeApplication.registerProc(player, effect, upgrade)
     proc.chance = effect.chance or 1.0
   elseif effect.trigger == "after_roll" then
     -- No additional data needed
+  elseif effect.trigger == "on_kill_target_with_status" then
+    proc.status = effect.status
+    proc.chance = effect.chance or 1.0
   end
   
   table.insert(player.procs, proc)
@@ -105,6 +108,10 @@ function UpgradeApplication.evaluateProc(player, proc, context)
       proc.shot_counter = 0
       UpgradeApplication.executeApply(player, apply, context)
     end
+  elseif trigger == "on_kill_target_with_status" then
+    if context.status == proc.status and math.random() <= (proc.chance or 1.0) then
+      UpgradeApplication.executeApply(player, apply, context)
+    end
   end
 end
 
@@ -132,6 +139,18 @@ function UpgradeApplication.executeApply(player, apply, context)
     -- Handle temporary weapon mods (e.g., bonus projectiles)
     if context.apply_weapon_mod then
       context.apply_weapon_mod(apply)
+    end
+  elseif kind == "chain_damage" then
+    if context.deal_chain_damage then
+      context.deal_chain_damage(apply, context)
+    end
+  elseif kind == "aoe_explosion" then
+    if context.trigger_aoe_explosion then
+      context.trigger_aoe_explosion(apply, context)
+    end
+  elseif kind == "aoe_projectile_burst" then
+    if context.spawn_projectile_burst then
+      context.spawn_projectile_burst(apply, context)
     end
   end
 end

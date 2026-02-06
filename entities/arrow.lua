@@ -61,9 +61,14 @@ function Arrow:new(x, y, targetX, targetY, opts)
         knockback = opts.knockback,
         hit = {}, -- set of entities already hit (avoid double-hit across frames)
         
+        -- Ricochet (bounce to another enemy after hit)
+        ricochetBounces = opts.ricochetBounces or 0,
+        ricochetRange = opts.ricochetRange or 220,
+        
         -- Ability mod fields
         eliteMcmDamageMul = opts.eliteMcmDamageMul,  -- Bonus damage vs elite/MCM enemies
         appliesStatus = opts.appliesStatus,          -- Status to apply on hit (e.g., shattered_armor)
+        ghosting = opts.ghosting == true,            -- Ghost Quiver: pierce all (no damage/hit) until expiry
         
         -- Trail effect
         trail = {},  -- Stores recent positions {x, y}

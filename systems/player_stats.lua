@@ -6,6 +6,8 @@ PlayerStats.__index = PlayerStats
 
 -- Default base stats for archer
 PlayerStats.baseDefaults = {
+  -- Survivability
+  max_health = 100,
   -- Damage
   primary_damage = 10,
   crit_chance = 0.05,

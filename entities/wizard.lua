@@ -46,6 +46,8 @@ function Wizard:new(x, y)
         isCasting = false,
         castTime = 0,
         castDuration = 0.6, -- Telegraph before cone fires
+        coneFiredAt = nil,
+        coneFiredAngle = 0,
     }
     setmetatable(wizard, Wizard)
     return wizard
@@ -77,6 +79,8 @@ function Wizard:update(dt, playerX, playerY, onConeAttack)
             self.castTime = 0
             if onConeAttack then
                 local angleToPlayer = math.atan2(dy, dx)
+                self.coneFiredAt = love.timer.getTime()
+                self.coneFiredAngle = angleToPlayer
                 onConeAttack(self.x, self.y, angleToPlayer, self.coneAngle, self.coneRange, self.rootDuration)
             end
         end
@@ -159,6 +163,24 @@ function Wizard:draw()
         local castProgress = self.castTime / self.castDuration
         love.graphics.setColor(0.8, 0.2, 1, 0.3 + castProgress * 0.3)
         love.graphics.circle("fill", self.x, self.y, self.size + castProgress * 20)
+    end
+    
+    -- Cone just fired: draw cone hitbox briefly so player sees what hit them
+    if self.coneFiredAt then
+        local age = love.timer.getTime() - self.coneFiredAt
+        if age >= 0.2 then
+            self.coneFiredAt = nil
+        else
+            local half = self.coneAngle / 2
+            local r = self.coneRange
+            local x1 = self.x + math.cos(self.coneFiredAngle - half) * r
+            local y1 = self.y + math.sin(self.coneFiredAngle - half) * r
+            local x2 = self.x + math.cos(self.coneFiredAngle + half) * r
+            local y2 = self.y + math.sin(self.coneFiredAngle + half) * r
+            local alpha = 0.4 * (1 - age / 0.2)
+            love.graphics.setColor(0.8, 0.2, 1, alpha)
+            love.graphics.polygon("fill", self.x, self.y, x1, y1, x2, y2)
+        end
     end
     
     -- Draw sprite

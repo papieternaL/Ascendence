@@ -149,8 +149,7 @@ function love.update(dt)
         if bossArenaScene then
             bossArenaScene:update(dt)
         end
-    elseif state == States.MENU or state == States.CHARACTER_SELECT or 
-           state == States.BIOME_SELECT or state == States.DIFFICULTY_SELECT then
+    elseif state == States.MENU or state == States.CHARACTER_SELECT or state == States.BIOME_SELECT then
         menu:update(dt)
         -- Reset game scenes when in menu
         if gameScene then

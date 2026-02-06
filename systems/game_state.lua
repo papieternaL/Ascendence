@@ -92,39 +92,19 @@ GameState.Biomes = {
     }
 }
 
--- Difficulties
+-- Single difficulty (no selection; maps use this by default)
 GameState.Difficulties = {
-    ADEPT = {
-        id = "adept",
-        name = "Adept",
-        subtitle = "For the Uninitiated",
-        description = "Enemies deal less damage, more forgiving.",
-        enemyDamageMult = 0.7,
-        enemyHealthMult = 0.8,
-        playerDamageMult = 1.2,
-        xpMult = 0.8
-    },
-    VETERAN = {
-        id = "veteran",
-        name = "Veteran",
-        subtitle = "The True Challenge",
-        description = "Balanced combat for experienced warriors.",
+    NORMAL = {
+        id = "normal",
+        name = "Normal",
         enemyDamageMult = 1.0,
         enemyHealthMult = 1.0,
         playerDamageMult = 1.0,
         xpMult = 1.0
-    },
-    ASCENDANT = {
-        id = "ascendant",
-        name = "Ascendant",
-        subtitle = "Beyond Mortal Limits",
-        description = "For those who seek true suffering.",
-        enemyDamageMult = 1.5,
-        enemyHealthMult = 1.5,
-        playerDamageMult = 0.8,
-        xpMult = 1.5
     }
 }
+-- Default used when starting a run (no difficulty screen)
+GameState.DefaultDifficultyKey = "NORMAL"
 
 function GameState:new()
     local state = {
@@ -196,7 +176,12 @@ function GameState:selectBiome(biomeKey)
 end
 
 function GameState:selectDifficulty(difficultyKey)
-    self.selectedDifficulty = GameState.Difficulties[difficultyKey]
+    self.selectedDifficulty = GameState.Difficulties[difficultyKey or GameState.DefaultDifficultyKey]
+end
+
+-- Set default difficulty (used when starting a run without a difficulty screen)
+function GameState:setDefaultDifficulty()
+    self:selectDifficulty(GameState.DefaultDifficultyKey)
 end
 
 function GameState:initFloor(floorNum)
@@ -210,6 +195,10 @@ function GameState:nextFloor()
         return false
     end
     return true
+end
+
+function GameState:enterBossFight()
+    self:transitionTo(GameState.States.BOSS_FIGHT)
 end
 
 function GameState:reset()

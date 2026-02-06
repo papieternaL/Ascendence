@@ -6,6 +6,7 @@ This file is the **single source of truth** for coordination between multiple Cu
 - **Before working**: read this file top-to-bottom.
 - **After working**: add a short update under **Changelog** and, if needed, add questions under **Open Questions**.
 - **If you change direction**: update **Decisions** (don’t bury key decisions in chat).
+- **Cursor rules**: `.cursor/rules/` contains workflow and code standards (planning/execution, Lua style, performance, game patterns, testing). Use them for all implementation and planning.
 
 ## Roles
 - **Design Agent (this chat)**: game design rules, systems design, constraints, UX requirements.
@@ -116,6 +117,7 @@ Files touched/added:
 7. **Meta-progression scaffold**: Add gear profile screen (Universal + Class relics); wire win/loss → keep/lose relics.
 
 ## Changelog
+- 2026-02-03: **Single difficulty**: Removed three-difficulty selection; maps use one difficulty (Normal: 1.0 multipliers). Flow is now Character → Biome → Playing. BOSS TEST also uses default difficulty.
 - 2026-02-03: **Bug fix: Wolves/Healers/Druids now targetable**:
   - Fixed bug where wolves, healers, and druids were missing from primary attack targeting loop.
   - Arrows now correctly auto-aim at these enemy types.
@@ -175,4 +177,14 @@ Files touched/added:
   - Abilities auto-cast when ready (Power Shot/Entangle); dash remains manual.
   - Ultimate (Frenzy) is user-activated on `R` once fully charged.
   - Level-up UI no longer selects on Space; gameplay inputs are swallowed while the upgrade modal is open.
+- 2026-02-03: Regular map cleanup and spawn behavior:
+  - **Vine attack removed from regular map**: Treents on the main game scene no longer spawn vine lanes (callback passed as nil); vine lane update/draw and VineLane require removed from game_scene. Boss arena unchanged.
+  - **Wizard root removed**: Wizard cone attack on regular map no longer roots the player; cone still deals damage and visual feedback.
+  - **Off-screen spawn + always move**: Enemy spawn margin increased to 250px (config: `enemy_spawner.spawn_margin`); enemies spawn off-screen and already move toward the player with no in-sight gate.
+- 2026-02-03: Early game tuning + level-up base stats:
+  - **min_enemies_start = 10**: Config `enemy_spawner.min_enemies_start` set to 10 for a more manageable early game (ramp to 24 over 120s unchanged).
+  - **Level-up base gains**: Every level-up permanently increases base max HP and base attack. Config `Config.level_up_base_gains`: `level_up_hp_gain` (10), `level_up_attack_gain` (1). PlayerStats tracks `max_health`; `applyStatsToPlayer()` syncs max HP to player and heals by the gained amount when max increases.
+- 2026-02-03: Enemy attack visuals (no invisible damage):
+  - **Wizard cone**: When the cone fires, a semi-transparent purple cone is drawn for 0.2s so the hitbox is visible (`coneFiredAt` / `coneFiredAngle` in wizard.lua).
+  - **Melee hit indicators**: When any melee enemy (enemy, lunger, treent, small_treent, wizard, imp, slime, bat, wolf, skeleton, druid) deals contact damage, `lastMeleeHitAt` is set; a red line from that enemy to the player is drawn for 0.15s so it's clear what hit you. Draw pass in game_scene after Y-sorted entities; expired `lastMeleeHitAt` is cleared.
 

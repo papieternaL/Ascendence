@@ -984,7 +984,7 @@ function BossArenaScene:draw()
     
     -- Draw stats overlay on top of everything
     if self.statsOverlay and self.statsOverlay:isVisible() then
-        self.statsOverlay:draw(self.playerStats, self.xpSystem)
+        self.statsOverlay:draw(self.playerStats, self.xpSystem, self.player)
     end
 end
 

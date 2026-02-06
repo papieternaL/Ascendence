@@ -48,10 +48,26 @@ Config.boss_progression = {
 }
 
 Config.enemy_spawner = {
-  base_spawn_interval = 2.5,
-  max_enemies = 60,
-  min_enemies = 12,
-  difficulty_scale_rate = 0.008
+  base_spawn_interval = 1.8,
+  max_enemies = 80,
+  min_enemies = 18,
+  min_enemies_start = 10,      -- target count early in run; more manageable start
+  min_enemies_max = 24,
+  min_enemies_ramp_seconds = 120,
+  difficulty_scale_rate = 0.008,
+  spawn_margin = 250   -- pixels off-screen; enemies spawn here and move toward player
+}
+
+-- Base stat gains applied every level-up (HP and attack)
+Config.level_up_base_gains = {
+  level_up_hp_gain = 10,
+  level_up_attack_gain = 1,
+}
+
+-- Time-based scaling: enemies get stronger as run time increases
+Config.enemy_time_scale = {
+  rate = 0.012,   -- per second (e.g. 60s -> 1 + 0.72 = 1.72x)
+  cap = 2.5       -- max multiplier so late game isn't one-shot
 }
 
 -- Ability Specifics (kept for compatibility)

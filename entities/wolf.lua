@@ -2,72 +2,56 @@
 -- Aggressive ground-based charger with telegraphed lunge attack
 -- State machine: idle -> charging -> lunging -> cooldown
 
-local StatusComponent = require("systems.status_component")
+local BaseEnemy = require("entities.base_enemy")
+local EnemyData = require("data.enemies")
 
-local Wolf = {}
+local Wolf = setmetatable({}, {__index = BaseEnemy})
 Wolf.__index = Wolf
+Wolf.TYPE_ID = "wolf"
 
 function Wolf:new(x, y)
-    local wolf = {
-        x = x,
-        y = y,
-        size = 16,
-        speed = 80,
-        maxHealth = 40,
-        health = 40,
-        damage = 12,
-
-        -- Lunge state machine
-        state = "idle",  -- idle, charging, lunging, cooldown
-        chargeTime = 0,
-        chargeDuration = 0.7,
-        lungeTime = 0,
-        lungeDuration = 0.4,
-        cooldownTime = 0,
-        cooldownDuration = 1.2,
-        lungeRange = 320,
-
-        -- Locked lunge direction
-        lungeVx = 0,
-        lungeVy = 0,
-        lungeSpeed = 450,
-
-        -- Visual
-        flashTime = 0,
-        glowPhase = 0,
-        knockbackX = 0,
-        knockbackY = 0,
-        knockbackDecay = 8,
-
-        -- Status
-        isAlive = true,
-        statusComponent = StatusComponent:new(),
-    }
-
+    local config = EnemyData.wolf
+    local wolf = BaseEnemy.new(self, x, y, {
+        size = config.size,
+        speed = config.speed,
+        health = config.health,
+        damage = config.damage,
+        knockbackDecay = config.knockbackDecay,
+        flashDuration = config.flashDuration,
+        isElite = config.isElite,
+        isMCM = config.isMCM,
+        enemyType = "wolf",
+    })
+    
+    -- Wolf-specific properties
+    wolf.state = "idle"  -- idle, charging, lunging, cooldown
+    wolf.chargeTime = 0
+    wolf.chargeDuration = config.chargeDuration
+    wolf.lungeTime = 0
+    wolf.lungeDuration = config.lungeDuration
+    wolf.cooldownTime = 0
+    wolf.cooldownDuration = config.cooldownDuration
+    wolf.lungeRange = config.lungeRange
+    wolf.lungeVx = 0
+    wolf.lungeVy = 0
+    wolf.lungeSpeed = config.lungeSpeed
+    wolf.glowPhase = 0
+    
     setmetatable(wolf, Wolf)
     return wolf
 end
 
 function Wolf:update(dt, playerX, playerY)
+    -- Update common systems (status, flash, knockback)
+    self:updateCommon(dt)
+    
     if not self.isAlive then return end
-
-    -- Update visual timers
-    if self.flashTime > 0 then
-        self.flashTime = self.flashTime - dt
-    end
+    
+    -- Update visual timer
     self.glowPhase = self.glowPhase + dt * 3
 
-    -- Apply knockback decay
-    self.knockbackX = self.knockbackX * (1 - self.knockbackDecay * dt)
-    self.knockbackY = self.knockbackY * (1 - self.knockbackDecay * dt)
-
-    -- Update status effects
-    if self.statusComponent then
-        self.statusComponent:update(dt)
-    end
-
     -- Check if rooted
-    local isRooted = self.statusComponent and self.statusComponent:hasStatus("rooted")
+    local isRooted = self:isRooted()
 
     -- State machine logic
     if self.state == "idle" then
@@ -305,43 +289,16 @@ function Wolf:draw()
 end
 
 function Wolf:takeDamage(damage, hitX, hitY, knockbackForce)
-    if not self.isAlive then return false end
-
-    self.health = self.health - damage
-    self.flashTime = 0.1
-
-    -- Knockback calculation (away from hit source)
-    if hitX and hitY then
-        local dx = self.x - hitX
-        local dy = self.y - hitY
-        local distance = math.sqrt(dx * dx + dy * dy)
-        if distance > 0 then
-            local k = (knockbackForce or 140) * 1.0
-            self.knockbackX = (dx / distance) * k
-            self.knockbackY = (dy / distance) * k
-        end
-    end
-
+    -- Call base damage handler
+    local died = BaseEnemy.takeDamage(self, damage, hitX, hitY, knockbackForce or 140)
+    
     -- Interrupt charge if taking damage
     if self.state == "charging" then
         self.state = "cooldown"
         self.cooldownTime = 0
     end
-
-    if self.health <= 0 then
-        self.isAlive = false
-        return true  -- Return true if died
-    end
-
-    return false  -- Return false if still alive
-end
-
-function Wolf:getSize()
-    return self.size
-end
-
-function Wolf:getPosition()
-    return self.x, self.y
+    
+    return died
 end
 
 function Wolf:getKnockbackForce()
