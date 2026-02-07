@@ -16,6 +16,8 @@ local UpgradeRoll = require("systems.upgrade_roll")
 local UpgradeUI = require("ui.upgrade_ui")
 local StatsOverlay = require("ui.stats_overlay")
 local DamageNumbers = require("systems.damage_numbers")
+local StatusEffects = require("systems.status_effects")
+local ProcEngine = require("systems.proc_engine")
 
 -- Load upgrade data
 local ArcherUpgrades = require("data.upgrades_archer")
@@ -65,6 +67,11 @@ function GameScene:new(gameState)
         frenzyActive = false,
         frenzyCombatGainPerSec = 3.5,
         frenzyKillGain = 10,
+
+        -- Proc engine + combat tracking
+        procEngine = nil,
+        wasHitThisFrame = false,
+        ghostQuiverTimer = 0, -- remaining duration of Ghost Quiver buff
     }
     setmetatable(scene, GameScene)
     return scene
@@ -120,6 +127,7 @@ function GameScene:load()
     self.upgradeUI = UpgradeUI:new()
     self.statsOverlay = StatsOverlay:new()
     self.damageNumbers = DamageNumbers:new()
+    self.procEngine = ProcEngine:new()
     
     -- Set ability unlock states for archer (abilities are already defined in player)
     if self.player and self.player.abilities then
@@ -259,6 +267,41 @@ function GameScene:update(dt)
     -- Update cooldowns
     self.fireCooldown = math.max(0, self.fireCooldown - dt)
     self.dashCooldown = math.max(0, self.dashCooldown - dt)
+
+    -- Tick ghost quiver
+    if self.ghostQuiverTimer > 0 then
+        self.ghostQuiverTimer = self.ghostQuiverTimer - dt
+    end
+
+    -- Tick status effects on all enemies (bleed DoT, duration expiry)
+    self.wasHitThisFrame = false
+    for _, list in ipairs(self:getAllEnemyLists()) do
+        for _, e in ipairs(list) do
+            if e.isAlive then
+                local ticks = StatusEffects.update(e, dt)
+                for _, tick in ipairs(ticks) do
+                    if tick.entity.isAlive then
+                        local died = tick.entity:takeDamage(tick.damage, nil, nil, 0)
+                        local ex, ey = tick.entity:getPosition()
+                        if self.damageNumbers then
+                            self.damageNumbers:add(ex, ey - tick.entity:getSize(), tick.damage, { isCrit = false, color = {0.8, 0.2, 0.2} })
+                        end
+                        self.particles:createHitSpark(ex, ey, {0.8, 0.1, 0.1})
+                        if died then
+                            self.particles:createExplosion(ex, ey, {0.8, 0.1, 0.1})
+                            self.screenShake:add(3, 0.12)
+                            self.xpSystem:spawnOrb(ex, ey, 8 + math.random(0, 5))
+                            -- Check hemorrhage proc on bleed-kill
+                            local killActions = self.procEngine:onKill(self.playerStats, { isCrit = false, target = tick.entity })
+                            for _, action in ipairs(killActions) do
+                                self:executeAction(action)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
     
     -- Update player
     if self.player then
@@ -339,11 +382,39 @@ function GameScene:update(dt)
                 local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult
                 local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
                 local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
-                local arrow = Arrow:new(sx, sy, ex, ey, { damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140 })
+
+                -- Ricochet params from weapon mods
+                local ricBounces = (self.playerStats and self.playerStats.weaponMods.ricochet_bounces) or 0
+                local ricRange = (self.playerStats and self.playerStats.weaponMods.ricochet_range) or 220
+
+                -- Ghost quiver: infinite pierce on primary while active
+                local isGhosting = self.ghostQuiverTimer > 0
+
+                local arrow = Arrow:new(sx, sy, ex, ey, {
+                    damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140,
+                    ricochetBounces = ricBounces, ricochetRange = ricRange,
+                    ghosting = isGhosting,
+                })
                 table.insert(self.arrows, arrow)
 
                 -- Bonus projectiles from weapon mods
                 local bonusProj = (self.playerStats and self.playerStats:getWeaponMod("bonus_projectiles")) or 0
+
+                -- Check proc-on-fire actions (every_n_primary_shots)
+                if self.procEngine then
+                    local fireActions = self.procEngine:onPrimaryFired(self.playerStats)
+                    for _, action in ipairs(fireActions) do
+                        local a = action.apply
+                        if a and a.kind == "weapon_mod" and a.mod == "bonus_projectiles" then
+                            bonusProj = bonusProj + (a.value or 0)
+                        elseif a and a.kind == "aoe_projectile_burst" then
+                            self:spawnArrowstorm(a.count or 12, a.damage_mul or 0.40, a.speed_mul or 0.90)
+                        else
+                            self:executeAction(action)
+                        end
+                    end
+                end
+
                 if bonusProj > 0 then
                     local spreadDeg = (self.playerStats and self.playerStats.weaponMods.projectile_spread) or 10
                     local spreadRad = math.rad(spreadDeg)
@@ -359,6 +430,8 @@ function GameScene:update(dt)
                             pierce = pierce,
                             kind = "primary",
                             knockback = 100,
+                            ricochetBounces = ricBounces, ricochetRange = ricRange,
+                            ghosting = isGhosting,
                         })
                         table.insert(self.arrows, bonusArrow)
                     end
@@ -468,135 +541,112 @@ function GameScene:update(dt)
                 return base, false
             end
             
-            -- Check collision with enemies
-            for j, enemy in ipairs(self.enemies) do
-                if enemy.isAlive then
-                    local ex, ey = enemy:getPosition()
-                    local dx = ax - ex
-                    local dy = ay - ey
-                    local distance = math.sqrt(dx * dx + dy * dy)
-                    
-                    if distance < enemy:getSize() + arrow:getSize() and arrow:canHit(enemy) then
-                        arrow:markHit(enemy)
-                        local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
-                        self.particles:createHitSpark(ex, ey, {1, 1, 0.6})
-                        if self.damageNumbers then
-                            self.damageNumbers:add(ex, ey - enemy:getSize(), dmg, { isCrit = isCrit })
-                        end
-                        local died = enemy:takeDamage(dmg, ax, ay, arrow.knockback)
-                        
-                        if died then
-                            self.particles:createExplosion(ex, ey, {1, 0.3, 0.1})
-                            self.screenShake:add(5, 0.2)
-                            
-                            -- Drop XP orbs
-                            local xpValue = 15 + math.random(0, 10)
-                            self.xpSystem:spawnOrb(ex, ey, xpValue)
-                            
-                            -- Add rarity charge for special enemies
-                            if enemy.isMCM then
-                                self.rarityCharge:add(love.timer.getTime(), 1)
-                            end
+            -- Unified collision check against all enemy lists
+            local allEnemyData = {
+                { list = self.enemies,  deathColor = {1, 0.3, 0.1}, deathShake = {5, 0.2},  xpBase = 15, xpRand = 10, killGainBonus = 0, kbScale = 1.0 },
+                { list = self.lungers,  deathColor = {0.8, 0.3, 0.8}, deathShake = {6, 0.25}, xpBase = 25, xpRand = 15, killGainBonus = 5, kbScale = 1.0, isMCM = true, mcmCharge = 2 },
+                { list = self.treents,  deathColor = {0.2, 0.9, 0.2}, deathShake = {8, 0.3},  xpBase = 60, xpRand = 25, killGainBonus = 8, kbScale = 0.75 },
+            }
+            for _, group in ipairs(allEnemyData) do
+                if hitEnemy then break end
+                for _, enemy in ipairs(group.list) do
+                    if enemy.isAlive then
+                        local ex2, ey2 = enemy:getPosition()
+                        local dx2 = ax - ex2
+                        local dy2 = ay - ey2
+                        local distance2 = math.sqrt(dx2 * dx2 + dy2 * dy2)
 
-                            -- Frenzy charge on kill
-                            if not self.frenzyActive then
-                                local killGain = self.frenzyKillGain
-                                if self.playerStats then
-                                    killGain = self.playerStats:getAbilityValue("frenzy", "charge_gain_mul", killGain)
+                        if distance2 < enemy:getSize() + arrow:getSize() and arrow:canHit(enemy) then
+                            arrow:markHit(enemy)
+
+                            -- Apply per-hit conditional procs (Marked Prey damage, Tactical Spacing, etc.)
+                            local hitDmgMul = 1.0
+                            if self.procEngine then
+                                local hitActions = self.procEngine:onHit(self.playerStats, {
+                                    isCrit = false, -- set after roll below
+                                    target = enemy,
+                                    arrow = arrow,
+                                    playerX = playerX,
+                                    playerY = playerY,
+                                    maxRange = self.attackRange,
+                                })
+                                -- We'll re-run after we know isCrit; for now collect conditional dmg boosts
+                                for _, ha in ipairs(hitActions) do
+                                    if ha.conditional and ha.apply and ha.apply.kind == "stat_mul" and ha.apply.stat == "primary_damage" then
+                                        hitDmgMul = hitDmgMul * (ha.apply.value or 1)
+                                    end
                                 end
-                                self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + killGain)
                             end
-                        else
-                            self.screenShake:add(2, 0.1)
-                        end
 
-                        if arrow:consumePierce() then
-                            hitEnemy = false
-                        else
-                            hitEnemy = true
-                        end
-                        if hitEnemy then break end
-                    end
-                end
-            end
-
-            -- Check lungers
-            if not hitEnemy then
-                for j, lunger in ipairs(self.lungers) do
-                    if lunger.isAlive then
-                        local lx, ly = lunger:getPosition()
-                        local dx = ax - lx
-                        local dy = ay - ly
-                        local distance = math.sqrt(dx * dx + dy * dy)
-
-                        if distance < lunger:getSize() + arrow:getSize() and arrow:canHit(lunger) then
-                            arrow:markHit(lunger)
-                            local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
-                            self.particles:createHitSpark(lx, ly, {1, 1, 0.6})
+                            local dmg, isCrit = rollDamage(arrow.damage * hitDmgMul, arrow.alwaysCrit)
+                            self.particles:createHitSpark(ex2, ey2, isCrit and {1, 1, 0.2} or {1, 1, 0.6})
                             if self.damageNumbers then
-                                self.damageNumbers:add(lx, ly - lunger:getSize(), dmg, { isCrit = isCrit })
+                                self.damageNumbers:add(ex2, ey2 - enemy:getSize(), dmg, { isCrit = isCrit })
                             end
-                            local died = lunger:takeDamage(dmg, ax, ay, arrow.knockback)
+
+                            local kbForce = arrow.knockback and (arrow.knockback * group.kbScale) or nil
+                            local died = enemy:takeDamage(dmg, ax, ay, kbForce)
+
+                            -- On-hit procs (status apply, chain damage, etc.)
+                            if self.procEngine then
+                                local hitActions = self.procEngine:onHit(self.playerStats, {
+                                    isCrit = isCrit,
+                                    target = enemy,
+                                    arrow = arrow,
+                                    playerX = playerX,
+                                    playerY = playerY,
+                                    maxRange = self.attackRange,
+                                })
+                                for _, ha in ipairs(hitActions) do
+                                    if not ha.conditional then
+                                        self:executeAction(ha)
+                                    end
+                                end
+                            end
 
                             if died then
-                                self.particles:createExplosion(lx, ly, {0.8, 0.3, 0.8})
-                                self.screenShake:add(6, 0.25)
+                                self.particles:createExplosion(ex2, ey2, group.deathColor)
+                                self.screenShake:add(group.deathShake[1], group.deathShake[2])
 
-                                -- Drop XP orbs (lungers drop more)
-                                local xpValue = 25 + math.random(0, 15)
-                                self.xpSystem:spawnOrb(lx, ly, xpValue)
+                                local xpValue = group.xpBase + math.random(0, group.xpRand)
+                                self.xpSystem:spawnOrb(ex2, ey2, xpValue)
 
-                                -- Lungers are MCM-type enemies, add rarity charge
-                                self.rarityCharge:add(love.timer.getTime(), 2)
+                                if enemy.isMCM or group.isMCM then
+                                    self.rarityCharge:add(love.timer.getTime(), group.mcmCharge or 1)
+                                end
 
-                                -- Frenzy charge on kill (lungers count as bigger kills)
+                                -- Frenzy charge on kill
                                 if not self.frenzyActive then
-                                    local killGain = self.frenzyKillGain + 5
+                                    local killGain = self.frenzyKillGain + (group.killGainBonus or 0)
                                     if self.playerStats then
                                         killGain = self.playerStats:getAbilityValue("frenzy", "charge_gain_mul", killGain)
                                     end
                                     self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + killGain)
                                 end
+
+                                -- On-kill procs (hemorrhage, crit-kill buffs)
+                                if self.procEngine then
+                                    local killActions = self.procEngine:onKill(self.playerStats, { isCrit = isCrit, target = enemy })
+                                    for _, ka in ipairs(killActions) do
+                                        self:executeAction(ka)
+                                    end
+                                end
                             else
                                 self.screenShake:add(2, 0.1)
                             end
-                            
-                            if arrow:consumePierce() then
-                                hitEnemy = false
-                            else
-                                hitEnemy = true
-                            end
-                            if hitEnemy then break end
-                        end
-                    end
-                end
-            end
 
-            -- Check treents
-            if not hitEnemy then
-                for _, treent in ipairs(self.treents) do
-                    if treent.isAlive then
-                        local tx, ty = treent:getPosition()
-                        local dx = ax - tx
-                        local dy = ay - ty
-                        local distance = math.sqrt(dx * dx + dy * dy)
-
-                        if distance < treent:getSize() + arrow:getSize() and arrow:canHit(treent) then
-                            arrow:markHit(treent)
-                            local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
-                            self.particles:createHitSpark(tx, ty, {1, 1, 0.6})
-                            if self.damageNumbers then
-                                self.damageNumbers:add(tx, ty - treent:getSize(), dmg, { isCrit = isCrit })
-                            end
-                            local died = treent:takeDamage(dmg, ax, ay, arrow.knockback and (arrow.knockback * 0.75) or nil)
-
-                            if died then
-                                self.particles:createExplosion(tx, ty, {0.2, 0.9, 0.2})
-                                self.screenShake:add(8, 0.3)
-                                local xpValue = 60 + math.random(0, 25)
-                                self.xpSystem:spawnOrb(tx, ty, xpValue)
-                            else
-                                self.screenShake:add(3, 0.12)
+                            -- Ricochet: redirect arrow to nearest un-hit enemy
+                            if not died or arrow.ricochetBounces > 0 then
+                                if arrow.ricochetBounces > 0 then
+                                    local nextTarget = self:findNearestEnemyTo(ex2, ey2, arrow.ricochetRange, arrow.hit)
+                                    if nextTarget then
+                                        local ntx, nty = nextTarget:getPosition()
+                                        arrow:bounceToward(ntx, nty)
+                                        -- Don't consume the arrow - it bounced
+                                        hitEnemy = false
+                                        break
+                                    end
+                                end
                             end
 
                             if arrow:consumePierce() then
@@ -632,6 +682,20 @@ function GameScene:update(dt)
             self.player.abilities.frenzy.charge = math.floor(self.frenzyCharge)
             self.player.abilities.frenzy.chargeMax = self.frenzyChargeMax
         end
+
+        -- Evaluate passive/conditional procs each frame
+        if self.procEngine and self.playerStats then
+            local passiveActions = self.procEngine:updatePassive(dt, self.playerStats, {
+                enemyLists = self:getAllEnemyLists(),
+                playerX = playerX,
+                playerY = playerY,
+                wasFiring = self.procEngine.isFiring,
+                wasHit = self.wasHitThisFrame,
+            })
+            for _, action in ipairs(passiveActions) do
+                self:executeAction(action)
+            end
+        end
         
         -- Update trees (for swaying animation)
         for i, tree in ipairs(self.trees) do
@@ -643,88 +707,40 @@ function GameScene:update(dt)
             bush:update(dt)
         end
         
-        -- Update enemies
-        for i, enemy in ipairs(self.enemies) do
-            if enemy.isAlive then
-                enemy:update(dt, playerX, playerY)
-                
-                -- Check collision with player
-                if not self.isDashing then
-                    local ex, ey = enemy:getPosition()
-                    local dx = playerX - ex
-                    local dy = playerY - ey
-                    local distance = math.sqrt(dx * dx + dy * dy)
-                    
-                    if distance < self.player:getSize() + enemy:getSize() then
-                        local damage = (enemy.damage or 10) * self.difficultyMult.enemyDamageMult
-                        if self.frenzyActive then damage = damage * 1.15 end
-                        local before = self.player.health
-                        self.player:takeDamage(damage)
-                        local wasHit = self.player.health < before
-                        if wasHit and self.playerStats then
-                            self.playerStats:update(0, { wasHit = true, didRoll = false, inFrenzy = self.frenzyActive })
-                        end
-                        if not self.player:isInvincible() then
-                            self.screenShake:add(4, 0.15)
-                        end
-                    end
-                end
-            end
-        end
-        
-        -- Update lungers
-        for i, lunger in ipairs(self.lungers) do
-            if lunger.isAlive then
-                lunger:update(dt, playerX, playerY)
-                
-                if not self.isDashing then
-                    local lx, ly = lunger:getPosition()
-                    local dx = playerX - lx
-                    local dy = playerY - ly
-                    local distance = math.sqrt(dx * dx + dy * dy)
-                    
-                    if distance < self.player:getSize() + lunger:getSize() then
-                        local damage = lunger:getDamage()
-                        if lunger:isLunging() then
-                            damage = damage * 1.5
-                        end
-                        damage = damage * self.difficultyMult.enemyDamageMult
-                        if self.frenzyActive then damage = damage * 1.15 end
-                        local before = self.player.health
-                        self.player:takeDamage(damage)
-                        local wasHit = self.player.health < before
-                        if wasHit and self.playerStats then
-                            self.playerStats:update(0, { wasHit = true, didRoll = false, inFrenzy = self.frenzyActive })
-                        end
-                        if not self.player:isInvincible() then
-                            self.screenShake:add(6, 0.2)
-                        end
-                    end
-                end
-            end
-        end
+        -- Update and collide all enemies with player
+        local enemyUpdateData = {
+            { list = self.enemies, getDmg = function(e) return (e.damage or 10) end, shake = {4, 0.15} },
+            { list = self.lungers, getDmg = function(e) local d = e:getDamage(); if e:isLunging() then d = d * 1.5 end; return d end, shake = {6, 0.2} },
+            { list = self.treents, getDmg = function(e) return (e.damage or 18) end, shake = {7, 0.22} },
+        }
+        for _, group in ipairs(enemyUpdateData) do
+            for _, enemy in ipairs(group.list) do
+                if enemy.isAlive then
+                    enemy:update(dt, playerX, playerY)
 
-        -- Update treents
-        for _, treent in ipairs(self.treents) do
-            if treent.isAlive then
-                treent:update(dt, playerX, playerY)
-
-                if not self.isDashing then
-                    local tx, ty = treent:getPosition()
-                    local dx = playerX - tx
-                    local dy = playerY - ty
-                    local distance = math.sqrt(dx * dx + dy * dy)
-                    if distance < self.player:getSize() + treent:getSize() then
-                        local damage = (treent.damage or 18) * self.difficultyMult.enemyDamageMult
-                        if self.frenzyActive then damage = damage * 1.15 end
-                        local before = self.player.health
-                        self.player:takeDamage(damage)
-                        local wasHit = self.player.health < before
-                        if wasHit and self.playerStats then
-                            self.playerStats:update(0, { wasHit = true, didRoll = false, inFrenzy = self.frenzyActive })
-                        end
-                        if not self.player:isInvincible() then
-                            self.screenShake:add(7, 0.22)
+                    if not self.isDashing then
+                        local ex2, ey2 = enemy:getPosition()
+                        local dx2 = playerX - ex2
+                        local dy2 = playerY - ey2
+                        local distance2 = math.sqrt(dx2 * dx2 + dy2 * dy2)
+                        if distance2 < self.player:getSize() + enemy:getSize() then
+                            local damage = group.getDmg(enemy) * self.difficultyMult.enemyDamageMult
+                            if self.frenzyActive then damage = damage * 1.15 end
+                            local before = self.player.health
+                            self.player:takeDamage(damage)
+                            local wasHit = self.player.health < before
+                            if wasHit then
+                                self.wasHitThisFrame = true
+                                if self.playerStats then
+                                    self.playerStats:update(0, { wasHit = true, didRoll = false, inFrenzy = self.frenzyActive })
+                                end
+                                if self.procEngine then
+                                    self.procEngine.noDamageTakenTime = 0
+                                end
+                            end
+                            if not self.player:isInvincible() then
+                                self.screenShake:add(group.shake[1], group.shake[2])
+                            end
                         end
                     end
                 end
@@ -819,6 +835,177 @@ function GameScene:applyStatsToPlayer()
         -- Roll cooldown from stats
         local rollCD = self.playerStats:get("roll_cooldown")
         self.player.abilities.dash.cooldown = math.max(0.3, rollCD)
+    end
+end
+
+---------------------------------------------------------------------------
+-- HELPER: get all enemy lists for iteration
+---------------------------------------------------------------------------
+function GameScene:getAllEnemyLists()
+    return { self.enemies, self.lungers, self.treents }
+end
+
+---------------------------------------------------------------------------
+-- HELPER: find nearest living enemy to a point, optionally excluding a set
+---------------------------------------------------------------------------
+function GameScene:findNearestEnemyTo(x, y, maxRange, excludeSet)
+    local best, bestDist = nil, maxRange
+    for _, list in ipairs(self:getAllEnemyLists()) do
+        for _, e in ipairs(list) do
+            if e.isAlive and (not excludeSet or not excludeSet[e]) then
+                local ex, ey = e:getPosition()
+                local dx = ex - x
+                local dy = ey - y
+                local d = math.sqrt(dx * dx + dy * dy)
+                if d < bestDist then
+                    best = e
+                    bestDist = d
+                end
+            end
+        end
+    end
+    return best, bestDist
+end
+
+---------------------------------------------------------------------------
+-- HELPER: deal damage to all enemies within radius of a point
+---------------------------------------------------------------------------
+function GameScene:aoeDamage(cx, cy, radius, damage)
+    for _, list in ipairs(self:getAllEnemyLists()) do
+        for _, e in ipairs(list) do
+            if e.isAlive then
+                local ex, ey = e:getPosition()
+                local dx = ex - cx
+                local dy = ey - cy
+                if math.sqrt(dx * dx + dy * dy) <= radius then
+                    local died = e:takeDamage(damage, cx, cy, 80)
+                    if self.damageNumbers then
+                        self.damageNumbers:add(ex, ey - e:getSize(), damage, { isCrit = false })
+                    end
+                    if died then
+                        self.particles:createExplosion(ex, ey, {1, 0.5, 0.1})
+                        self.screenShake:add(4, 0.15)
+                        local xpValue = 10 + math.random(0, 5)
+                        self.xpSystem:spawnOrb(ex, ey, xpValue)
+                    end
+                end
+            end
+        end
+    end
+end
+
+---------------------------------------------------------------------------
+-- HELPER: chain damage (lightning jumps from a starting enemy)
+---------------------------------------------------------------------------
+function GameScene:chainDamage(startEnemy, jumps, jumpRange, damage)
+    local current = startEnemy
+    local hit = { [startEnemy] = true }
+    for i = 1, jumps do
+        local cx, cy = current:getPosition()
+        local next = self:findNearestEnemyTo(cx, cy, jumpRange, hit)
+        if not next then break end
+        hit[next] = true
+        local nx, ny = next:getPosition()
+        -- Visual: draw lightning line (via particles)
+        self.particles:createHitSpark(nx, ny, {0.4, 0.6, 1.0})
+        if self.damageNumbers then
+            self.damageNumbers:add(nx, ny - next:getSize(), damage, { isCrit = false })
+        end
+        local died = next:takeDamage(damage, cx, cy, 60)
+        if died then
+            self.particles:createExplosion(nx, ny, {0.3, 0.5, 1.0})
+            self.screenShake:add(3, 0.12)
+            self.xpSystem:spawnOrb(nx, ny, 10 + math.random(0, 5))
+        end
+        current = next
+    end
+end
+
+---------------------------------------------------------------------------
+-- HELPER: spawn arrowstorm (radial burst of arrows from player)
+---------------------------------------------------------------------------
+function GameScene:spawnArrowstorm(count, damageMul, speedMul)
+    if not self.player then return end
+    local px, py = self.player:getPosition()
+    local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult * damageMul
+    local baseSpeed = 500 * speedMul
+    local angleStep = (math.pi * 2) / count
+    for i = 1, count do
+        local angle = angleStep * i
+        local tx = px + math.cos(angle) * 300
+        local ty = py + math.sin(angle) * 300
+        local arrow = Arrow:new(px, py, tx, ty, {
+            damage = baseDmg,
+            speed = baseSpeed,
+            kind = "arrowstorm",
+            pierce = 1,
+            knockback = 80,
+            lifetime = 1.5,
+        })
+        table.insert(self.arrows, arrow)
+    end
+    self.screenShake:add(5, 0.18)
+    self.particles:createExplosion(px, py, {1, 0.9, 0.3})
+end
+
+---------------------------------------------------------------------------
+-- HELPER: hemorrhage explosion (AOE on killing bleeding target)
+---------------------------------------------------------------------------
+function GameScene:hemorrhageExplosion(target, damageMultOfMaxHP, radius)
+    local tx, ty = target:getPosition()
+    local damage = (target.maxHealth or 50) * damageMultOfMaxHP
+    self:aoeDamage(tx, ty, radius, damage)
+    -- Big visual
+    self.particles:createExplosion(tx, ty, {0.8, 0.1, 0.1})
+    self.screenShake:add(6, 0.2)
+end
+
+---------------------------------------------------------------------------
+-- HELPER: execute a single proc action
+---------------------------------------------------------------------------
+function GameScene:executeAction(action)
+    local apply = action.apply
+    if not apply then return end
+
+    if apply.kind == "status_apply" then
+        if action.target and action.target.isAlive then
+            StatusEffects.apply(action.target, apply.status, apply.stacks, apply.duration)
+        end
+
+    elseif apply.kind == "chain_damage" then
+        if action.target and action.target.isAlive then
+            local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult
+            local chainDmg = baseDmg * (apply.damage_mul or 0.35)
+            self:chainDamage(action.target, apply.jumps or 2, apply.range or 180, chainDmg)
+        end
+
+    elseif apply.kind == "aoe_projectile_burst" then
+        self:spawnArrowstorm(apply.count or 12, apply.damage_mul or 0.40, apply.speed_mul or 0.90)
+
+    elseif apply.kind == "aoe_explosion" then
+        if action.target then
+            self:hemorrhageExplosion(action.target, apply.damage_mul_of_target_maxhp or 0.06, apply.radius or 90)
+        end
+
+    elseif apply.kind == "buff" then
+        if self.playerStats then
+            local name = apply.name or "unnamed_buff"
+            -- Check rules
+            local rules = apply.rules or {}
+            if rules.disabled_during_frenzy and self.frenzyActive then return end
+            if rules.no_stack_in_frenzy and self.frenzyActive and self.playerStats:hasBuff(name) then return end
+            self.playerStats:addBuff(name, apply.duration or 5.0, apply.stats or {}, rules)
+        end
+
+    elseif apply.kind == "stat_mul" then
+        -- Per-hit conditional stat boost - apply as a very short buff
+        if action.conditional and self.playerStats then
+            -- These are frame-conditional, managed by passive update
+        end
+
+    elseif apply.kind == "weapon_mod" then
+        -- Temporary weapon mod (e.g. bonus_projectiles from every_n proc)
+        -- Handled by the firing code checking proc actions
     end
 end
 
@@ -1083,9 +1270,22 @@ function GameScene:startDash()
         
         -- Make player invincible during dash
         self.player.invincibleTime = self.dashDuration
-        
+
         -- Screen effect
         self.screenShake:add(2, 0.1)
+
+        -- Trigger after_roll procs (Ghost Quiver, Phase Roll: Focused)
+        if self.procEngine and self.playerStats then
+            local rollActions = self.procEngine:onRoll(self.playerStats)
+            for _, action in ipairs(rollActions) do
+                local a = action.apply
+                if a and a.kind == "buff" and a.name == "ghost_quiver" then
+                    -- Ghost Quiver: grant infinite pierce on primary arrows
+                    self.ghostQuiverTimer = a.duration or 1.25
+                end
+                self:executeAction(action)
+            end
+        end
     end
 end
 

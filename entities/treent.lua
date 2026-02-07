@@ -1,6 +1,8 @@
 -- Treent Enemy - Tanky forest bruiser
 -- NOTE: Sprite visuals intentionally removed. Will be re-implemented
 -- in the visual overhaul phase to match Ember Knights pixel art direction.
+local StatusEffects = require("systems.status_effects")
+
 local Treent = {}
 Treent.__index = Treent
 
@@ -23,6 +25,7 @@ function Treent:new(x, y)
 
     rootedTime = 0,
     rootedDamageTakenMul = 1.0,
+    statuses = {},
   }
   setmetatable(t, Treent)
   return t
@@ -69,6 +72,7 @@ function Treent:takeDamage(damage, hitX, hitY, knockbackForce)
   if not self.isAlive then return false end
 
   local mul = (self.rootedTime and self.rootedTime > 0) and (self.rootedDamageTakenMul or 1.0) or 1.0
+  mul = mul * StatusEffects.getDamageTakenMul(self)
   self.health = self.health - (damage * mul)
   self.flashTime = self.flashDuration
 
@@ -103,6 +107,12 @@ function Treent:draw()
   if self.flashTime > 0 then r, g, b = 1, 1, 1 end
   if self.rootedTime and self.rootedTime > 0 then
     r, g, b = r * 0.6, g + 0.2, b * 0.6
+  end
+  if StatusEffects.has(self, "bleed") then
+    r = math.min(1, r + 0.2); g = g * 0.5; b = b * 0.5
+  end
+  if StatusEffects.has(self, "marked") then
+    r = r * 0.8; g = g * 0.8; b = math.min(1, b + 0.4)
   end
   love.graphics.setColor(r, g, b, 1)
   -- Larger square to convey tankiness

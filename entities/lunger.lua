@@ -1,6 +1,8 @@
 -- Lunger Enemy - Charges at the player
 -- NOTE: Sprite visuals intentionally removed. Will be re-implemented
 -- in the visual overhaul phase to match Ember Knights pixel art direction.
+local StatusEffects = require("systems.status_effects")
+
 local Lunger = {}
 Lunger.__index = Lunger
 
@@ -40,6 +42,7 @@ function Lunger:new(x, y)
         -- Status effects
         rootedTime = 0,
         rootedDamageTakenMul = 1.0,
+        statuses = {},
     }
     setmetatable(lunger, Lunger)
     return lunger
@@ -150,6 +153,7 @@ function Lunger:takeDamage(damage, hitX, hitY, knockbackForce)
     if not self.isAlive then return false end
 
     local mul = (self.rootedTime and self.rootedTime > 0) and (self.rootedDamageTakenMul or 1.0) or 1.0
+    mul = mul * StatusEffects.getDamageTakenMul(self)
     self.health = self.health - (damage * mul)
     
     -- Flash effect
@@ -206,6 +210,12 @@ function Lunger:draw()
 
     if self.rootedTime and self.rootedTime > 0 then
         r, g, b = r * 0.6, g + 0.3, b * 0.6
+    end
+    if StatusEffects.has(self, "bleed") then
+        r = math.min(1, r + 0.2); g = g * 0.5; b = b * 0.5
+    end
+    if StatusEffects.has(self, "marked") then
+        r = r * 0.8; g = g * 0.8; b = math.min(1, b + 0.4)
     end
 
     love.graphics.setColor(r, g, b, 1)

@@ -59,6 +59,13 @@ function Arrow:new(x, y, targetX, targetY, opts)
         kind = opts.kind or "primary",
         knockback = opts.knockback,
         hit = {}, -- set of entities already hit (avoid double-hit across frames)
+
+        -- Ricochet
+        ricochetBounces = opts.ricochetBounces or 0,
+        ricochetRange = opts.ricochetRange or 220,
+
+        -- Ghost Quiver (infinite pierce)
+        ghosting = opts.ghosting == true,
     }
     setmetatable(arrow, Arrow)
     return arrow
@@ -124,11 +131,33 @@ function Arrow:markHit(target)
 end
 
 function Arrow:consumePierce()
+    if self.ghosting then
+        return true -- infinite pierce while ghosting
+    end
     if self.pierce and self.pierce > 0 then
         self.pierce = self.pierce - 1
         return true
     end
     return false
+end
+
+-- Redirect this arrow towards a new target (for ricochet).
+-- Returns true if bounce was consumed, false if no bounces remain.
+function Arrow:bounceToward(targetX, targetY)
+    if self.ricochetBounces <= 0 then return false end
+    self.ricochetBounces = self.ricochetBounces - 1
+
+    local dx = targetX - self.x
+    local dy = targetY - self.y
+    local dist = math.sqrt(dx * dx + dy * dy)
+    if dist <= 0 then dist = 1 end
+
+    self.vx = (dx / dist) * self.speed
+    self.vy = (dy / dist) * self.speed
+    self.angle = math.atan2(dy, dx)
+    -- Refresh lifetime slightly so it can reach the next target
+    self.age = math.max(0, self.age - 0.5)
+    return true
 end
 
 return Arrow
