@@ -81,32 +81,57 @@ function Arrow:update(dt)
 end
 
 function Arrow:draw()
-    local alpha = 1 - (self.age / self.lifetime) * 0.3 -- Slight fade over time
-    
-    -- Tint/scale by kind so abilities don't look identical
+    local alpha = 1 - (self.age / self.lifetime) * 0.3
+
+    -- Tint/scale by arrow kind
     local r, g, b = 1, 1, 1
     local scale = 1
     if self.kind == "power_shot" then
         r, g, b = 1, 0.9, 0.25
         scale = 1.25
+    elseif self.kind == "arrowstorm" then
+        r, g, b = 1, 0.85, 0.3
+        scale = 0.8
     end
+
+    -- Ghost quiver: translucent cyan glow
+    if self.ghosting then
+        r, g, b = 0.4, 0.85, 1.0
+        alpha = alpha * 0.7
+    end
+
     love.graphics.setColor(r, g, b, alpha)
-    
+
     -- Draw the arrow sprite rotated to face direction
     local img = Arrow.image
-    local imgW = img:getWidth()
-    local imgH = img:getHeight()
-    
-    love.graphics.draw(
-        img,
-        self.x,
-        self.y,
-        self.angle + math.pi/4, -- Adjust rotation (sprite is diagonal)
-        scale, scale, -- scale
-        imgW / 2, imgH / 2 -- center origin
-    )
-    
-    -- Reset color
+    if img then
+        local imgW = img:getWidth()
+        local imgH = img:getHeight()
+        love.graphics.draw(
+            img,
+            self.x,
+            self.y,
+            self.angle + math.pi / 4,
+            scale, scale,
+            imgW / 2, imgH / 2
+        )
+    else
+        -- Fallback: pixel rectangle if no sprite loaded
+        local len = self.size * scale
+        love.graphics.push()
+        love.graphics.translate(self.x, self.y)
+        love.graphics.rotate(self.angle)
+        love.graphics.rectangle("fill", -len, -1, len * 2, 3)
+        love.graphics.pop()
+    end
+
+    -- Ghost quiver trailing glow
+    if self.ghosting then
+        love.graphics.setColor(0.3, 0.7, 1.0, alpha * 0.3)
+        local gs = (self.size or 10) * 0.6
+        love.graphics.rectangle("fill", self.x - gs, self.y - gs, gs * 2, gs * 2)
+    end
+
     love.graphics.setColor(1, 1, 1, 1)
 end
 

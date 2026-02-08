@@ -72,6 +72,9 @@ function GameScene:new(gameState)
         procEngine = nil,
         wasHitThisFrame = false,
         ghostQuiverTimer = 0, -- remaining duration of Ghost Quiver buff
+
+        -- Hit-freeze (brief game pause on impact for juice)
+        hitFreezeTime = 0,
     }
     setmetatable(scene, GameScene)
     return scene
@@ -238,6 +241,12 @@ function GameScene:update(dt)
     if self.isPaused or (self.upgradeUI and self.upgradeUI:isVisible()) then
         return
     end
+
+    -- Hit-freeze: brief pause on big impacts for juice
+    if self.hitFreezeTime > 0 then
+        self.hitFreezeTime = self.hitFreezeTime - dt
+        return -- Skip this frame entirely
+    end
     
     -- Update systems
     self.particles:update(dt)
@@ -286,7 +295,7 @@ function GameScene:update(dt)
                         if self.damageNumbers then
                             self.damageNumbers:add(ex, ey - tick.entity:getSize(), tick.damage, { isCrit = false, color = {0.8, 0.2, 0.2} })
                         end
-                        self.particles:createHitSpark(ex, ey, {0.8, 0.1, 0.1})
+                        self.particles:createBleedDrip(ex, ey)
                         if died then
                             self.particles:createExplosion(ex, ey, {0.8, 0.1, 0.1})
                             self.screenShake:add(3, 0.12)
@@ -512,7 +521,7 @@ function GameScene:update(dt)
                 end
                 best:applyRoot(dur, rootDmgMul)
                 local tx, ty = best:getPosition()
-                self.particles:createExplosion(tx, ty, {0.2, 1, 0.3})
+                self.particles:createRootBurst(tx, ty)
                 self.screenShake:add(2, 0.1)
             end
         end
@@ -607,6 +616,7 @@ function GameScene:update(dt)
                             if died then
                                 self.particles:createExplosion(ex2, ey2, group.deathColor)
                                 self.screenShake:add(group.deathShake[1], group.deathShake[2])
+                                self:hitFreeze(isCrit and 0.045 or 0.03)
 
                                 local xpValue = group.xpBase + math.random(0, group.xpRand)
                                 self.xpSystem:spawnOrb(ex2, ey2, xpValue)
@@ -839,6 +849,13 @@ function GameScene:applyStatsToPlayer()
 end
 
 ---------------------------------------------------------------------------
+-- HELPER: hit-freeze (brief game pause for impact feel)
+---------------------------------------------------------------------------
+function GameScene:hitFreeze(duration)
+    self.hitFreezeTime = math.max(self.hitFreezeTime, duration or 0.035)
+end
+
+---------------------------------------------------------------------------
 -- HELPER: get all enemy lists for iteration
 ---------------------------------------------------------------------------
 function GameScene:getAllEnemyLists()
@@ -906,8 +923,8 @@ function GameScene:chainDamage(startEnemy, jumps, jumpRange, damage)
         if not next then break end
         hit[next] = true
         local nx, ny = next:getPosition()
-        -- Visual: draw lightning line (via particles)
-        self.particles:createHitSpark(nx, ny, {0.4, 0.6, 1.0})
+        -- Lightning arc VFX between current and next target
+        self.particles:createLightningArc(cx, cy, nx, ny, {0.4, 0.6, 1.0})
         if self.damageNumbers then
             self.damageNumbers:add(nx, ny - next:getSize(), damage, { isCrit = false })
         end
@@ -918,6 +935,11 @@ function GameScene:chainDamage(startEnemy, jumps, jumpRange, damage)
             self.xpSystem:spawnOrb(nx, ny, 10 + math.random(0, 5))
         end
         current = next
+    end
+    -- Flash + freeze for chain lightning
+    self:hitFreeze(0.03)
+    if _G.triggerScreenFlash then
+        _G.triggerScreenFlash({0.5, 0.7, 1.0, 0.25}, 0.08)
     end
 end
 
@@ -945,7 +967,12 @@ function GameScene:spawnArrowstorm(count, damageMul, speedMul)
         table.insert(self.arrows, arrow)
     end
     self.screenShake:add(5, 0.18)
-    self.particles:createExplosion(px, py, {1, 0.9, 0.3})
+    self.particles:createAoeRing(px, py, 60, {1, 0.9, 0.3})
+    self.particles:createExplosion(px, py, {1, 0.85, 0.2})
+    self:hitFreeze(0.05)
+    if _G.triggerScreenFlash then
+        _G.triggerScreenFlash({1, 0.9, 0.3, 0.3}, 0.1)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -955,9 +982,14 @@ function GameScene:hemorrhageExplosion(target, damageMultOfMaxHP, radius)
     local tx, ty = target:getPosition()
     local damage = (target.maxHealth or 50) * damageMultOfMaxHP
     self:aoeDamage(tx, ty, radius, damage)
-    -- Big visual
+    -- Hemorrhage VFX: expanding blood ring + explosion
+    self.particles:createAoeRing(tx, ty, radius, {0.9, 0.1, 0.05})
     self.particles:createExplosion(tx, ty, {0.8, 0.1, 0.1})
     self.screenShake:add(6, 0.2)
+    self:hitFreeze(0.06)
+    if _G.triggerScreenFlash then
+        _G.triggerScreenFlash({0.9, 0.1, 0.05, 0.35}, 0.12)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -1203,6 +1235,15 @@ function GameScene:keypressed(key)
         }, { break_on_hit_taken = true })
         self.frenzyActive = true
         self.screenShake:add(4, 0.15)
+        -- Frenzy VFX
+        if self.player then
+            local px, py = self.player:getPosition()
+            self.particles:createFrenzyBurst(px, py)
+        end
+        self:hitFreeze(0.06)
+        if _G.triggerScreenFlash then
+            _G.triggerScreenFlash({1, 0.5, 0.1, 0.35}, 0.15)
+        end
         return true
     end
     

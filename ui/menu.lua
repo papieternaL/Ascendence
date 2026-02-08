@@ -25,11 +25,19 @@ function Menu:new(gameState)
 end
 
 function Menu:init()
-    -- Create fonts at different sizes
-    self.titleFont = love.graphics.newFont(48)
-    self.headerFont = love.graphics.newFont(28)
-    self.bodyFont = love.graphics.newFont(18)
-    self.smallFont = love.graphics.newFont(14)
+    -- Create fonts using Kenney Pixel
+    local fontPath = "assets/Other/Fonts/Kenney Pixel.ttf"
+    local function loadFont(size)
+        local ok, f = pcall(love.graphics.newFont, fontPath, size)
+        if ok then f:setFilter("nearest", "nearest"); return f end
+        f = love.graphics.newFont(size)
+        f:setFilter("nearest", "nearest")
+        return f
+    end
+    self.titleFont  = loadFont(48)
+    self.headerFont = loadFont(28)
+    self.bodyFont   = loadFont(18)
+    self.smallFont  = loadFont(14)
     
     -- Initialize floating particles
     for i = 1, 30 do

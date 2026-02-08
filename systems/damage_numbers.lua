@@ -15,8 +15,27 @@ end
 
 local function ensureFonts(self)
   if not self.font then
-    self.font = love.graphics.newFont(12)
-    self.fontCrit = love.graphics.newFont(16)
+    -- Use global pixel fonts if available, else load Kenney Pixel
+    if _G.PixelFonts then
+      self.font = _G.PixelFonts.dmgNormal or _G.PixelFonts.small
+      self.fontCrit = _G.PixelFonts.dmgCrit or _G.PixelFonts.body
+    else
+      local fontPath = "assets/Other/Fonts/Kenney Pixel.ttf"
+      local ok, f = pcall(love.graphics.newFont, fontPath, 12)
+      if ok then
+        f:setFilter("nearest", "nearest")
+        self.font = f
+      else
+        self.font = love.graphics.newFont(12)
+      end
+      ok, f = pcall(love.graphics.newFont, fontPath, 16)
+      if ok then
+        f:setFilter("nearest", "nearest")
+        self.fontCrit = f
+      else
+        self.fontCrit = love.graphics.newFont(16)
+      end
+    end
   end
 end
 
