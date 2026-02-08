@@ -1,162 +1,131 @@
--- LÖVE2D Action RPG - ASCENDENCE
+-- LOVE2D Action RPG - ASCENDENCE
 -- Main Entry Point
-
--- #region agent log
-local function debugLog(msg, data)
-    local logPath = "C:/Users/steven/Desktop/Cursor/Shooter/.cursor/debug.log"
-    local f = io.open(logPath, "a")
-    if f then
-        local json = '{"location":"main.lua","message":"' .. msg .. '","data":' .. (data or '{}') .. ',"timestamp":' .. os.time() .. ',"hypothesisId":"H1"}'
-        f:write(json .. "\n")
-        f:close()
-    end
-end
-debugLog("GAME_START", '{"cwd":"' .. love.filesystem.getSource() .. '"}')
--- #endregion
 
 local GameState = require("systems.game_state")
 local Menu = require("ui.menu")
 local GameScene = require("scenes.game_scene")
-local Config = require("data.config")
-local UIUtils = require("ui.ui_utils")
-local JuiceManager = require("systems.juice_manager")
-local RetroRenderer = require("systems.retro_renderer")
--- BossArenaScene loaded as global to allow hot-reload
-BossArenaScene = require("scenes.boss_arena_scene")
+local Audio = require("systems.audio")
+
+-- Pixel-art rendering constants
+local INTERNAL_W = 320
+local INTERNAL_H = 180
+local gameCanvas
+
+-- Pre-loaded Kenney Pixel fonts (shared globally via _G)
+local FONT_PATH = "assets/Other/Fonts/Kenney Pixel.ttf"
+
+-- Screen flash system (game_scene can trigger via _G.triggerScreenFlash)
+local screenFlash = { timer = 0, duration = 0, color = {1, 1, 1, 0} }
 
 -- Global game objects
 local gameState
 local menu
 local gameScene
-local bossArenaScene
-local retroRenderer
+local audio
 
--- Hot-reload function for development
-function reloadBossModules()
-    print("!!! RELOAD BOSS MODULES CALLED !!!")
-    
-    -- Clear cached modules by pattern to be safe
-    for k, v in pairs(package.loaded) do
-        if k:match("boss_arena_scene") or k:match("treent_overlord") or k:match("root") or k:match("bark_projectile") then
-            package.loaded[k] = nil
-            print("Cleared cache for: " .. k)
-        end
-    end
-
-    -- Reload the modules (re-require)
-    BossArenaScene = require("scenes.boss_arena_scene")
-    
-    -- If boss arena is active, recreate it
-    if gameState and gameState:getState() == gameState.States.BOSS_FIGHT then
-        bossArenaScene = nil  -- Force recreation on next update
-        print("Boss modules reloaded! Boss arena will be recreated on next frame...")
-    else
-        print("Boss modules reloaded!")
-    end
-end
+-- Pre-loaded fonts for HUD (avoid creating every frame)
+local hudFonts = {}
 
 function love.load()
-    -- #region agent log
-    debugLog("LOVE_LOAD_START", '{"source":"' .. love.filesystem.getSource() .. '"}')
-    -- #endregion
-    
     -- Set up window
     love.window.setTitle("ASCENDENCE")
-    
-    -- Enable smooth graphics
+
+    -- Nearest-neighbor filtering for crisp pixel art
     love.graphics.setDefaultFilter("nearest", "nearest")
-    
-    -- Initialize retro renderer
-    retroRenderer = RetroRenderer:new()
-    retroRenderer:initialize()
-    
+
+    -- Create low-res canvas for pixel-art rendering
+    gameCanvas = love.graphics.newCanvas(INTERNAL_W, INTERNAL_H)
+    gameCanvas:setFilter("nearest", "nearest")
+
+    -- Load Kenney Pixel fonts at various sizes
+    local ok, f
+    local function loadPixelFont(size)
+        ok, f = pcall(love.graphics.newFont, FONT_PATH, size)
+        if ok then
+            f:setFilter("nearest", "nearest")
+            return f
+        end
+        f = love.graphics.newFont(size)
+        f:setFilter("nearest", "nearest")
+        return f
+    end
+
+    hudFonts.tiny   = loadPixelFont(8)
+    hudFonts.small  = loadPixelFont(10)
+    hudFonts.body   = loadPixelFont(14)
+    hudFonts.header = loadPixelFont(20)
+    hudFonts.title  = loadPixelFont(36)
+    hudFonts.dmgNormal = loadPixelFont(12)
+    hudFonts.dmgCrit   = loadPixelFont(16)
+
+    -- Expose fonts globally so other modules can use them
+    _G.PixelFonts = hudFonts
+
+    -- Set default font
+    love.graphics.setFont(hudFonts.body)
+
     -- Initialize game state
     gameState = GameState:new()
-    
+
     -- Initialize menu
     menu = Menu:new(gameState)
-    
-    -- Game scenes will be initialized when game starts
+
+    -- Initialize audio system
+    audio = Audio:new()
+    audio:playMenuMusic()
+
+    -- Global screen flash trigger (called by game_scene)
+    _G.triggerScreenFlash = function(color, duration)
+        screenFlash.color = color or {1, 1, 1, 0.4}
+        screenFlash.duration = duration or 0.1
+        screenFlash.timer = screenFlash.duration
+    end
+
+    -- Game scene will be initialized when game starts
     gameScene = nil
-    bossArenaScene = nil
-    
-    -- #region agent log
-    debugLog("LOVE_LOAD_COMPLETE", '{"gameState":"initialized"}')
-    -- #endregion
 end
 
 function love.update(dt)
     -- Cap delta time to prevent physics issues
     dt = math.min(dt, 1/30)
-    
-    -- Update JuiceManager (freeze timer, flash timers)
-    JuiceManager.update(dt)
-    
+
+    -- Update screen flash
+    if screenFlash.timer > 0 then
+        screenFlash.timer = screenFlash.timer - dt
+    end
+
     -- Update game state transitions
     gameState:update(dt)
-    
+
+    -- Update audio system (handles fading)
+    if audio then audio:update(dt) end
+
     local state = gameState:getState()
     local States = gameState.States
-    
+
     if state == States.PLAYING then
         -- Initialize game scene if needed
         if not gameScene then
             gameScene = GameScene:new(gameState)
             gameScene:load()
+            -- Switch to gameplay music
+            if audio then audio:playGameplayMusic() end
         end
         gameScene:update(dt)
-        
+
         -- Check for game over
         if gameScene.player and gameScene.player.health <= 0 then
             gameState:transitionTo(States.GAME_OVER)
+            if audio then audio:playGameOverMusic() end
         end
-    elseif state == States.BOSS_FIGHT then
-        -- Initialize boss arena if needed
-        if not bossArenaScene then
-            if gameState.bossTestMode and not gameScene then
-                -- BOSS TEST MODE: Create temporary game scene with boosted player
-                print("Creating BOSS TEST MODE game scene")
-                gameScene = GameScene:new(gameState)
-                gameScene:load()
-                
-                -- Boost player stats for testing
-                if gameScene.player and gameScene.playerStats then
-                    gameScene.player.health = 150
-                    gameScene.player.maxHealth = 150
-                    gameScene.player.attackDamage = 25
-                    gameScene.player.speed = 250
-                    
-                    -- Apply some upgrades
-                    gameScene.playerStats.base.crit_chance = 0.25
-                    gameScene.playerStats.base.crit_damage = 2.5
-                    gameScene.playerStats.base.move_speed = 250
-                    
-                    print("Player boosted for boss test: HP=150, ATK=25, SPD=250")
-                end
-            end
-            
-            if gameScene then
-                bossArenaScene = BossArenaScene:new(
-                    gameScene.player,
-                    gameScene.playerStats,
-                    gameState,
-                    gameScene.xpSystem,
-                    gameScene.rarityCharge
-                )
-                print("Boss arena scene created!")
-            end
-        end
-        if bossArenaScene then
-            bossArenaScene:update(dt)
-        end
-    elseif state == States.MENU or state == States.CHARACTER_SELECT or state == States.BIOME_SELECT then
+    elseif state == States.MENU or state == States.CHARACTER_SELECT or
+           state == States.BIOME_SELECT or state == States.DIFFICULTY_SELECT then
         menu:update(dt)
-        -- Reset game scenes when in menu
+        -- Reset game scene when in menu
         if gameScene then
             gameScene = nil
-        end
-        if bossArenaScene then
-            bossArenaScene = nil
+            -- Return to menu music
+            if audio then audio:playMenuMusic() end
         end
     elseif state == States.GAME_OVER or state == States.VICTORY then
         menu:update(dt)
@@ -164,16 +133,25 @@ function love.update(dt)
 end
 
 function love.draw()
+    local winW = love.graphics.getWidth()
+    local winH = love.graphics.getHeight()
+
+    -- ── Render everything to low-res canvas ──
+    love.graphics.setCanvas(gameCanvas)
+    love.graphics.clear(0.05, 0.05, 0.08, 1)
+
+    love.graphics.push()
+    local scaleX = INTERNAL_W / winW
+    local scaleY = INTERNAL_H / winH
+    love.graphics.scale(scaleX, scaleY)
+
     local state = gameState:getState()
     local States = gameState.States
-    
-    -- Start retro rendering (to low-res canvas)
-    local isRetro = retroRenderer:startDrawing()
-    
+
     if state == States.PLAYING then
         if gameScene then
             gameScene:draw()
-            
+
             -- Draw HUD
             drawHUD()
 
@@ -181,10 +159,6 @@ function love.draw()
             if gameScene.drawOverlays then
                 gameScene:drawOverlays()
             end
-        end
-    elseif state == States.BOSS_FIGHT then
-        if bossArenaScene then
-            bossArenaScene:draw()
         end
     elseif state == States.GAME_OVER or state == States.VICTORY then
         -- Draw game in background
@@ -196,11 +170,21 @@ function love.draw()
         -- Menu states
         menu:draw()
     end
-    
-    -- Finish retro rendering (apply shaders and scale up)
-    if isRetro then
-        retroRenderer:finishDrawing()
+
+    -- Screen flash inside canvas (gets pixelated too)
+    if screenFlash.timer > 0 then
+        local a = (screenFlash.color[4] or 0.4) * (screenFlash.timer / screenFlash.duration)
+        love.graphics.setColor(screenFlash.color[1], screenFlash.color[2], screenFlash.color[3], a)
+        love.graphics.rectangle("fill", 0, 0, winW, winH)
+        love.graphics.setColor(1, 1, 1, 1)
     end
+
+    love.graphics.pop()
+    love.graphics.setCanvas()
+
+    -- ── Scale canvas to fill window (nearest-neighbor = crisp pixels) ──
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(gameCanvas, 0, 0, 0, winW / INTERNAL_W, winH / INTERNAL_H)
 end
 
 function drawHUD()
@@ -210,33 +194,19 @@ function drawHUD()
     -- Draw bottom HUD (health bar + abilities)
     if gameScene and gameScene.player then
         drawBottomHUD(gameScene.player)
-        
-        -- Draw level indicator (top-left corner) - replaced old floor system
-        love.graphics.setColor(1, 1, 1, 0.9)
-        local level = gameScene.xpSystem and gameScene.xpSystem.level or 1
-        love.graphics.print("LEVEL: " .. level, 20, 20)
-        
-        -- Show boss portal hint at level 15
-        if level >= 15 and gameScene.bossPortal then
-            love.graphics.setColor(0.75, 0.25, 0.95, 1)
-            love.graphics.print("Boss Portal Active - Press E near portal!", 20, 40)
-        end
-        
-        love.graphics.setColor(1, 1, 1, 1)
     end
 end
 
 function drawBottomHUD(player)
     local w = love.graphics.getWidth()
     local h = love.graphics.getHeight()
-    local cfg = Config.UI
-    
+
     -- U-shaped HUD background
-    local hudWidth = cfg.hudWidth
-    local hudHeight = cfg.hudHeight
+    local hudWidth = 400
+    local hudHeight = 90
     local hudX = (w - hudWidth) / 2
     local hudY = h - hudHeight - 10
-    
+
     -- Draw curved background shape
     love.graphics.setColor(0, 0, 0, 0.7)
     -- Main rectangle
@@ -247,17 +217,17 @@ function drawBottomHUD(player)
     -- Right curve
     love.graphics.arc("fill", hudX + hudWidth - 38, hudY + 28, 30, math.pi * 1.5, math.pi * 2)
     love.graphics.rectangle("fill", hudX + hudWidth - 38, hudY + 28, 30, hudHeight - 28)
-    
+
     -- Health bar (at the top of the U)
-    local healthBarWidth = cfg.healthBarWidth
-    local healthBarHeight = cfg.healthBarHeight
+    local healthBarWidth = hudWidth - 80
+    local healthBarHeight = 16
     local healthBarX = hudX + 40
     local healthBarY = hudY + 25
-    
+
     -- Health bar background
     love.graphics.setColor(0.2, 0.05, 0.05, 1)
     love.graphics.rectangle("fill", healthBarX, healthBarY, healthBarWidth, healthBarHeight, 4, 4)
-    
+
     -- Health bar fill
     local healthPercent = player.health / player.maxHealth
     local healthColor = {0.2, 0.8, 0.2}
@@ -268,40 +238,139 @@ function drawBottomHUD(player)
     end
     love.graphics.setColor(healthColor[1], healthColor[2], healthColor[3], 1)
     love.graphics.rectangle("fill", healthBarX + 2, healthBarY + 2, (healthBarWidth - 4) * healthPercent, healthBarHeight - 4, 3, 3)
-    
+
     -- Health bar shine
     love.graphics.setColor(1, 1, 1, 0.2)
     love.graphics.rectangle("fill", healthBarX + 2, healthBarY + 2, (healthBarWidth - 4) * healthPercent, (healthBarHeight - 4) / 2, 3, 3)
-    
+
     -- Health bar border
     love.graphics.setColor(0.4, 0.4, 0.4, 1)
     love.graphics.setLineWidth(2)
     love.graphics.rectangle("line", healthBarX, healthBarY, healthBarWidth, healthBarHeight, 4, 4)
     love.graphics.setLineWidth(1)
-    
-    -- Health text
+
+    -- Health text (using pre-loaded font)
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.setFont(love.graphics.newFont(12))
+    love.graphics.setFont(hudFonts.small)
     local healthText = math.floor(player.health) .. "/" .. player.maxHealth
     local font = love.graphics.getFont()
     local textWidth = font:getWidth(healthText)
     love.graphics.print(healthText, healthBarX + healthBarWidth/2 - textWidth/2, healthBarY + 1)
-    
-    -- REMOVED: Old ability icons - now drawn by game_scene.lua abilityHUD
-    -- Abilities are drawn by the newer abilityHUD in game_scene.lua with radial cooldowns
+
+    -- Draw abilities in a row below health bar
+    local abilitySize = 44
+    local abilitySpacing = 12
+    local numAbilities = #player.abilityOrder
+    local abilitiesWidth = numAbilities * abilitySize + (numAbilities - 1) * abilitySpacing
+    local abilitiesX = (w - abilitiesWidth) / 2
+    local abilitiesY = healthBarY + healthBarHeight + 10
+
+    for i, abilityId in ipairs(player.abilityOrder) do
+        local ability = player.abilities[abilityId]
+        if ability then
+            local x = abilitiesX + (i - 1) * (abilitySize + abilitySpacing)
+            drawAbilityIcon(ability, x, abilitiesY, abilitySize)
+        end
+    end
+end
+
+function drawAbilityIcon(ability, x, y, size)
+    local hasCharge = (ability.chargeMax ~= nil)
+    local isReady = ability.currentCooldown <= 0
+    local cooldownPercent = 0
+    if hasCharge then
+        local c = ability.charge or 0
+        local m = ability.chargeMax or 1
+        isReady = c >= m
+        cooldownPercent = 1 - (c / m)
+    else
+        cooldownPercent = ability.cooldown > 0 and (ability.currentCooldown / ability.cooldown) or 0
+    end
+
+    -- Ability background
+    if isReady then
+        love.graphics.setColor(0.2, 0.25, 0.35, 1)
+    else
+        love.graphics.setColor(0.1, 0.1, 0.15, 1)
+    end
+    love.graphics.rectangle("fill", x, y, size, size, 6, 6)
+
+    -- Cooldown overlay (sweeping clock effect)
+    if not isReady then
+        love.graphics.setColor(0, 0, 0, 0.6)
+        local segments = 32
+        local angleStart = -math.pi / 2
+        local angleEnd = angleStart + (2 * math.pi * cooldownPercent)
+        local centerX = x + size / 2
+        local centerY = y + size / 2
+        local radius = size / 2 - 2
+        local vertices = {centerX, centerY}
+        for i = 0, segments do
+            local angle = angleStart + (angleEnd - angleStart) * (i / segments)
+            table.insert(vertices, centerX + math.cos(angle) * radius)
+            table.insert(vertices, centerY + math.sin(angle) * radius)
+        end
+        if #vertices >= 6 then
+            love.graphics.polygon("fill", vertices)
+        end
+    end
+
+    -- Ability icon (text symbol)
+    love.graphics.setColor(1, 1, 1, isReady and 1 or 0.4)
+    love.graphics.setFont(hudFonts.header)
+    local font = love.graphics.getFont()
+    local iconWidth = font:getWidth(ability.icon)
+    love.graphics.print(ability.icon, x + size/2 - iconWidth/2, y + 6)
+
+    -- Keybind
+    love.graphics.setColor(1, 1, 1, 0.8)
+    love.graphics.setFont(hudFonts.tiny)
+    font = love.graphics.getFont()
+    local keyWidth = font:getWidth(ability.key)
+    love.graphics.print(ability.key, x + size/2 - keyWidth/2, y + size - 14)
+
+    -- Border
+    if isReady then
+        love.graphics.setColor(0.5, 0.7, 1, 1)
+    else
+        love.graphics.setColor(0.3, 0.3, 0.4, 1)
+    end
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", x, y, size, size, 6, 6)
+    love.graphics.setLineWidth(1)
+
+    -- Cooldown timer text
+    if hasCharge then
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.setFont(hudFonts.small)
+        local c = ability.charge or 0
+        local m = ability.chargeMax or 1
+        local txt = string.format("%d%%", math.floor((c / m) * 100))
+        font = love.graphics.getFont()
+        local tw = font:getWidth(txt)
+        love.graphics.print(txt, x + size/2 - tw/2, y + size/2 - 6)
+    elseif not isReady then
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.setFont(hudFonts.body)
+        local cdText = string.format("%.1f", ability.currentCooldown)
+        font = love.graphics.getFont()
+        local cdWidth = font:getWidth(cdText)
+        love.graphics.print(cdText, x + size/2 - cdWidth/2, y + size/2 - 7)
+    end
+
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 function love.keypressed(key)
-    -- Hot-reload for development (F5) - works in any state
-    if key == "f5" then
-        reloadBossModules()
-        print("Hot-reloaded boss modules!")
+    -- Global mute toggle
+    if key == "m" and audio then
+        audio:toggleMute()
         return
     end
-    
+
     local state = gameState:getState()
     local States = gameState.States
-    
+
     if state == States.PLAYING then
         -- Let the scene handle overlay/upgrade inputs first
         if gameScene and gameScene.keypressed then
@@ -309,14 +378,6 @@ function love.keypressed(key)
             if handled then return end
         end
 
-        if key == "escape" then
-            -- TODO: Pause menu
-            gameState:transitionTo(States.MENU)
-        end
-    elseif state == States.BOSS_FIGHT then
-        if bossArenaScene and bossArenaScene.keypressed then
-            bossArenaScene:keypressed(key)
-        end
         if key == "escape" then
             gameState:transitionTo(States.MENU)
         end
@@ -328,7 +389,7 @@ end
 function love.mousepressed(x, y, button)
     local state = gameState:getState()
     local States = gameState.States
-    
+
     if state == States.PLAYING then
         if gameScene then
             gameScene:mousepressed(x, y, button)
@@ -341,7 +402,7 @@ end
 function love.mousemoved(x, y)
     local state = gameState:getState()
     local States = gameState.States
-    
+
     if state == States.PLAYING then
         if gameScene then
             gameScene:mousemoved(x, y)

@@ -36,33 +36,34 @@ P.power_shot = {
   },
 }
 
-P.arrow_volley = {
-  -- Arrow Volley upgrades: AOE damage ability that rains arrows on a target area
+P.entangle = {
+  -- Arrow Volley: fires a cone of vine-arrows that deal damage in an area
   {
-    id="av_c_wide_spread", name="Wide Spread", rarity="common",
-    effects={ { kind="ability_mod", ability="arrow_volley", mod="radius_add", value=20 } }
+    id="en_c_wide_volley", name="Wide Volley", rarity="common",
+    effects={ { kind="ability_mod", ability="entangle", mod="arrow_count_add", value=3 } }
   },
   {
-    id="av_c_rapid_reload", name="Rapid Reload", rarity="common",
-    effects={ { kind="ability_mod", ability="arrow_volley", mod="cooldown_mul", value=0.85 } }
+    id="en_c_quick_cast", name="Quick Cast", rarity="common",
+    effects={ { kind="ability_mod", ability="entangle", mod="cooldown_mul", value=0.90 } }
   },
   {
-    id="av_r_heavy_volley", name="Heavy Volley", rarity="rare",
+    id="en_r_thorned_volley", name="Thorned Volley", rarity="rare",
     effects={
-      { kind="ability_mod", ability="arrow_volley", mod="damage_mul", value=1.25 }
+      { kind="ability_mod", ability="entangle", mod="damage_mul", value=1.35 }
     }
   },
   {
-    id="av_r_arrow_storm", name="Arrow Storm", rarity="rare",
+    id="en_r_piercing_vines", name="Piercing Vines", rarity="rare",
     effects={
-      { kind="ability_mod", ability="arrow_volley", mod="arrow_count_add", value=6 }
+      { kind="ability_mod", ability="entangle", mod="pierce_add", value=3 }
     }
   },
   {
-    id="av_e_double_strike", name="Double Strike", rarity="epic",
+    id="en_e_thorn_storm", name="Thorn Storm", rarity="epic",
     effects={
-      { kind="ability_mod", ability="arrow_volley", mod="double_strike", value=1, delay=0.3, second_volley_damage_mul=0.6 }
-      -- Volley strikes the same location twice with a short delay (second volley deals 60% damage)
+      { kind="ability_mod", ability="entangle", mod="arrow_count_add", value=5 },
+      { kind="ability_mod", ability="entangle", mod="damage_mul", value=1.15 },
+      { kind="ability_mod", ability="entangle", mod="cooldown_mul", value=0.85 }
     }
   },
 }
@@ -100,14 +101,6 @@ P.frenzy = {
 }
 
 return P
-
-
-
-
-
-
-
-
 
 
 

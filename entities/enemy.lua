@@ -1,30 +1,19 @@
--- Enemy Entity (red square)
-local JuiceManager = require("systems.juice_manager")
-local StatusComponent = require("systems.status_component")
+-- Enemy Entity (basic melee)
+-- NOTE: Sprite visuals intentionally removed. Will be re-implemented
+-- in the visual overhaul phase to match Ember Knights pixel art direction.
+local StatusEffects = require("systems.status_effects")
 
 local Enemy = {}
 Enemy.__index = Enemy
 
-Enemy.image = nil
-
-local function loadEnemyImageOnce()
-    if Enemy.image then return end
-    local success, img = pcall(love.graphics.newImage, "assets/32x32/fb1.png")
-    if success and img then
-        Enemy.image = img
-        Enemy.image:setFilter("nearest", "nearest")
-    end
-end
-
 function Enemy:new(x, y)
-    loadEnemyImageOnce()
     local enemy = {
         x = x or 0,
         y = y or 0,
-        size = 12, -- size of the square (half-width/height)
-        speed = 90, -- pixels per second (fast!)
-        maxHealth = 25,
-        health = 25,
+        size = 15, -- size of the square (half-width/height)
+        speed = 50, -- pixels per second
+        maxHealth = 45,
+        health = 45,
         isAlive = true,
         flashTime = 0,
         flashDuration = 0.1,
@@ -32,25 +21,22 @@ function Enemy:new(x, y)
         knockbackY = 0,
         knockbackDecay = 8, -- how fast knockback fades
 
-        -- Status Component
-        statusComponent = StatusComponent:new(),
+        -- Status effects
+        rootedTime = 0,
+        rootedDamageTakenMul = 1.0,
+        statuses = {},
     }
     setmetatable(enemy, Enemy)
     return enemy
 end
 
 function Enemy:update(dt, playerX, playerY)
-    -- Update status component
-    if self.statusComponent then
-        self.statusComponent:update(dt, self)
-    end
-    
     -- Update flash effect
     if self.flashTime > 0 then
         self.flashTime = self.flashTime - dt
     end
 
-    -- Update root (legacy - now handled by statusComponent)
+    -- Update root
     if self.rootedTime and self.rootedTime > 0 then
         self.rootedTime = math.max(0, self.rootedTime - dt)
         if self.rootedTime <= 0 then
@@ -90,12 +76,9 @@ end
 function Enemy:takeDamage(damage, hitX, hitY, knockbackForce)
     if not self.isAlive then return false end
 
-    -- Apply damage multipliers from status effects
-    local statusMul = self.statusComponent and self.statusComponent:getDamageMultiplier() or 1.0
-    local legacyMul = (self.rootedTime and self.rootedTime > 0) and (self.rootedDamageTakenMul or 1.0) or 1.0
-    local totalMul = statusMul * legacyMul
-    
-    self.health = self.health - (damage * totalMul)
+    local mul = (self.rootedTime and self.rootedTime > 0) and (self.rootedDamageTakenMul or 1.0) or 1.0
+    mul = mul * StatusEffects.getDamageTakenMul(self)
+    self.health = self.health - (damage * mul)
     
     -- Flash effect
     self.flashTime = self.flashDuration
@@ -121,46 +104,28 @@ function Enemy:takeDamage(damage, hitX, hitY, knockbackForce)
 end
 
 function Enemy:applyRoot(duration, damageTakenMul)
-    -- Apply via status component if available
-    if self.statusComponent then
-        self.statusComponent:applyStatus("rooted", 1, duration, { damage_taken_multiplier = damageTakenMul or 1.15 })
-    end
-    
-    -- Legacy support
     self.rootedTime = math.max(self.rootedTime or 0, duration or 0)
     self.rootedDamageTakenMul = damageTakenMul or 1.15
-end
-
-function Enemy:isRooted()
-    if self.statusComponent and self.statusComponent:hasStatus("rooted") then
-        return true
-    end
-    return self.rootedTime and self.rootedTime > 0
 end
 
 function Enemy:draw()
     if not self.isAlive then return end
 
-    -- Check for JuiceManager flash (Power Shot impact) or regular flash
-    local isFlashing = self.flashTime > 0 or JuiceManager.isFlashing(self)
-    
-    if Enemy.image then
-        local img = Enemy.image
-        local w, h = img:getWidth(), img:getHeight()
-        local scale = 1.2
-        if isFlashing then
-            love.graphics.setColor(1, 1, 1, 1)
-        else
-            love.graphics.setColor(1, 0.75, 0.75, 1)
-        end
-        love.graphics.draw(img, self.x, self.y, 0, scale, scale, w/2, h/2)
-        love.graphics.setColor(1, 1, 1, 1)
-        return
-    end
-
-    -- Fallback: red square
+    -- Placeholder shape (sprite to be added in visual overhaul)
     local r, g, b = 0.9, 0.1, 0.1
-    if isFlashing then r, g, b = 1, 1, 1 end
+    if self.flashTime > 0 then r, g, b = 1, 1, 1 end
+    if self.rootedTime and self.rootedTime > 0 then
+        r, g, b = r * 0.6, g + 0.3, b * 0.6
+    end
+    -- Status tints
+    if StatusEffects.has(self, "bleed") then
+        r = math.min(1, r + 0.2)
+        g = g * 0.5
+        b = b * 0.5
+    end
+    if StatusEffects.has(self, "marked") then
+        r = r * 0.8; g = g * 0.8; b = math.min(1, b + 0.4)
+    end
     love.graphics.setColor(r, g, b, 1)
     love.graphics.rectangle("fill", self.x - self.size, self.y - self.size, self.size * 2, self.size * 2)
     love.graphics.setColor(1, 1, 1, 1)

@@ -6,7 +6,6 @@ This file is the **single source of truth** for coordination between multiple Cu
 - **Before working**: read this file top-to-bottom.
 - **After working**: add a short update under **Changelog** and, if needed, add questions under **Open Questions**.
 - **If you change direction**: update **Decisions** (don’t bury key decisions in chat).
-- **Cursor rules**: `.cursor/rules/` contains workflow and code standards (planning/execution, Lua style, performance, game patterns, testing). Use them for all implementation and planning.
 
 ## Roles
 - **Design Agent (this chat)**: game design rules, systems design, constraints, UX requirements.
@@ -26,22 +25,6 @@ This file is the **single source of truth** for coordination between multiple Cu
 - No infinite ult uptime
 - Chaos via quantity, not unreadable mechanics
 - Boss difficulty comes from execution, not HP inflation
-
-### Enemy System Consistency Checklist
-When adding a new enemy type, ensure it is added to **ALL** of these locations in `game_scene.lua`:
-
-1. **Table initialization** (~line 277-288): `self.newEnemyType = {}`
-2. **Spawning logic** (~line 260-461): Create instances and insert into table
-3. **Primary targeting loop** (~line 640-810): Include in nearest enemy search for auto-aim
-4. **Arrow collision detection** (~line 1000-1900): Handle arrow hits with damage, particles, XP
-5. **Arrow Volley targeting** (~line 863-907): Include in `considerTarget()` loop
-6. **Win condition check** (~line 2700-2750): Check if any alive before floor clear
-7. **Update loop** (~line 2000-2600): Update entity state, status effects, AI
-8. **Drawing loop** (~line 2920-3000): Add to drawables with Y-sort
-9. **Combat check** (~line 1920-1935): Include in `inCombat` check
-10. **allEnemies lists** (healer/druid AI, ~line 2545-2670): Add to consolidated lists
-
-**Pattern**: When adding enemy type `foo`, grep for an existing type like `wolves` and ensure `foo` appears in all the same locations.
 
 ## Confirmed Design Decisions (as of 2025-12-30)
 
@@ -104,6 +87,132 @@ Files touched/added:
   - draws `gameScene:drawOverlays()` on top of HUD
   - routes keypress to scene first so `Tab` is handled
 
+## Codebase Architecture
+
+```
+Ascendence/
+├── main.lua                 # Entry point, HUD rendering, input routing, audio init
+├── conf.lua                 # LÖVE2D config (1280x720, nearest filter, no physics)
+├── AGENTS.md                # Design doc & handoff notes (this file)
+│
+├── entities/                # Game objects (self-contained update/draw)
+│   ├── player.lua           # Archer: movement, abilities, bow aiming, health
+│   ├── enemy.lua            # Basic melee: chase AI, root support, knockback
+│   ├── lunger.lua           # Charge enemy: 4-state machine (idle→charge→lunge→cooldown)
+│   ├── treent.lua           # Elite tank: slow, high HP, reduced knockback
+│   ├── arrow.lua            # Projectile: pierce, crit, hit tracking, lifetime
+│   ├── fireball.lua         # (unused) Future projectile entity
+│   └── tree.lua             # Decorative tree/bush with sway animation
+│
+├── systems/                 # Game mechanics & managers
+│   ├── game_state.lua       # State machine: MENU→SELECT→PLAYING→GAME_OVER
+│   ├── player_stats.lua     # Stat computation: base + additive + multiplier + buffs + ability mods
+│   ├── upgrade_roll.lua     # Rarity-weighted upgrade selection with MCM charge bonus
+│   ├── xp_system.lua        # XP orbs, leveling, level-up queue
+│   ├── rarity_charge.lua    # MCM kill tracking → rarity boosts on level-up
+│   ├── audio.lua            # Music + SFX system with fading & track management
+│   ├── animation.lua        # Sprite animation system
+│   ├── particles.lua        # Explosion, dash trail, hit spark particles
+│   ├── damage_numbers.lua   # Floating damage text with crit scaling
+│   ├── screen_shake.lua     # Camera shake on impact
+│   ├── tilemap.lua          # Procedural grass/flowers background
+│   └── forest_tilemap.lua   # Kenney foliage pack: trees, bushes, rocks, flowers
+│
+├── scenes/
+│   ├── scene.lua            # Base scene class
+│   ├── scene_manager.lua    # Scene transitions
+│   ├── empty.lua            # Empty placeholder
+│   └── game_scene.lua       # Main gameplay: spawn, combat, abilities, floor progression
+│
+├── ui/
+│   ├── menu.lua             # Main menu, character/biome/difficulty select, game over
+│   ├── upgrade_ui.lua       # Level-up card selection modal (3 cards, animated)
+│   └── stats_overlay.lua    # Tab overlay: run stats + acquired upgrades
+│
+├── data/
+│   ├── upgrades_archer.lua  # 12 common + 9 rare + 5 epic archer upgrades
+│   └── ability_paths_archer.lua  # Ability-specific upgrades (PS/Entangle/Frenzy)
+│
+└── assets/
+    ├── Audio/               # Kenney audio packs (RPG, Impact, Music Loops, etc.)
+    ├── 2D assets/           # Kenney sprite packs (Foliage, Monochrome RPG, Platformer)
+    └── 32x32/               # Custom sprites (bow, arrow)
+```
+
+### Data Flow
+```
+Input → Player.update() → Movement
+     → GameScene.update()
+        → Find nearest enemy → Auto-aim + Auto-fire arrows
+        → Auto-cast Power Shot / Entangle
+        → Manual: Dash (Space), Frenzy (R)
+        → Arrow collision → takeDamage() → Death → XP orb → RarityCharge
+        → XP collection → Level-up → UpgradeRoll → UpgradeUI → PlayerStats.applyUpgrade()
+        → PlayerStats.get() → applyStatsToPlayer() → Modified combat stats
+```
+
+---
+
+## Upgrade System Audit (2026-02-06)
+
+### Working Correctly
+| Effect Kind | Status | Notes |
+|---|---|---|
+| `stat_add` | OK | Additive modifiers applied correctly |
+| `stat_mul` | OK | Multiplicative stacking works |
+| `weapon_mod: pierce_add` | OK | Pierce wired to primary arrows |
+| `weapon_mod: ricochet` | STORED | Data tracked; bounce behavior not yet in arrow.lua |
+| `weapon_mod: bonus_projectiles` | **FIXED** | Now fires extra arrows at spread angles |
+| `ability_mod` | **FIXED** | Now stored and applied to cooldowns, damage, range, charge gain, etc. |
+| `proc` effects | STORED | Most triggers not yet checked in combat loop |
+| Buff system | OK | Duration tick + break conditions all functional |
+
+### Issues Fixed
+1. `ability_mod` effects silently dropped → handler + accessors added
+2. Bonus projectiles never fired → wired into primary shot logic
+3. Ability cooldown/damage mods not applied → `applyStatsToPlayer()` reads ability mods
+4. Entangle didn't target Treents → added to target loop
+5. Entangle boss check missing → added `target.isBoss` guard
+6. Frenzy duration/crit/speed not moddable → reads from `getAbilityValue()`
+7. Frenzy charge gain not moddable → `charge_gain_mul` applied on kill
+
+### Needs Future Implementation
+- Ricochet arrow behavior (bounce projectiles on hit)
+- Bleed/Marked status systems (referenced by 5+ upgrades)
+- Proc trigger engine (13 distinct trigger types defined in data)
+- Chain damage, AOE burst, AOE explosion, Ghost Quiver mechanics
+
+---
+
+## Visual Overhaul Plan: Pixel Roguelite Aesthetic
+
+**Target: Ember Knights-style pixel art** — vibrant, crunchy, juice-heavy.
+
+### Phase 1: Rendering Pipeline
+- Canvas-based rendering at native pixel resolution (320x180 or 426x240), scaled up nearest-neighbor
+- Post-processing shaders: bloom, vignette, per-biome color grading
+- Palette-constrained art (32-64 colors per biome)
+
+### Phase 2: Entity Sprites
+- Replace all placeholder shapes with animated pixel sprite sheets (16x16 or 24x24)
+- Distinct silhouettes per enemy type; squash/stretch movement; anticipation + impact frames
+- Player character with idle, run, dash, hurt animations
+
+### Phase 3: VFX & Juice
+- Pixel-art particle sprites replacing circle particles
+- Hit-stop on kills (~50ms), chromatic aberration, screen flash
+- Projectile trails, enemy death disintegration animations
+
+### Phase 4: Environment
+- Hand-crafted tile sets per biome with auto-tiling
+- Parallax background layers for depth
+- Point lights on projectiles/abilities via light map shader
+
+### Asset Pipeline
+- Aseprite for sprite creation; 16x16 base grid; 4-frame idle, 6-frame actions
+
+---
+
 ## Open Questions
 - (none right now)
 
@@ -115,44 +224,20 @@ Files touched/added:
 5. **Reroll system**: Add 3-reroll budget; wire reroll button into `UpgradeUI` (re-rolls all 3 cards, consumes 1 charge).
 6. **Elemental Attunement pre-run UI**: Add attunement selection screen before run starts (Fire/Poison/Dark for Archer).
 7. **Meta-progression scaffold**: Add gear profile screen (Universal + Class relics); wire win/loss → keep/lose relics.
+8. **Visual overhaul Phase 1**: Implement canvas rendering + post-processing pipeline.
+9. **Proc trigger engine**: Build runtime proc checker for combat loop.
+10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
-- 2026-02-03: **Single difficulty**: Removed three-difficulty selection; maps use one difficulty (Normal: 1.0 multipliers). Flow is now Character → Biome → Playing. BOSS TEST also uses default difficulty.
-- 2026-02-03: **Bug fix: Wolves/Healers/Druids now targetable**:
-  - Fixed bug where wolves, healers, and druids were missing from primary attack targeting loop.
-  - Arrows now correctly auto-aim at these enemy types.
-  - Added "Enemy System Consistency Checklist" to prevent future targeting bugs.
-- 2025-12-30 (experimental branch): **Boss Test Mode added**:
-  - New "BOSS TEST" button on main menu for instant boss access.
-  - Skips character/biome/difficulty selection.
-  - Player spawns with boosted stats: 150 HP, 25 ATK, 250 SPD, 25% crit, 2.5x crit damage.
-  - Perfect for rapid iteration and testing boss mechanics.
-- 2025-12-30 (experimental branch): **Phase 2 MAJOR overhaul (deadlier & more intense)**:
-  - **Pizza Slice Safe Zones**: Earthquake now fills 3/4 of the arena (green danger zones) with 1/4 safe white slice - more visual, more deadly!
-  - **Single Root Mechanic**: Replaced 6 scattered roots with 1 tankier root (200 HP) spawned directly on player - focus fire to escape!
-  - **Boss Cast Bar**: 2-second telegraph before earthquake starts - shows "EARTHQUAKE!" with red progress bar above boss.
-  - **Faster Bark Barrage**: Projectiles fire sequentially (0.08s apart) instead of all at once - tighter, faster, scarier!
-  - **Earthquake Damage**: Increased from 30 → 50 damage per tick (every 0.5s).
-  - **Ability HUD**: Player abilities now visible in boss arena (bottom-left, shows cooldowns).
-  - **WASD Dash**: Dash direction now based on WASD keys held when pressing Space (not mouse).
-  - **Root Prevention**: Can't dash while rooted.
-  - **Auto-targeting**: Primary attacks + Power Shot prioritize roots in Phase 2.
-- 2025-12-30 (experimental branch): **Treent Overlord boss fight fully implemented**:
-  - **Phase 1**: Lunge attack (telegraphed charge) + Bark Barrage (8-directional projectile burst).
-  - **Phase 2 @ 50% HP**: Encompass Root (roots player, spawns 6 root entities player must destroy) + Territory Control (earthquake with 3 safe zones, ticks damage every 0.5s if not in safe zone).
-  - **Auto-target priority**: Entangle ability prioritizes roots in Phase 2 (50-point bonus) to help player escape.
-  - **Boss arena**: Separate sealed scene, teleports player at floor 5, dark forest aesthetic.
-  - **Victory condition**: Defeat boss → VICTORY state (relics kept).
-  - **Player rooting**: Player can now be rooted by boss mechanics; root prevents movement, displays duration.
-  - Fully wired: main.lua, game_state.lua (BOSS_FIGHT state), advanceFloor transition.
-- 2025-12-30 (experimental branch): **MCM system fully implemented**:
-  - **Wolf (Lunger)**: Teaches dodge timing via lunge attack; grants **5x XP** on kill (MCM glow: red).
-  - **Small Treent (Bark Thrower)**: Teaches projectile dodging; shoots bark at range; **5x XP** (MCM glow: green).
-  - **Wizard (Root Caster)**: Teaches positioning + root escape; cone attack roots player; **5x XP** (MCM glow: purple).
-  - All MCMs grant **2x rarity charges** on death.
-  - Spawn scaling: slower than regular enemies to keep them special (floor/4, floor/5, floor/6).
-  - Fully integrated: targeting, collisions, Y-sort draw, Entangle auto-aim, bark projectiles.
-- 2025-12-30: Major design overhaul captured in handoff.
+- 2026-02-06: Development directives session:
+  - **Architecture**: Created full codebase diagram with data flow map in AGENTS.md.
+  - **Enemy sprites removed**: Stripped all placeholder Monochrome RPG Tileset sprites from enemy.lua, lunger.lua, treent.lua. Kept fallback geometric shapes + all behavior/logic intact. Added root-state visual feedback to all enemy draw methods.
+  - **Upgrade system audit**: Fixed 7 bugs (ability_mod handler, bonus projectiles, Entangle targeting, Frenzy modding). Documented all working/broken/pending upgrade effects.
+  - **Visual overhaul plan**: Wrote 4-phase plan for Ember Knights-style pixel aesthetic (canvas rendering → sprites → VFX → environment).
+  - **Audio system**: Added `systems/audio.lua` with music playback, SFX, fading, mute toggle (M key). Wired Kenney Music Loops into gameplay (random track on game start), menu, and game over states.
+  - Files added: `systems/audio.lua`
+  - Files modified: `entities/enemy.lua`, `entities/lunger.lua`, `entities/treent.lua`, `systems/player_stats.lua`, `scenes/game_scene.lua`, `main.lua`, `AGENTS.md`
+- 2025-12-30: Major design overhaul captured in handoff:
   - **Major/Minor Level system**: Major levels (1, 5, 10, 15, 20, 25) grant mechanical augments; minor levels grant stats or Luck investment.
   - **Luck stat**: Per-run investment that boosts Rare/Epic odds at Major Levels.
   - **Rerolls**: 3 free rerolls per run.
@@ -177,14 +262,4 @@ Files touched/added:
   - Abilities auto-cast when ready (Power Shot/Entangle); dash remains manual.
   - Ultimate (Frenzy) is user-activated on `R` once fully charged.
   - Level-up UI no longer selects on Space; gameplay inputs are swallowed while the upgrade modal is open.
-- 2026-02-03: Regular map cleanup and spawn behavior:
-  - **Vine attack removed from regular map**: Treents on the main game scene no longer spawn vine lanes (callback passed as nil); vine lane update/draw and VineLane require removed from game_scene. Boss arena unchanged.
-  - **Wizard root removed**: Wizard cone attack on regular map no longer roots the player; cone still deals damage and visual feedback.
-  - **Off-screen spawn + always move**: Enemy spawn margin increased to 250px (config: `enemy_spawner.spawn_margin`); enemies spawn off-screen and already move toward the player with no in-sight gate.
-- 2026-02-03: Early game tuning + level-up base stats:
-  - **min_enemies_start = 10**: Config `enemy_spawner.min_enemies_start` set to 10 for a more manageable early game (ramp to 24 over 120s unchanged).
-  - **Level-up base gains**: Every level-up permanently increases base max HP and base attack. Config `Config.level_up_base_gains`: `level_up_hp_gain` (10), `level_up_attack_gain` (1). PlayerStats tracks `max_health`; `applyStatsToPlayer()` syncs max HP to player and heals by the gained amount when max increases.
-- 2026-02-03: Enemy attack visuals (no invisible damage):
-  - **Wizard cone**: When the cone fires, a semi-transparent purple cone is drawn for 0.2s so the hitbox is visible (`coneFiredAt` / `coneFiredAngle` in wizard.lua).
-  - **Melee hit indicators**: When any melee enemy (enemy, lunger, treent, small_treent, wizard, imp, slime, bat, wolf, skeleton, druid) deals contact damage, `lastMeleeHitAt` is set; a red line from that enemy to the player is drawn for 0.15s so it's clear what hit you. Draw pass in game_scene after Y-sorted entities; expired `lastMeleeHitAt` is cleared.
 

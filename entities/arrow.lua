@@ -1,6 +1,4 @@
 -- Arrow Projectile
-local UpgradeApplication = require("systems.upgrade_application")
-
 local Arrow = {}
 Arrow.__index = Arrow
 
@@ -14,15 +12,15 @@ Arrow.image = nil
 --   kind ("primary" | "power_shot" | etc)
 --   knockback (number) - optional knockback force hint for enemies
 function Arrow:new(x, y, targetX, targetY, opts)
-    -- Load image if not loaded (use Arrowv1 from Archer folder)
+    -- Load image if not loaded
     if not Arrow.image then
-        local success, result = pcall(love.graphics.newImage, "assets/Archer/Arrowv1.png")
+        local success, result = pcall(love.graphics.newImage, "assets/32x32/fb1097.png")
         if success then
             Arrow.image = result
             Arrow.image:setFilter("nearest", "nearest")
         else
-            -- Fallback to old asset
-            success, result = pcall(love.graphics.newImage, "assets/32x32/fb1097.png")
+            -- Try fallback path
+            success, result = pcall(love.graphics.newImage, "images/32x32/fb1097.png")
             if success then
                 Arrow.image = result
                 Arrow.image:setFilter("nearest", "nearest")
@@ -47,46 +45,33 @@ function Arrow:new(x, y, targetX, targetY, opts)
     local arrow = {
         x = x,
         y = y,
-        size = opts.size or 12,
+        size = opts.size or 10,
         speed = speed, -- faster than fireballs
         vx = (dx / distance) * speed,
         vy = (dy / distance) * speed,
         angle = angle,
         damage = opts.damage or 15, -- slightly more damage than fireball
         lifetime = opts.lifetime or 4,
-        age = 0,
+        age = 0
+        ,
         pierce = opts.pierce or 0,
         alwaysCrit = opts.alwaysCrit == true,
         kind = opts.kind or "primary",
         knockback = opts.knockback,
         hit = {}, -- set of entities already hit (avoid double-hit across frames)
-        
-        -- Ricochet (bounce to another enemy after hit)
+
+        -- Ricochet
         ricochetBounces = opts.ricochetBounces or 0,
         ricochetRange = opts.ricochetRange or 220,
-        
-        -- Ability mod fields
-        eliteMcmDamageMul = opts.eliteMcmDamageMul,  -- Bonus damage vs elite/MCM enemies
-        appliesStatus = opts.appliesStatus,          -- Status to apply on hit (e.g., shattered_armor)
-        ghosting = opts.ghosting == true,            -- Ghost Quiver: pierce all (no damage/hit) until expiry
-        
-        -- Trail effect
-        trail = {},  -- Stores recent positions {x, y}
-        trailMaxLength = 6,
+
+        -- Ghost Quiver (infinite pierce)
+        ghosting = opts.ghosting == true,
     }
     setmetatable(arrow, Arrow)
     return arrow
 end
 
 function Arrow:update(dt)
-    -- Store current position in trail before moving
-    table.insert(self.trail, 1, {x = self.x, y = self.y})
-    
-    -- Keep trail limited
-    while #self.trail > self.trailMaxLength do
-        table.remove(self.trail)
-    end
-    
     -- Update position
     self.x = self.x + self.vx * dt
     self.y = self.y + self.vy * dt
@@ -96,55 +81,60 @@ function Arrow:update(dt)
 end
 
 function Arrow:draw()
-    local alpha = 1 - (self.age / self.lifetime) * 0.3 -- Slight fade over time
-    
-    -- Tint/scale by kind so abilities don't look identical
+    local alpha = 1 - (self.age / self.lifetime) * 0.3
+
+    -- Tint/scale by arrow kind
     local r, g, b = 1, 1, 1
-    local scale = 0.055  -- Slightly larger for readability
+    local scale = 1
     if self.kind == "power_shot" then
         r, g, b = 1, 0.9, 0.25
-        scale = 0.075  -- Larger for power shot
+        scale = 1.25
+    elseif self.kind == "arrowstorm" then
+        r, g, b = 1, 0.85, 0.3
+        scale = 0.8
+    elseif self.kind == "entangle" then
+        r, g, b = 0.3, 0.85, 0.25
+        scale = 0.9
     end
-    
+
+    -- Ghost quiver: translucent cyan glow
+    if self.ghosting then
+        r, g, b = 0.4, 0.85, 1.0
+        alpha = alpha * 0.7
+    end
+
+    love.graphics.setColor(r, g, b, alpha)
+
     -- Draw the arrow sprite rotated to face direction
     local img = Arrow.image
-    if not img then
-        -- Fallback: draw a simple circle if image failed to load
-        love.graphics.setColor(r, g, b, alpha)
-        love.graphics.circle("fill", self.x, self.y, 4)
-        love.graphics.setColor(1, 1, 1, 1)
-        return
-    end
-    
-    local imgW = img:getWidth()
-    local imgH = img:getHeight()
-    
-    -- Draw trail (afterimages)
-    for i, pos in ipairs(self.trail) do
-        local trailAlpha = alpha * (1 - i / self.trailMaxLength) * 0.4
-        love.graphics.setColor(r, g, b, trailAlpha)
+    if img then
+        local imgW = img:getWidth()
+        local imgH = img:getHeight()
         love.graphics.draw(
             img,
-            pos.x,
-            pos.y,
-            self.angle - math.pi / 2,  -- Rotate: sprite points UP, angle 0 = RIGHT
-            scale * 0.8, scale * 0.8,
+            self.x,
+            self.y,
+            self.angle + math.pi / 4,
+            scale, scale,
             imgW / 2, imgH / 2
         )
+    else
+        -- Fallback: pixel rectangle if no sprite loaded
+        local len = self.size * scale
+        love.graphics.push()
+        love.graphics.translate(self.x, self.y)
+        love.graphics.rotate(self.angle)
+        love.graphics.rectangle("fill", -len, -1, len * 2, 3)
+        love.graphics.pop()
     end
-    
-    -- Draw main arrow
-    love.graphics.setColor(r, g, b, alpha)
-    love.graphics.draw(
-        img,
-        self.x,
-        self.y,
-        self.angle - math.pi / 2,  -- Rotate: sprite points UP, angle 0 = RIGHT
-        scale, scale,
-        imgW / 2, imgH / 2 -- center origin
-    )
-    
-    -- Reset color
+
+    -- Ghost quiver trailing glow
+    if self.ghosting then
+        love.graphics.setColor(0.3, 0.7, 1.0, alpha * 0.3)
+        local gs = (self.size or 10) * 0.6
+        love.graphics.rectangle("fill", self.x - gs, self.y - gs, gs * 2, gs * 2)
+    end
+
     love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -169,11 +159,33 @@ function Arrow:markHit(target)
 end
 
 function Arrow:consumePierce()
+    if self.ghosting then
+        return true -- infinite pierce while ghosting
+    end
     if self.pierce and self.pierce > 0 then
         self.pierce = self.pierce - 1
         return true
     end
     return false
+end
+
+-- Redirect this arrow towards a new target (for ricochet).
+-- Returns true if bounce was consumed, false if no bounces remain.
+function Arrow:bounceToward(targetX, targetY)
+    if self.ricochetBounces <= 0 then return false end
+    self.ricochetBounces = self.ricochetBounces - 1
+
+    local dx = targetX - self.x
+    local dy = targetY - self.y
+    local dist = math.sqrt(dx * dx + dy * dy)
+    if dist <= 0 then dist = 1 end
+
+    self.vx = (dx / dist) * self.speed
+    self.vy = (dy / dist) * self.speed
+    self.angle = math.atan2(dy, dx)
+    -- Refresh lifetime slightly so it can reach the next target
+    self.age = math.max(0, self.age - 0.5)
+    return true
 end
 
 return Arrow

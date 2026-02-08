@@ -6,8 +6,6 @@ PlayerStats.__index = PlayerStats
 
 -- Default base stats for archer
 PlayerStats.baseDefaults = {
-  -- Survivability
-  max_health = 100,
   -- Damage
   primary_damage = 10,
   crit_chance = 0.05,
@@ -39,7 +37,6 @@ function PlayerStats:new(baseOverrides)
     additive = {},  -- from stat_add effects
     multipliers = {},  -- from stat_mul effects
     weaponMods = {},  -- from weapon_mod effects
-    abilityMods = {},  -- from ability_mod effects: { [abilityName] = { [modType] = value/data } }
     buffs = {},  -- active buffs with duration/charges
     acquiredUpgrades = {},  -- { [upgradeId] = true }
     acquiredUpgradeLog = {}, -- ordered list: { {id,name,rarity,tags,effects,at}, ... }
@@ -93,62 +90,9 @@ function PlayerStats:getPermanent(stat)
   return (base + add) * mul
 end
 
--- Get base stat value (before any modifiers)
-function PlayerStats:getBase(stat)
-  return self.base[stat] or 0
-end
-
 -- Get a weapon mod value
 function PlayerStats:getWeaponMod(modName)
   return self.weaponMods[modName] or 0
-end
-
--- Get an ability mod value
--- Returns the stored value/data, or a default based on mod type
-function PlayerStats:getAbilityMod(abilityName, modType)
-  if not self.abilityMods[abilityName] then
-    return nil
-  end
-  return self.abilityMods[abilityName][modType]
-end
-
--- Get computed ability mod with proper defaults for additive/multiplicative mods
-function PlayerStats:getAbilityModValue(abilityName, modType, default)
-  local val = self:getAbilityMod(abilityName, modType)
-  if val == nil then
-    return default
-  end
-  return val
-end
-
--- Check if an ability has a specific mod flag (for boolean mods like fires_twice)
-function PlayerStats:hasAbilityMod(abilityName, modType)
-  local mod = self:getAbilityMod(abilityName, modType)
-  return mod ~= nil
-end
-
--- Apply an ability mod effect
-function PlayerStats:applyAbilityMod(effect)
-  local ability = effect.ability
-  local mod = effect.mod
-  
-  -- Initialize ability mod table if needed
-  if not self.abilityMods[ability] then
-    self.abilityMods[ability] = {}
-  end
-  
-  -- Handle different mod types based on suffix convention
-  if mod:match("_add$") then
-    -- Additive mods: accumulate
-    self.abilityMods[ability][mod] = (self.abilityMods[ability][mod] or 0) + effect.value
-  elseif mod:match("_mul$") then
-    -- Multiplicative mods: chain multiply
-    self.abilityMods[ability][mod] = (self.abilityMods[ability][mod] or 1.0) * effect.value
-  else
-    -- Flag/complex mods: store entire effect data
-    -- This includes: fires_twice, applies_status, double_strike, extend_on_kill, etc.
-    self.abilityMods[ability][mod] = effect
-  end
 end
 
 -- Apply an upgrade's effects permanently
@@ -205,11 +149,52 @@ function PlayerStats:applyEffect(effect)
     -- Store proc effects for the combat system to check
     self.weaponMods.procs = self.weaponMods.procs or {}
     table.insert(self.weaponMods.procs, effect)
-    
+
   elseif effect.kind == "ability_mod" then
-    -- Apply ability-specific modifiers
-    self:applyAbilityMod(effect)
+    -- Store ability modifications keyed by ability name
+    self.weaponMods.abilityMods = self.weaponMods.abilityMods or {}
+    local ability = effect.ability or "unknown"
+    self.weaponMods.abilityMods[ability] = self.weaponMods.abilityMods[ability] or {}
+    table.insert(self.weaponMods.abilityMods[ability], effect)
   end
+end
+
+-- Get all ability modifications for a specific ability
+function PlayerStats:getAbilityMods(abilityName)
+  if not self.weaponMods.abilityMods then return {} end
+  return self.weaponMods.abilityMods[abilityName] or {}
+end
+
+-- Compute a final ability stat by applying all matching mods
+-- Returns the modified value after applying all cooldown_add, cooldown_mul, damage_mul, range_mul, etc.
+function PlayerStats:getAbilityValue(abilityName, modType, baseValue)
+  local mods = self:getAbilityMods(abilityName)
+  local value = baseValue
+  for _, mod in ipairs(mods) do
+    if mod.mod == modType then
+      if modType == "cooldown_add" then
+        value = value + (mod.value or 0)
+      elseif modType == "cooldown_mul" then
+        value = value * (mod.value or 1)
+      elseif modType == "damage_mul" then
+        value = value * (mod.value or 1)
+      elseif modType == "range_mul" then
+        value = value * (mod.value or 1)
+      elseif modType == "charge_gain_mul" then
+        value = value * (mod.value or 1)
+      elseif modType == "duration_add" then
+        value = value + (mod.value or 0)
+      elseif modType == "crit_chance_add" then
+        value = value + (mod.value or 0)
+      elseif modType == "move_speed_mul" then
+        value = value * (mod.value or 1)
+      else
+        -- Generic additive for unknown mods
+        value = value + (mod.value or 0)
+      end
+    end
+  end
+  return value
 end
 
 -- Add a temporary buff
