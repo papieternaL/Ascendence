@@ -63,9 +63,9 @@ function Player:new(x, y)
                 unlocked = true,
             },
             entangle = {
-                name = "Entangle",
+                name = "Arrow Volley",
                 key = "E",
-                icon = "🌿",
+                icon = "V",
                 cooldown = 8.0,
                 currentCooldown = 0,
                 unlocked = true,

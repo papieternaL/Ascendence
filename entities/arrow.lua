@@ -92,6 +92,9 @@ function Arrow:draw()
     elseif self.kind == "arrowstorm" then
         r, g, b = 1, 0.85, 0.3
         scale = 0.8
+    elseif self.kind == "entangle" then
+        r, g, b = 0.3, 0.85, 0.25
+        scale = 0.9
     end
 
     -- Ghost quiver: translucent cyan glow

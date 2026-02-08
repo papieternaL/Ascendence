@@ -482,47 +482,58 @@ function GameScene:update(dt)
             if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
         end
 
-        -- Entangle: picks nearest target in range when ready
-        if self.player and self.player:isAbilityReady("entangle") then
+        -- Entangle (Arrow Volley): fires a cone of vine-arrows at nearest enemy
+        if self.player and self.player:isAbilityReady("entangle") and not self.isDashing then
             local px, py = playerX, playerY
             local entangleRange = 260
-            -- Apply radius_add ability mod
             if self.playerStats then
-                entangleRange = self.playerStats:getAbilityValue("entangle", "radius_add", entangleRange)
+                entangleRange = self.playerStats:getAbilityValue("entangle", "range_add", entangleRange)
             end
-            local best, bestDist = nil, entangleRange
-            local function considerTarget(t, bonus)
-                if t.isBoss then return end -- Entangle does NOT affect bosses
-                local ex, ey = t:getPosition()
-                local dx = ex - px
-                local dy = ey - py
-                local d = math.sqrt(dx*dx + dy*dy) - (bonus or 0)
-                if d < bestDist then
-                    best = t
-                    bestDist = d
-                end
-            end
-            for _, lunger in ipairs(self.lungers) do
-                if lunger.isAlive then considerTarget(lunger, 18) end
-            end
-            for _, enemy in ipairs(self.enemies) do
-                if enemy.isAlive then considerTarget(enemy, 0) end
-            end
-            for _, treent in ipairs(self.treents) do
-                if treent.isAlive then considerTarget(treent, 0) end
-            end
-            if best and best.applyRoot then
+            local target = self:findNearestEnemyTo(px, py, entangleRange)
+            if target then
                 self.player:useAbility("entangle")
-                local dur = (best.state ~= nil) and 1.0 or 1.8
-                -- Apply damage_taken_mul from Thorned Bind
-                local rootDmgMul = 1.15
+                local tx, ty = target:getPosition()
+                local baseAngle = math.atan2(ty - py, tx - px)
+                self.player:aimAt(tx, ty)
+
+                local arrowCount = 7
                 if self.playerStats then
-                    rootDmgMul = self.playerStats:getAbilityValue("entangle", "damage_taken_mul", rootDmgMul)
+                    arrowCount = arrowCount + self.playerStats:getAbilityValue("entangle", "arrow_count_add", 0)
                 end
-                best:applyRoot(dur, rootDmgMul)
-                local tx, ty = best:getPosition()
-                self.particles:createRootBurst(tx, ty)
-                self.screenShake:add(2, 0.1)
+                local spreadRad = math.rad(40)
+                local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult * 0.55
+                if self.playerStats then
+                    baseDmg = baseDmg * self.playerStats:getAbilityValue("entangle", "damage_mul", 1.0)
+                end
+                local pierceCount = 2
+                if self.playerStats then
+                    pierceCount = pierceCount + self.playerStats:getAbilityValue("entangle", "pierce_add", 0)
+                end
+
+                local sx, sy = self.player.getBowTip and self.player:getBowTip() or px, py
+                for i = 1, arrowCount do
+                    local angleOffset = spreadRad * ((i - 1) / math.max(1, arrowCount - 1) - 0.5)
+                    local angle = baseAngle + angleOffset
+                    local ttx = sx + math.cos(angle) * 400
+                    local tty = sy + math.sin(angle) * 400
+                    local arrow = Arrow:new(sx, sy, ttx, tty, {
+                        damage = baseDmg,
+                        speed = 550,
+                        kind = "entangle",
+                        pierce = pierceCount,
+                        knockback = 80,
+                        lifetime = 0.7,
+                    })
+                    table.insert(self.arrows, arrow)
+                end
+
+                self.particles:createRootBurst(sx, sy)
+                self.screenShake:add(3, 0.12)
+                self:hitFreeze(0.04)
+                if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
+                if _G.triggerScreenFlash then
+                    _G.triggerScreenFlash({0.2, 0.8, 0.2, 0.2}, 0.08)
+                end
             end
         end
 

@@ -37,32 +37,33 @@ P.power_shot = {
 }
 
 P.entangle = {
-  -- HARD RULE: does not affect bosses. System should check target.isBoss and ignore.
+  -- Arrow Volley: fires a cone of vine-arrows that deal damage in an area
   {
-    id="en_c_wider_vines", name="Wider Vines", rarity="common",
-    effects={ { kind="ability_mod", ability="entangle", mod="radius_add", value=20 } }
+    id="en_c_wide_volley", name="Wide Volley", rarity="common",
+    effects={ { kind="ability_mod", ability="entangle", mod="arrow_count_add", value=3 } }
   },
   {
     id="en_c_quick_cast", name="Quick Cast", rarity="common",
     effects={ { kind="ability_mod", ability="entangle", mod="cooldown_mul", value=0.90 } }
   },
   {
-    id="en_r_thorned_bind", name="Thorned Bind", rarity="rare",
+    id="en_r_thorned_volley", name="Thorned Volley", rarity="rare",
     effects={
-      { kind="ability_mod", ability="entangle", mod="damage_taken_mul", value=1.22 } -- rooted enemies take more dmg
+      { kind="ability_mod", ability="entangle", mod="damage_mul", value=1.35 }
     }
   },
   {
-    id="en_r_vine_pop", name="Vine Pop", rarity="rare",
+    id="en_r_piercing_vines", name="Piercing Vines", rarity="rare",
     effects={
-      { kind="ability_mod", ability="entangle", mod="on_root_end_explosion", radius=70, damage_mul=0.35 }
+      { kind="ability_mod", ability="entangle", mod="pierce_add", value=3 }
     }
   },
   {
-    id="en_e_spreading_roots", name="Spreading Roots", rarity="epic",
+    id="en_e_thorn_storm", name="Thorn Storm", rarity="epic",
     effects={
-      { kind="ability_mod", ability="entangle", mod="recast_zone", value=1, -- entangle zone pulses once after 1s
-        pulse_delay=1.0, pulse_root_duration_mul=0.60 }
+      { kind="ability_mod", ability="entangle", mod="arrow_count_add", value=5 },
+      { kind="ability_mod", ability="entangle", mod="damage_mul", value=1.15 },
+      { kind="ability_mod", ability="entangle", mod="cooldown_mul", value=0.85 }
     }
   },
 }
