@@ -4,12 +4,30 @@
 
 local BaseEnemy = require("entities.base_enemy")
 local EnemyData = require("data.enemies")
+local StatusEffects = require("systems.status_effects")
 
 local Wolf = setmetatable({}, {__index = BaseEnemy})
 Wolf.__index = Wolf
 Wolf.TYPE_ID = "wolf"
+Wolf.image = nil
 
 function Wolf:new(x, y)
+    -- Load sprite once (Tiny Ski wolf idle frames)
+    if not Wolf.image then
+        local paths = {
+            "assets/2D assets/Tiny Ski/Tiles/tile_0078.png",
+            "assets/2D assets/Tiny Ski/Tiles/tile_0079.png",
+        }
+        for _, p in ipairs(paths) do
+            local success, result = pcall(love.graphics.newImage, p)
+            if success and result then
+                Wolf.image = result
+                Wolf.image:setFilter("nearest", "nearest")
+                break
+            end
+        end
+    end
+
     local config = EnemyData.wolf
     local wolf = BaseEnemy.new(self, x, y, {
         size = config.size,
@@ -50,8 +68,15 @@ function Wolf:update(dt, playerX, playerY)
     -- Update visual timer
     self.glowPhase = self.glowPhase + dt * 3
 
-    -- Check if rooted
+    -- Check if rooted or frozen
     local isRooted = self:isRooted()
+    if self:isFrozen() then
+        self.x = self.x + self.knockbackX * dt
+        self.y = self.y + self.knockbackY * dt
+        return
+    end
+
+    local effectiveSpeed = self:getEffectiveSpeed()
 
     -- State machine logic
     if self.state == "idle" then
@@ -64,8 +89,8 @@ function Wolf:update(dt, playerX, playerY)
             if dist > 0 then
                 local dirX = dx / dist
                 local dirY = dy / dist
-                self.x = self.x + dirX * self.speed * dt + self.knockbackX * dt
-                self.y = self.y + dirY * self.speed * dt + self.knockbackY * dt
+                self.x = self.x + dirX * effectiveSpeed * dt + self.knockbackX * dt
+                self.y = self.y + dirY * effectiveSpeed * dt + self.knockbackY * dt
             end
 
             -- Check if in range to start charging
@@ -93,8 +118,9 @@ function Wolf:update(dt, playerX, playerY)
         self.lungeTime = self.lungeTime + dt
 
         if not isRooted then
-            self.x = self.x + self.lungeVx * self.lungeSpeed * dt + self.knockbackX * dt
-            self.y = self.y + self.lungeVy * self.lungeSpeed * dt + self.knockbackY * dt
+            local lungeSpd = self.lungeSpeed * StatusEffects.getSpeedMul(self)
+            self.x = self.x + self.lungeVx * lungeSpd * dt + self.knockbackX * dt
+            self.y = self.y + self.lungeVy * lungeSpd * dt + self.knockbackY * dt
         end
 
         if self.lungeTime >= self.lungeDuration then
@@ -116,8 +142,8 @@ function Wolf:update(dt, playerX, playerY)
             if dist > 0 then
                 local dirX = dx / dist
                 local dirY = dy / dist
-                self.x = self.x + dirX * self.speed * dt + self.knockbackX * dt
-                self.y = self.y + dirY * self.speed * dt + self.knockbackY * dt
+                self.x = self.x + dirX * effectiveSpeed * dt + self.knockbackX * dt
+                self.y = self.y + dirY * effectiveSpeed * dt + self.knockbackY * dt
             end
         end
 
@@ -218,59 +244,39 @@ function Wolf:draw()
         end
     end
 
-    -- Main wolf body (shadow)
-    love.graphics.setColor(r * 0.4, g * 0.4, b * 0.4, a * 0.8)
-    love.graphics.circle("fill", self.x + 3, self.y + 3, self.size)
-
-    -- Main wolf body (larger)
-    love.graphics.setColor(r, g, b, a)
-    love.graphics.circle("fill", self.x, self.y, self.size)
-
-    -- Fur texture (darker spots)
-    love.graphics.setColor(r * 0.6, g * 0.6, b * 0.6, a * 0.9)
-    love.graphics.circle("fill", self.x - 4, self.y - 2, 4)
-    love.graphics.circle("fill", self.x + 4, self.y + 3, 5)
-    love.graphics.circle("fill", self.x - 2, self.y + 4, 3)
-
-    -- Snout (darker nose area)
-    love.graphics.setColor(r * 0.5, g * 0.5, b * 0.5, a)
-    love.graphics.circle("fill", self.x, self.y + 6, 5)
-
-    -- Eyes (glowing red during charge/lunge)
-    if self.state == "charging" or self.state == "lunging" then
-        -- Glowing red eyes
-        love.graphics.setColor(1, 0.1, 0.1, 1)
-        love.graphics.circle("fill", self.x - 5, self.y - 4, 3)
-        love.graphics.circle("fill", self.x + 5, self.y - 4, 3)
-        -- Eye glow
-        love.graphics.setColor(1, 0.3, 0.3, 0.6)
-        love.graphics.circle("fill", self.x - 5, self.y - 4, 5)
-        love.graphics.circle("fill", self.x + 5, self.y - 4, 5)
+    -- Main wolf body: sprite when available, else procedural circles
+    if Wolf.image then
+        local imgW = Wolf.image:getWidth()
+        local scale = (imgW <= 18) and 1.5 or 1.0
+        love.graphics.setColor(r, g, b, a)
+        local imgH = Wolf.image:getHeight()
+        love.graphics.draw(Wolf.image, self.x, self.y, 0, scale, scale, imgW / 2, imgH / 2)
     else
-        -- Normal eyes
-        love.graphics.setColor(0.9, 0.9, 0.2, 1)
-        love.graphics.circle("fill", self.x - 5, self.y - 4, 2.5)
-        love.graphics.circle("fill", self.x + 5, self.y - 4, 2.5)
-        -- Pupils
-        love.graphics.setColor(0.1, 0.1, 0.1, 1)
-        love.graphics.circle("fill", self.x - 5, self.y - 3, 1)
-        love.graphics.circle("fill", self.x + 5, self.y - 3, 1)
+        -- Procedural fallback
+        love.graphics.setColor(r * 0.4, g * 0.4, b * 0.4, a * 0.8)
+        love.graphics.circle("fill", self.x + 3, self.y + 3, self.size)
+        love.graphics.setColor(r, g, b, a)
+        love.graphics.circle("fill", self.x, self.y, self.size)
+        love.graphics.setColor(r * 0.6, g * 0.6, b * 0.6, a * 0.9)
+        love.graphics.circle("fill", self.x - 4, self.y - 2, 4)
+        love.graphics.circle("fill", self.x + 4, self.y + 3, 5)
+        love.graphics.circle("fill", self.x - 2, self.y + 4, 3)
+        love.graphics.setColor(r * 0.5, g * 0.5, b * 0.5, a)
+        love.graphics.circle("fill", self.x, self.y + 6, 5)
+        if self.state == "charging" or self.state == "lunging" then
+            love.graphics.setColor(1, 0.1, 0.1, 1)
+            love.graphics.circle("fill", self.x - 5, self.y - 4, 3)
+            love.graphics.circle("fill", self.x + 5, self.y - 4, 3)
+        else
+            love.graphics.setColor(0.9, 0.9, 0.2, 1)
+            love.graphics.circle("fill", self.x - 5, self.y - 4, 2.5)
+            love.graphics.circle("fill", self.x + 5, self.y - 4, 2.5)
+        end
+        love.graphics.setColor(r * 0.5, g * 0.5, b * 0.5, a)
+        love.graphics.setLineWidth(2)
+        love.graphics.circle("line", self.x, self.y, self.size)
+        love.graphics.setLineWidth(1)
     end
-
-    -- Ears (triangular look)
-    love.graphics.setColor(r * 0.8, g * 0.8, b * 0.8, a)
-    love.graphics.circle("fill", self.x - 7, self.y - 8, 3)
-    love.graphics.circle("fill", self.x + 7, self.y - 8, 3)
-
-    -- Highlight
-    love.graphics.setColor(1, 1, 1, 0.5 * a)
-    love.graphics.circle("fill", self.x - 4, self.y - 6, 4)
-
-    -- Border
-    love.graphics.setColor(r * 0.5, g * 0.5, b * 0.5, a)
-    love.graphics.setLineWidth(2)
-    love.graphics.circle("line", self.x, self.y, self.size)
-    love.graphics.setLineWidth(1)
 
     -- Charging aura particles
     if self.state == "charging" then

@@ -4,12 +4,15 @@
 local GameState = require("systems.game_state")
 local Menu = require("ui.menu")
 local GameScene = require("scenes.game_scene")
+local BossArenaScene = require("scenes.boss_arena_scene")
 local Audio = require("systems.audio")
+local Settings = require("systems.settings")
+local JuiceManager = require("systems.juice_manager")
 
--- Pixel-art rendering constants
-local INTERNAL_W = 320
-local INTERNAL_H = 180
-local gameCanvas
+-- Pixel-art rendering constants (reserved for future use with pixel sprite sheets)
+-- local INTERNAL_W = 320
+-- local INTERNAL_H = 180
+-- local gameCanvas
 
 -- Pre-loaded Kenney Pixel fonts (shared globally via _G)
 local FONT_PATH = "assets/Other/Fonts/Kenney Pixel.ttf"
@@ -21,7 +24,9 @@ local screenFlash = { timer = 0, duration = 0, color = {1, 1, 1, 0} }
 local gameState
 local menu
 local gameScene
+local bossArenaScene
 local audio
+local settings
 
 -- Pre-loaded fonts for HUD (avoid creating every frame)
 local hudFonts = {}
@@ -32,10 +37,6 @@ function love.load()
 
     -- Nearest-neighbor filtering for crisp pixel art
     love.graphics.setDefaultFilter("nearest", "nearest")
-
-    -- Create low-res canvas for pixel-art rendering
-    gameCanvas = love.graphics.newCanvas(INTERNAL_W, INTERNAL_H)
-    gameCanvas:setFilter("nearest", "nearest")
 
     -- Load Kenney Pixel fonts at various sizes
     local ok, f
@@ -49,14 +50,31 @@ function love.load()
         f:setFilter("nearest", "nearest")
         return f
     end
+    -- UI fonts: linear filter for ~10% less pixelation on long descriptions
+    local function loadUIFont(size)
+        ok, f = pcall(love.graphics.newFont, FONT_PATH, size)
+        if ok then
+            f:setFilter("linear", "linear")
+            return f
+        end
+        f = love.graphics.newFont(size)
+        f:setFilter("linear", "linear")
+        return f
+    end
 
-    hudFonts.tiny   = loadPixelFont(8)
-    hudFonts.small  = loadPixelFont(10)
-    hudFonts.body   = loadPixelFont(14)
-    hudFonts.header = loadPixelFont(20)
-    hudFonts.title  = loadPixelFont(36)
-    hudFonts.dmgNormal = loadPixelFont(12)
-    hudFonts.dmgCrit   = loadPixelFont(16)
+    hudFonts.tiny   = loadPixelFont(18)
+    hudFonts.small  = loadPixelFont(22)
+    hudFonts.body   = loadPixelFont(30)
+    hudFonts.header = loadPixelFont(44)
+    hudFonts.title  = loadPixelFont(64)
+    hudFonts.dmgNormal = loadPixelFont(24)
+    hudFonts.dmgCrit   = loadPixelFont(32)
+    -- UI-specific fonts (linear filter for readability)
+    hudFonts.uiTiny      = loadUIFont(20)
+    hudFonts.uiSmall     = loadUIFont(24)
+    hudFonts.uiBody      = loadUIFont(33)
+    hudFonts.uiSmallText = loadUIFont(14)
+    hudFonts.uiLarge     = loadUIFont(54)
 
     -- Expose fonts globally so other modules can use them
     _G.PixelFonts = hudFonts
@@ -72,7 +90,15 @@ function love.load()
 
     -- Initialize audio system
     audio = Audio:new()
-    audio:playMenuMusic()
+    _G.audio = audio
+
+    -- Load + apply persistent user settings (must run before music so volume is correct)
+    settings = Settings:new()
+    settings:load()
+    settings:setAudio(audio)
+
+    -- BGM disabled temporarily; SFX and volume plumbing remain
+    _G.settings = settings
 
     -- Global screen flash trigger (called by game_scene)
     _G.triggerScreenFlash = function(color, duration)
@@ -97,6 +123,9 @@ function love.update(dt)
     -- Update game state transitions
     gameState:update(dt)
 
+    -- Update JuiceManager (hit-stop freeze, flash timers) - must run every frame
+    JuiceManager.update(dt)
+
     -- Update audio system (handles fading)
     if audio then audio:update(dt) end
 
@@ -108,26 +137,37 @@ function love.update(dt)
         if not gameScene then
             gameScene = GameScene:new(gameState)
             gameScene:load()
-            -- Switch to gameplay music
-            if audio then audio:playGameplayMusic() end
         end
         gameScene:update(dt)
 
         -- Check for game over
-        if gameScene.player and gameScene.player.health <= 0 then
+        if gameScene.player and gameScene.player:isDead() then
             gameState:transitionTo(States.GAME_OVER)
-            if audio then audio:playGameOverMusic() end
         end
-    elseif state == States.MENU or state == States.CHARACTER_SELECT or
-           state == States.BIOME_SELECT or state == States.DIFFICULTY_SELECT then
+    elseif state == States.BOSS_FIGHT then
+        if not bossArenaScene and gameScene then
+            bossArenaScene = BossArenaScene:new(
+                gameScene.player,
+                gameScene.playerStats,
+                gameState,
+                gameScene.xpSystem,
+                gameScene.rarityCharge,
+                gameScene.frenzyCharge
+            )
+        end
+        if bossArenaScene then
+            bossArenaScene:update(dt)
+        end
+    elseif state == States.MENU or state == States.SETTINGS or
+           state == States.CHARACTER_SELECT or state == States.BIOME_SELECT then
         menu:update(dt)
         -- Reset game scene when in menu
         if gameScene then
             gameScene = nil
-            -- Return to menu music
-            if audio then audio:playMenuMusic() end
         end
+        bossArenaScene = nil
     elseif state == States.GAME_OVER or state == States.VICTORY then
+        bossArenaScene = nil
         menu:update(dt)
     end
 end
@@ -135,56 +175,67 @@ end
 function love.draw()
     local winW = love.graphics.getWidth()
     local winH = love.graphics.getHeight()
-
-    -- ── Render everything to low-res canvas ──
-    love.graphics.setCanvas(gameCanvas)
-    love.graphics.clear(0.05, 0.05, 0.08, 1)
-
-    love.graphics.push()
-    local scaleX = INTERNAL_W / winW
-    local scaleY = INTERNAL_H / winH
-    love.graphics.scale(scaleX, scaleY)
-
     local state = gameState:getState()
     local States = gameState.States
+
+    -- ── Menu states render directly at native resolution (crisp UI) ──
+    if state == States.MENU or state == States.SETTINGS or state == States.CHARACTER_SELECT or 
+       state == States.BIOME_SELECT or state == States.GAME_OVER or state == States.VICTORY then
+        menu:draw()
+        
+        -- Draw transition overlay
+        if gameState.transitionAlpha > 0 then
+            love.graphics.setColor(0, 0, 0, gameState.transitionAlpha)
+            love.graphics.rectangle("fill", 0, 0, winW, winH)
+            love.graphics.setColor(1, 1, 1, 1)
+        end
+        return
+    end
+
+    -- ── Gameplay states render directly at native resolution ──
+    love.graphics.clear(0.05, 0.05, 0.08, 1)
 
     if state == States.PLAYING then
         if gameScene then
             gameScene:draw()
-
-            -- Draw HUD
             drawHUD()
-
-            -- Draw overlays on top of HUD (e.g., run stats page)
+            if not gameScene.pauseMenuVisible then
+                drawQuitButton()
+            end
             if gameScene.drawOverlays then
                 gameScene:drawOverlays()
             end
         end
-    elseif state == States.GAME_OVER or state == States.VICTORY then
-        -- Draw game in background
-        if gameScene then
-            gameScene:draw()
+    elseif state == States.BOSS_FIGHT then
+        if bossArenaScene then
+            bossArenaScene:draw()
+            drawQuitButton()
         end
-        menu:draw()
-    else
-        -- Menu states
-        menu:draw()
     end
 
-    -- Screen flash inside canvas (gets pixelated too)
+    -- Draw transition overlay for gameplay states
+    if gameState.transitionAlpha > 0 then
+        love.graphics.setColor(0, 0, 0, gameState.transitionAlpha)
+        love.graphics.rectangle("fill", 0, 0, winW, winH)
+        love.graphics.setColor(1, 1, 1, 1)
+    end
+
+    -- Screen flash
     if screenFlash.timer > 0 then
         local a = (screenFlash.color[4] or 0.4) * (screenFlash.timer / screenFlash.duration)
         love.graphics.setColor(screenFlash.color[1], screenFlash.color[2], screenFlash.color[3], a)
         love.graphics.rectangle("fill", 0, 0, winW, winH)
         love.graphics.setColor(1, 1, 1, 1)
     end
+end
 
-    love.graphics.pop()
-    love.graphics.setCanvas()
-
-    -- ── Scale canvas to fill window (nearest-neighbor = crisp pixels) ──
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(gameCanvas, 0, 0, 0, winW / INTERNAL_W, winH / INTERNAL_H)
+-- Helper: draw text with subtle shadow for readability
+local function drawTextWithShadow(text, x, y)
+    local r, g, b, a = love.graphics.getColor()
+    love.graphics.setColor(0, 0, 0, 0.65)
+    love.graphics.print(text, x + 1, y + 1)
+    love.graphics.setColor(r, g, b, a)
+    love.graphics.print(text, x, y)
 end
 
 function drawHUD()
@@ -197,13 +248,38 @@ function drawHUD()
     end
 end
 
+function drawQuitButton()
+    local w = love.graphics.getWidth()
+    local btnW, btnH = 90, 32
+    local btnX = w - btnW - 20
+    local btnY = 20
+    love.graphics.setColor(0.15, 0.12, 0.15, 0.9)
+    love.graphics.rectangle("fill", btnX, btnY, btnW, btnH, 6, 6)
+    love.graphics.setColor(0.5, 0.45, 0.5, 1)
+    love.graphics.setLineWidth(1)
+    love.graphics.rectangle("line", btnX, btnY, btnW, btnH, 6, 6)
+    love.graphics.setFont(hudFonts.small)
+    love.graphics.setColor(1, 1, 1, 0.9)
+    local textW = hudFonts.small:getWidth("QUIT")
+    drawTextWithShadow("QUIT", btnX + btnW/2 - textW/2, btnY + 6)
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+function isPointInQuitButton(px, py)
+    local w = love.graphics.getWidth()
+    local btnW, btnH = 90, 32
+    local btnX = w - btnW - 20
+    local btnY = 20
+    return px >= btnX and px <= btnX + btnW and py >= btnY and py <= btnY + btnH
+end
+
 function drawBottomHUD(player)
     local w = love.graphics.getWidth()
     local h = love.graphics.getHeight()
 
     -- U-shaped HUD background
-    local hudWidth = 400
-    local hudHeight = 90
+    local hudWidth = 600
+    local hudHeight = 130
     local hudX = (w - hudWidth) / 2
     local hudY = h - hudHeight - 10
 
@@ -220,7 +296,7 @@ function drawBottomHUD(player)
 
     -- Health bar (at the top of the U)
     local healthBarWidth = hudWidth - 80
-    local healthBarHeight = 16
+    local healthBarHeight = 24
     local healthBarX = hudX + 40
     local healthBarY = hudY + 25
 
@@ -255,11 +331,11 @@ function drawBottomHUD(player)
     local healthText = math.floor(player.health) .. "/" .. player.maxHealth
     local font = love.graphics.getFont()
     local textWidth = font:getWidth(healthText)
-    love.graphics.print(healthText, healthBarX + healthBarWidth/2 - textWidth/2, healthBarY + 1)
+    drawTextWithShadow(healthText, healthBarX + healthBarWidth/2 - textWidth/2, healthBarY + 1)
 
     -- Draw abilities in a row below health bar
-    local abilitySize = 44
-    local abilitySpacing = 12
+    local abilitySize = 64
+    local abilitySpacing = 16
     local numAbilities = #player.abilityOrder
     local abilitiesWidth = numAbilities * abilitySize + (numAbilities - 1) * abilitySpacing
     local abilitiesX = (w - abilitiesWidth) / 2
@@ -320,14 +396,14 @@ function drawAbilityIcon(ability, x, y, size)
     love.graphics.setFont(hudFonts.header)
     local font = love.graphics.getFont()
     local iconWidth = font:getWidth(ability.icon)
-    love.graphics.print(ability.icon, x + size/2 - iconWidth/2, y + 6)
+    drawTextWithShadow(ability.icon, x + size/2 - iconWidth/2, y + 6)
 
     -- Keybind
     love.graphics.setColor(1, 1, 1, 0.8)
     love.graphics.setFont(hudFonts.tiny)
     font = love.graphics.getFont()
     local keyWidth = font:getWidth(ability.key)
-    love.graphics.print(ability.key, x + size/2 - keyWidth/2, y + size - 14)
+    drawTextWithShadow(ability.key, x + size/2 - keyWidth/2, y + size - 14)
 
     -- Border
     if isReady then
@@ -348,14 +424,14 @@ function drawAbilityIcon(ability, x, y, size)
         local txt = string.format("%d%%", math.floor((c / m) * 100))
         font = love.graphics.getFont()
         local tw = font:getWidth(txt)
-        love.graphics.print(txt, x + size/2 - tw/2, y + size/2 - 6)
+        drawTextWithShadow(txt, x + size/2 - tw/2, y + size/2 - 6)
     elseif not isReady then
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.setFont(hudFonts.body)
         local cdText = string.format("%.1f", ability.currentCooldown)
         font = love.graphics.getFont()
         local cdWidth = font:getWidth(cdText)
-        love.graphics.print(cdText, x + size/2 - cdWidth/2, y + size/2 - 7)
+        drawTextWithShadow(cdText, x + size/2 - cdWidth/2, y + size/2 - 7)
     end
 
     love.graphics.setColor(1, 1, 1, 1)
@@ -372,14 +448,16 @@ function love.keypressed(key)
     local States = gameState.States
 
     if state == States.PLAYING then
-        -- Let the scene handle overlay/upgrade inputs first
         if gameScene and gameScene.keypressed then
             local handled = gameScene:keypressed(key)
             if handled then return end
         end
-
         if key == "escape" then
             gameState:transitionTo(States.MENU)
+        end
+    elseif state == States.BOSS_FIGHT then
+        if bossArenaScene and bossArenaScene.keypressed then
+            bossArenaScene:keypressed(key)
         end
     else
         menu:keypressed(key)
@@ -391,8 +469,19 @@ function love.mousepressed(x, y, button)
     local States = gameState.States
 
     if state == States.PLAYING then
-        if gameScene then
+        if gameScene and gameScene.pauseMenuVisible then
             gameScene:mousepressed(x, y, button)
+            return
+        elseif isPointInQuitButton(x, y) then
+            gameState:transitionTo(States.MENU)
+        elseif gameScene then
+            gameScene:mousepressed(x, y, button)
+        end
+    elseif state == States.BOSS_FIGHT then
+        if isPointInQuitButton(x, y) then
+            gameState:transitionTo(States.MENU)
+        elseif bossArenaScene and bossArenaScene.mousepressed then
+            bossArenaScene:mousepressed(x, y, button)
         end
     else
         menu:mousepressed(x, y, button)
@@ -406,6 +495,10 @@ function love.mousemoved(x, y)
     if state == States.PLAYING then
         if gameScene then
             gameScene:mousemoved(x, y)
+        end
+    elseif state == States.BOSS_FIGHT then
+        if bossArenaScene and bossArenaScene.mousemoved then
+            bossArenaScene:mousemoved(x, y)
         end
     else
         menu:mousemoved(x, y)

@@ -29,6 +29,13 @@ Audio.sfx = {
   hit_heavy     = "assets/Audio/Impact Sounds/Audio/impactBell_heavy_000.ogg",
   draw_knife    = "assets/Audio/RPG Audio/Audio/drawKnife1.ogg",
   book_open     = "assets/Audio/RPG Audio/Audio/bookOpen.ogg",
+  shoot_arrow   = "assets/2D assets/Desert Shooter Pack/Sounds/shoot-f.ogg",
+  primary_shot  = "assets/2D assets/Desert Shooter Pack/Sounds/shoot-a.ogg",
+  power_shot    = "assets/2D assets/Desert Shooter Pack/Sounds/shoot-g.ogg",
+  arrow_volley  = "assets/2D assets/Desert Shooter Pack/Sounds/explosion-a.ogg",
+  frenzy        = "assets/Audio/Impact Sounds/Audio/impactBell_heavy_000.ogg",
+  dash          = "assets/2D assets/Desert Shooter Pack/Sounds/jump-a.ogg",
+  portal_open   = "assets/Audio/RPG Audio/Audio/doorOpen_1.ogg",
 }
 
 function Audio:new()
@@ -189,6 +196,11 @@ end
 -- Play game over jingle
 function Audio:playGameOverMusic()
   self:playMusic("game_over", { loop = false, volume = self.musicVolume * 0.8 })
+end
+
+-- Play boss fight music (more intense track)
+function Audio:playBossMusic()
+  self:fadeIn("gameplay_descent", 1.5)
 end
 
 return Audio

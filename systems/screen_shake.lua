@@ -15,6 +15,13 @@ function ScreenShake:new()
 end
 
 function ScreenShake:add(intensity, duration)
+    local shakeScale = 1.0
+    if _G.GameSettings and _G.GameSettings.graphics then
+        shakeScale = _G.GameSettings.graphics.screenShake or 1.0
+    end
+    intensity = (intensity or 0) * shakeScale
+    if intensity <= 0 then return end
+
     self.intensity = math.max(self.intensity, intensity)
     self.duration = math.max(self.duration, duration)
     self.time = 0

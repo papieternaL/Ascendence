@@ -79,14 +79,24 @@ function Lunger:update(dt, playerX, playerY)
     local dy = playerY - self.y
     local distance = math.sqrt(dx * dx + dy * dy)
     
+    -- Freeze/chill: no movement (except knockback)
+    if StatusEffects.isFrozen(self) then
+        self.x = self.x + self.knockbackX * dt
+        self.y = self.y + self.knockbackY * dt
+        return
+    end
+
+    local speedMul = StatusEffects.getSpeedMul(self)
+    local effectiveSpeed = self.speed * speedMul
+
     -- State machine
     if self.state == "idle" then
         -- Move slowly towards player
         if distance > 0 then
             local normDx = dx / distance
             local normDy = dy / distance
-            self.x = self.x + normDx * self.speed * dt + self.knockbackX * dt
-            self.y = self.y + normDy * self.speed * dt + self.knockbackY * dt
+            self.x = self.x + normDx * effectiveSpeed * dt + self.knockbackX * dt
+            self.y = self.y + normDy * effectiveSpeed * dt + self.knockbackY * dt
         end
         
         -- Start charging if in range
@@ -116,9 +126,10 @@ function Lunger:update(dt, playerX, playerY)
         end
         
     elseif self.state == "lunging" then
-        -- Lunge in the locked direction
-        self.x = self.x + self.lungeVx * self.lungeSpeed * dt
-        self.y = self.y + self.lungeVy * self.lungeSpeed * dt
+        -- Lunge in the locked direction (chill reduces lunge speed)
+        local lungeSpd = self.lungeSpeed * speedMul
+        self.x = self.x + self.lungeVx * lungeSpd * dt
+        self.y = self.y + self.lungeVy * lungeSpd * dt
         
         self.lungeTime = self.lungeTime + dt
         

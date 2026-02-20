@@ -4,6 +4,13 @@
 local PlayerStats = {}
 PlayerStats.__index = PlayerStats
 
+-- Element upgrade IDs (switching element removes the other elements' upgrades)
+PlayerStats.elementUpgradeIds = {
+  fire = { "arch_c_fire_attunement", "arch_r_fire_intensity" },
+  ice = { "arch_c_ice_attunement", "arch_r_ice_depth", "arch_r_freeze_spread", "arch_r_ice_blast_radius" },
+  lightning = { "arch_c_lightning_attunement", "arch_r_lightning_reach" },
+}
+
 -- Default base stats for archer
 PlayerStats.baseDefaults = {
   -- Damage
@@ -16,11 +23,12 @@ PlayerStats.baseDefaults = {
   range = 350,
   
   -- Movement
-  move_speed = 200,
+  move_speed = 224,
   roll_cooldown = 1.0,
   
   -- Utility
-  xp_pickup_radius = 60,
+  xp_pickup_radius = 63,
+  hp_regen_per_sec = 0,
   
   -- Weapon mods (additive)
   pierce = 0,
@@ -40,6 +48,7 @@ function PlayerStats:new(baseOverrides)
     buffs = {},  -- active buffs with duration/charges
     acquiredUpgrades = {},  -- { [upgradeId] = true }
     acquiredUpgradeLog = {}, -- ordered list: { {id,name,rarity,tags,effects,at}, ... }
+    activePrimaryElement = nil,  -- "fire" | "ice" | "lightning"
   }, PlayerStats)
   
   -- Initialize base stats
@@ -55,6 +64,10 @@ function PlayerStats:new(baseOverrides)
   end
   
   return stats
+end
+
+function PlayerStats:getBase(stat)
+  return self.base[stat] or 0
 end
 
 -- Get the final computed value for a stat
@@ -95,12 +108,38 @@ function PlayerStats:getWeaponMod(modName)
   return self.weaponMods[modName] or 0
 end
 
--- Apply an upgrade's effects permanently
+-- Apply an upgrade's effects permanently (allows stacking same upgrade multiple times)
 function PlayerStats:applyUpgrade(upgrade)
-  if self.acquiredUpgrades[upgrade.id] then
-    return false -- Already have this upgrade
+  -- Element switch: when picking a base element upgrade, remove other elements' upgrades
+  local elementForUpgrade = nil
+  for elem, ids in pairs(PlayerStats.elementUpgradeIds) do
+    for _, id in ipairs(ids) do
+      if id == upgrade.id then elementForUpgrade = elem break end
+    end
+    if elementForUpgrade then break end
   end
-  
+
+  if elementForUpgrade and elementForUpgrade ~= self.activePrimaryElement then
+    -- Switching element: remove other elements' upgrades and recompute
+    local toRemove = {}
+    for elem, ids in pairs(PlayerStats.elementUpgradeIds) do
+      if elem ~= elementForUpgrade then
+        for _, id in ipairs(ids) do toRemove[id] = true end
+      end
+    end
+    local newLog = {}
+    for _, entry in ipairs(self.acquiredUpgradeLog) do
+      if not toRemove[entry.id] then
+        newLog[#newLog+1] = entry
+      else
+        self.acquiredUpgrades[entry.id] = nil
+      end
+    end
+    self.acquiredUpgradeLog = newLog
+    self.activePrimaryElement = elementForUpgrade
+    self:recomputeFromUpgrades()
+  end
+
   self.acquiredUpgrades[upgrade.id] = true
 
   -- Record for run-stats UI (ordered history)
@@ -116,12 +155,29 @@ function PlayerStats:applyUpgrade(upgrade)
     effects = upgrade.effects,
     at = at,
   }
-  
-  for _, effect in ipairs(upgrade.effects or {}) do
-    self:applyEffect(effect)
+
+  if elementForUpgrade == self.activePrimaryElement or not elementForUpgrade then
+    for _, effect in ipairs(upgrade.effects or {}) do
+      self:applyEffect(effect)
+    end
+  else
+    self:recomputeFromUpgrades()
   end
-  
+
   return true
+end
+
+-- Recompute all stats from acquired upgrades (used after element switch)
+function PlayerStats:recomputeFromUpgrades()
+  self.additive = {}
+  self.multipliers = {}
+  self.weaponMods = {}
+  self.elementMods = {}
+  for _, entry in ipairs(self.acquiredUpgradeLog) do
+    for _, effect in ipairs(entry.effects or {}) do
+      self:applyEffect(effect)
+    end
+  end
 end
 
 -- Apply a single effect
@@ -148,6 +204,24 @@ function PlayerStats:applyEffect(effect)
   elseif effect.kind == "proc" then
     -- Store proc effects for the combat system to check
     self.weaponMods.procs = self.weaponMods.procs or {}
+    -- Attunement procs: only one per element/status to avoid duplicate chain/burn/freeze on repeat picks
+    local apply = effect.apply
+    if effect.trigger == "on_primary_hit" and apply then
+      local key = nil
+      if apply.kind == "chain_damage" and apply.element then key = "chain_" .. (apply.element or "") end
+      if apply.kind == "status_apply" and (apply.status == "burn" or apply.status == "freeze") then key = "status_" .. (apply.status or "") end
+      if key then
+        for _, p in ipairs(self.weaponMods.procs) do
+          local pa = p.apply
+          if p.trigger == effect.trigger and pa then
+            local pk = nil
+            if pa.kind == "chain_damage" and pa.element then pk = "chain_" .. pa.element end
+            if pa.kind == "status_apply" and (pa.status == "burn" or pa.status == "freeze") then pk = "status_" .. pa.status end
+            if pk == key then return end -- already have this attunement proc
+          end
+        end
+      end
+    end
     table.insert(self.weaponMods.procs, effect)
 
   elseif effect.kind == "ability_mod" then
@@ -156,13 +230,37 @@ function PlayerStats:applyEffect(effect)
     local ability = effect.ability or "unknown"
     self.weaponMods.abilityMods[ability] = self.weaponMods.abilityMods[ability] or {}
     table.insert(self.weaponMods.abilityMods[ability], effect)
+
+  elseif effect.kind == "element_mod" then
+    -- Element-specific modifiers (only active when activePrimaryElement matches)
+    self.elementMods = self.elementMods or {}
+    self.elementMods[effect.element] = self.elementMods[effect.element] or {}
+    -- Mods ending with _add stack additively; others overwrite
+    if effect.mod and effect.mod:match("_add$") then
+      self.elementMods[effect.element][effect.mod] = (self.elementMods[effect.element][effect.mod] or 0) + (effect.value or 0)
+    else
+      self.elementMods[effect.element][effect.mod] = effect.value
+    end
   end
 end
 
 -- Get all ability modifications for a specific ability
+-- Alias: arrow_volley and entangle are the same ability (different keys in different scenes)
 function PlayerStats:getAbilityMods(abilityName)
   if not self.weaponMods.abilityMods then return {} end
-  return self.weaponMods.abilityMods[abilityName] or {}
+  local key = (abilityName == "arrow_volley") and "entangle" or abilityName
+  return self.weaponMods.abilityMods[key] or {}
+end
+
+-- Return the first ability mod matching modType (or nil)
+function PlayerStats:getAbilityMod(abilityName, modType)
+  local mods = self:getAbilityMods(abilityName)
+  for _, mod in ipairs(mods) do
+    if mod.mod == modType then
+      return mod
+    end
+  end
+  return nil
 end
 
 -- Compute a final ability stat by applying all matching mods
@@ -188,6 +286,10 @@ function PlayerStats:getAbilityValue(abilityName, modType, baseValue)
         value = value + (mod.value or 0)
       elseif modType == "move_speed_mul" then
         value = value * (mod.value or 1)
+      elseif modType == "roll_cooldown_mul" then
+        value = value * (mod.value or 1)
+      elseif modType == "extra_zone_add" then
+        value = value + (mod.value or 0)
       else
         -- Generic additive for unknown mods
         value = value + (mod.value or 0)
@@ -260,6 +362,13 @@ function PlayerStats:getActiveBuffs()
     }
   end
   return list
+end
+
+-- Get element modifier (only if that element is active)
+function PlayerStats:getElementMod(element, modName, default)
+  if self.activePrimaryElement ~= element then return default end
+  if not self.elementMods or not self.elementMods[element] then return default end
+  return self.elementMods[element][modName] or default
 end
 
 -- Check if player has a specific upgrade

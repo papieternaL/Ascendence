@@ -57,6 +57,15 @@ function Enemy:update(dt, playerX, playerY)
             return
         end
 
+        if StatusEffects.isFrozen(self) then
+            self.x = self.x + (self.knockbackX * dt)
+            self.y = self.y + (self.knockbackY * dt)
+            return
+        end
+
+        local speedMul = StatusEffects.getSpeedMul(self)
+        local effectiveSpeed = self.speed * speedMul
+
         local dx = playerX - self.x
         local dy = playerY - self.y
         local distance = math.sqrt(dx * dx + dy * dy)
@@ -67,8 +76,8 @@ function Enemy:update(dt, playerX, playerY)
             dy = dy / distance
             
             -- Move towards player (with knockback applied)
-            self.x = self.x + (dx * self.speed * dt) + (self.knockbackX * dt)
-            self.y = self.y + (dy * self.speed * dt) + (self.knockbackY * dt)
+            self.x = self.x + (dx * effectiveSpeed * dt) + (self.knockbackX * dt)
+            self.y = self.y + (dy * effectiveSpeed * dt) + (self.knockbackY * dt)
         end
     end
 end
@@ -115,7 +124,7 @@ function Enemy:draw()
     local r, g, b = 0.9, 0.1, 0.1
     if self.flashTime > 0 then r, g, b = 1, 1, 1 end
     if self.rootedTime and self.rootedTime > 0 then
-        r, g, b = r * 0.6, g + 0.3, b * 0.6
+        r, g, b = r * 0.85, g * 0.7, b * 0.9
     end
     -- Status tints
     if StatusEffects.has(self, "bleed") then

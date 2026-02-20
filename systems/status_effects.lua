@@ -1,6 +1,6 @@
 -- systems/status_effects.lua
 -- Shared status effect system for any entity with a .statuses table.
--- Supported statuses: bleed, marked, shattered_armor
+-- Supported statuses: bleed, marked, shattered_armor, burn, chill, freeze
 
 local StatusEffects = {}
 
@@ -10,22 +10,30 @@ function StatusEffects.init(entity)
 end
 
 -- Apply a status to an entity. Stacks refresh duration; bleed stacks accumulate.
-function StatusEffects.apply(entity, statusName, stacks, duration)
+-- options: { slowMul = 1.10 } for chill (extra slow from ice_depth)
+function StatusEffects.apply(entity, statusName, stacks, duration, options)
   if not entity.statuses then entity.statuses = {} end
   local s = entity.statuses[statusName]
   if s then
-    if statusName == "bleed" then
+    if statusName == "bleed" or statusName == "burn" then
       s.stacks = s.stacks + (stacks or 1)
     else
       s.stacks = math.max(s.stacks, stacks or 1)
     end
     s.duration = math.max(s.duration, duration or 3.0)
+    if options then
+      for k, v in pairs(options) do s[k] = v end
+    end
   else
-    entity.statuses[statusName] = {
+    s = {
       stacks = stacks or 1,
       duration = duration or 3.0,
       tickTimer = 0, -- for DoT
     }
+    if options then
+      for k, v in pairs(options) do s[k] = v end
+    end
+    entity.statuses[statusName] = s
   end
 end
 
@@ -57,11 +65,13 @@ function StatusEffects.countBleedingEnemies(entityLists)
   return bleedingCount, totalStacks
 end
 
--- Update statuses: tick durations, apply bleed DoT damage.
--- Returns a table of bleed damage ticks: { {entity, damage}, ... }
-function StatusEffects.update(entity, dt, baseDamagePerBleedStack)
+-- Update statuses: tick durations, apply bleed/burn DoT damage.
+-- Returns a table of damage ticks: { {entity, damage, status}, ... }
+-- baseDamagePerBleedStack: for bleed. burnDamagePerStack: for burn (default 20% of hit, use config).
+function StatusEffects.update(entity, dt, baseDamagePerBleedStack, burnDamagePerStack)
   if not entity.statuses then return {} end
   baseDamagePerBleedStack = baseDamagePerBleedStack or 2
+  burnDamagePerStack = burnDamagePerStack or 2
 
   local ticks = {}
   local toRemove = {}
@@ -80,6 +90,15 @@ function StatusEffects.update(entity, dt, baseDamagePerBleedStack)
           ticks[#ticks + 1] = { entity = entity, damage = bleedDmg, status = "bleed" }
         end
       end
+      -- Burn DoT: tick every 0.5s
+      if name == "burn" then
+        s.tickTimer = s.tickTimer + dt
+        while s.tickTimer >= 0.5 do
+          s.tickTimer = s.tickTimer - 0.5
+          local burnDmg = s.stacks * burnDamagePerStack
+          ticks[#ticks + 1] = { entity = entity, damage = burnDmg, status = "burn" }
+        end
+      end
     end
   end
 
@@ -88,6 +107,23 @@ function StatusEffects.update(entity, dt, baseDamagePerBleedStack)
   end
 
   return ticks
+end
+
+-- Get speed multiplier from chill/freeze (1.0 = normal, 0.5 = 50% speed, 0 = frozen)
+function StatusEffects.getSpeedMul(entity)
+  if not entity.statuses then return 1.0 end
+  if entity.statuses.freeze then return 0 end
+  if entity.statuses.chill then
+    local base = 0.6  -- 40% slow
+    local slowMul = entity.statuses.chill.slowMul or 1.0  -- ice_depth: 1.10 = 10% more slow
+    return base / slowMul  -- 0.6/1.1 = 0.545
+  end
+  return 1.0
+end
+
+-- Check if entity is frozen (cannot move)
+function StatusEffects.isFrozen(entity)
+  return entity.statuses and entity.statuses.freeze ~= nil
 end
 
 -- Get the damage taken multiplier from statuses (marked, shattered_armor stack)

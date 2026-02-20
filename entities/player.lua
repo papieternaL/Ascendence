@@ -6,18 +6,19 @@ Player.__index = Player
 Player.bowImage = nil
 
 function Player:new(x, y)
-    -- Load bow image if not loaded
+    -- Load bow image if not loaded (Tiny Town tile_0118)
     if not Player.bowImage then
-        local success, result = pcall(love.graphics.newImage, "assets/32x32/fb1100.png")
-        if success then
-            Player.bowImage = result
-            Player.bowImage:setFilter("nearest", "nearest")
-        else
-            -- Try fallback path
-            success, result = pcall(love.graphics.newImage, "images/32x32/fb1100.png")
-            if success then
+        local paths = {
+            "assets/2D assets/Tiny Town/Tiles/tile_0118.png",
+            "assets/32x32/fb1100.png",
+            "images/32x32/fb1100.png",
+        }
+        for _, p in ipairs(paths) do
+            local success, result = pcall(love.graphics.newImage, p)
+            if success and result then
                 Player.bowImage = result
                 Player.bowImage:setFilter("nearest", "nearest")
+                break
             end
         end
     end
@@ -89,6 +90,11 @@ function Player:new(x, y)
         },
         -- Ability order for display
         abilityOrder = { "power_shot", "dash", "entangle", "frenzy" },
+        
+        animator = nil, -- Disabled: archer strip sprite; kept for future re-enable
+        isDashing = false,
+        isRooted = false,
+        rootDuration = 0,
     }
     setmetatable(player, Player)
     return player
@@ -105,6 +111,14 @@ function Player:update(dt)
         self.bowRecoilTime = math.max(0, self.bowRecoilTime - dt)
     end
     
+    -- Update root duration
+    if self.rootDuration and self.rootDuration > 0 then
+        self.rootDuration = math.max(0, self.rootDuration - dt)
+        if self.rootDuration <= 0 then
+            self.isRooted = false
+        end
+    end
+
     -- Update ability cooldowns
     for _, ability in pairs(self.abilities) do
         if ability.currentCooldown > 0 then
@@ -115,6 +129,14 @@ function Player:update(dt)
         end
     end
     
+    -- Skip movement when rooted (e.g. boss phase 2 typing test)
+    if self.isRooted or (self.rootDuration and self.rootDuration > 0) then
+        self.isMoving = false
+        self.bobTime = 0
+        self.bobOffset = 0
+        return
+    end
+
     -- Get input
     local dx, dy = 0, 0
     
@@ -151,6 +173,11 @@ function Player:update(dt)
     -- Check if moving
     self.isMoving = (dx ~= 0 or dy ~= 0)
     
+    -- When dashing, scene handles movement (no animator update)
+    if self.isDashing then
+        return
+    end
+    
     -- Update bobbing animation when moving
     if self.isMoving then
         self.bobTime = self.bobTime + dt * self.bobSpeed
@@ -161,11 +188,12 @@ function Player:update(dt)
         self.bobOffset = 0
     end
     
-    -- Keep player within screen bounds
-    local screenWidth = love.graphics.getWidth()
-    local screenHeight = love.graphics.getHeight()
-    self.x = math.max(self.size, math.min(screenWidth - self.size, self.x))
-    self.y = math.max(self.size, math.min(screenHeight - self.size, self.y))
+    -- Keep player within world bounds
+    local Config = require("data.config")
+    local worldW = Config.World and Config.World.width or love.graphics.getWidth()
+    local worldH = Config.World and Config.World.height or love.graphics.getHeight()
+    self.x = math.max(self.size, math.min(worldW - self.size, self.x))
+    self.y = math.max(self.size, math.min(worldH - self.size, self.y))
 end
 
 function Player:aimAt(targetX, targetY)
@@ -189,33 +217,42 @@ function Player:takeDamage(amount)
     return false
 end
 
+function Player:isDead()
+    return self.health <= 0
+end
+
 function Player:draw()
     -- Draw player as a simple circle with bobbing effect
     local drawY = self.y + self.bobOffset
     
-    -- Flash when invincible
+    -- Frenzy aura glow (soft outer ring)
+    if self.isFrenzyActive then
+        local pulse = 0.5 + 0.35 * math.sin(love.timer.getTime() * 6)
+        love.graphics.setColor(1, 0.5, 0.15, pulse * 0.4)
+        love.graphics.circle("fill", self.x, drawY, self.size + 14)
+        love.graphics.setColor(1, 0.55, 0.2, pulse * 0.25)
+        love.graphics.circle("fill", self.x, drawY, self.size + 8)
+    end
+    
+    -- Procedural player body (archer sprite disabled)
     if self.invincibleTime > 0 then
-        -- Blink effect
         if math.floor(self.invincibleTime * 10) % 2 == 0 then
             love.graphics.setColor(1, 1, 1, 0.5)
         else
-            love.graphics.setColor(0.2, 0.6, 1, 1) -- Blue player color
+            love.graphics.setColor(0.2, 0.6, 1, 1)
         end
     else
-        love.graphics.setColor(0.2, 0.6, 1, 1) -- Blue player color
+        love.graphics.setColor(0.2, 0.6, 1, 1)
     end
-    
     love.graphics.circle("fill", self.x, drawY, self.size)
-    
-    -- Draw eyes
     love.graphics.setColor(1, 1, 1, 1)
     love.graphics.circle("fill", self.x - 5, drawY - 5, 4)
     love.graphics.circle("fill", self.x + 5, drawY - 5, 4)
-    
-    -- Draw pupils
     love.graphics.setColor(0, 0, 0, 1)
     love.graphics.circle("fill", self.x - 5, drawY - 5, 2)
     love.graphics.circle("fill", self.x + 5, drawY - 5, 2)
+    
+    love.graphics.setColor(1, 1, 1, 1)
     
     -- Draw bow
     love.graphics.setColor(1, 1, 1, 1)
@@ -223,7 +260,8 @@ function Player:draw()
     if bowImg then
         local imgW = bowImg:getWidth()
         local imgH = bowImg:getHeight()
-        local bowScale = self.bowScale or 1.2
+        -- Tiny pack sprites are 16x16; scale up for visibility (old were 32x32)
+        local bowScale = (imgW <= 18) and 2.0 or (self.bowScale or 1.2)
         local bowOffsetDist = math.max(self.size + 5, self.bowOffsetDist or (self.size + 5))
 
         -- Simple recoil: pull bow slightly toward player for a few frames after shooting
@@ -325,6 +363,17 @@ function Player:setDashCooldown(cooldown)
     if self.abilities.dash then
         self.abilities.dash.currentCooldown = cooldown
     end
+end
+
+function Player:playAttackAnimation()
+    if self.animator then
+        self.animator:attack()
+    end
+end
+
+function Player:applyRoot(duration)
+    self.isRooted = true
+    self.rootDuration = duration or 0
 end
 
 return Player

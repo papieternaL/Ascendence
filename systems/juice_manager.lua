@@ -29,6 +29,12 @@ function JuiceManager.isFrozen()
     return JuiceManager.freezeRemaining > 0
 end
 
+-- Reset freeze and flash state (call when entering boss arena to avoid stale state)
+function JuiceManager.reset()
+    JuiceManager.freezeRemaining = 0
+    JuiceManager.flashEntities = {}
+end
+
 -- Update freeze timer (call once per frame in main.lua or a central place)
 function JuiceManager.update(dt)
     if JuiceManager.freezeRemaining > 0 then

@@ -55,14 +55,18 @@ end
 
 -- Spawn an XP orb at a position
 function XpSystem:spawnOrb(x, y, value)
+  local Config = require("data.config")
+  local mult = Config.xp_drop_multiplier or 1.0
+  value = math.max(1, math.floor((value or 10) * mult))
   table.insert(self.orbs, {
     x = x,
     y = y,
-    value = value or 10,
+    value = value,
     vx = (math.random() - 0.5) * 100,
     vy = (math.random() - 0.5) * 100,
     lifetime = 0,
     collected = false,
+    attracted = false,  -- Once true, orb always homes to player until collected
     
     -- Visual properties
     size = 6 + math.random() * 4,
@@ -72,7 +76,7 @@ end
 
 -- Update XP orbs (physics, collection)
 function XpSystem:update(dt, playerX, playerY, pickupRadius)
-  pickupRadius = pickupRadius or 60
+  pickupRadius = pickupRadius or 63
   
   local toRemove = {}
   
@@ -83,19 +87,22 @@ function XpSystem:update(dt, playerX, playerY, pickupRadius)
     orb.vx = orb.vx * 0.95
     orb.vy = orb.vy * 0.95
     
-    -- Move toward player if within pickup radius
+    -- Move toward player if within pickup radius or once attracted (sticky)
     local dx = playerX - orb.x
     local dy = playerY - orb.y
     local dist = math.sqrt(dx * dx + dy * dy)
     
     if dist < pickupRadius * 2 then
-      -- Accelerate toward player
-      local speed = 400 * (1 - dist / (pickupRadius * 2))
-      speed = math.max(speed, 100)
+      orb.attracted = true
+    end
+    if orb.attracted or dist < pickupRadius * 2 then
+      -- Accelerate toward player (much faster snap once in proximity)
+      local speed = 800 * (1 - math.min(1, dist / (pickupRadius * 2)))
+      speed = math.max(speed, orb.attracted and 500 or 100)
       
       if dist > 0 then
-        orb.vx = orb.vx + (dx / dist) * speed * dt * 5
-        orb.vy = orb.vy + (dy / dist) * speed * dt * 5
+        orb.vx = orb.vx + (dx / dist) * speed * dt * 18.0
+        orb.vy = orb.vy + (dy / dist) * speed * dt * 18.0
       end
     end
     

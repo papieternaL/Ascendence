@@ -12,18 +12,19 @@ Arrow.image = nil
 --   kind ("primary" | "power_shot" | etc)
 --   knockback (number) - optional knockback force hint for enemies
 function Arrow:new(x, y, targetX, targetY, opts)
-    -- Load image if not loaded
+    -- Load image if not loaded (Tiny Town tile_0119)
     if not Arrow.image then
-        local success, result = pcall(love.graphics.newImage, "assets/32x32/fb1097.png")
-        if success then
-            Arrow.image = result
-            Arrow.image:setFilter("nearest", "nearest")
-        else
-            -- Try fallback path
-            success, result = pcall(love.graphics.newImage, "images/32x32/fb1097.png")
-            if success then
+        local paths = {
+            "assets/2D assets/Tiny Town/Tiles/tile_0119.png",
+            "assets/32x32/fb1097.png",
+            "images/32x32/fb1097.png",
+        }
+        for _, p in ipairs(paths) do
+            local success, result = pcall(love.graphics.newImage, p)
+            if success and result then
                 Arrow.image = result
                 Arrow.image:setFilter("nearest", "nearest")
+                break
             end
         end
     end
@@ -66,6 +67,9 @@ function Arrow:new(x, y, targetX, targetY, opts)
 
         -- Ghost Quiver (infinite pierce)
         ghosting = opts.ghosting == true,
+
+        -- Ice attunement: dissolve blast on expire
+        iceAttuned = opts.iceAttuned == true,
     }
     setmetatable(arrow, Arrow)
     return arrow
@@ -93,7 +97,7 @@ function Arrow:draw()
         r, g, b = 1, 0.85, 0.3
         scale = 0.8
     elseif self.kind == "entangle" then
-        r, g, b = 0.3, 0.85, 0.25
+        r, g, b = 0.35, 0.5, 0.9
         scale = 0.9
     end
 
@@ -110,12 +114,15 @@ function Arrow:draw()
     if img then
         local imgW = img:getWidth()
         local imgH = img:getHeight()
+        -- Tiny pack sprites are 16x16; scale up for visibility
+        local baseScale = (imgW <= 18) and 2.0 or 1.0
+        local drawScale = scale * baseScale
         love.graphics.draw(
             img,
             self.x,
             self.y,
             self.angle + math.pi / 4,
-            scale, scale,
+            drawScale, drawScale,
             imgW / 2, imgH / 2
         )
     else

@@ -3,6 +3,7 @@
 -- Forces player to prioritize as high-value target
 
 local StatusComponent = require("systems.status_component")
+local StatusEffects = require("systems.status_effects")
 
 local DruidTreent = {}
 DruidTreent.__index = DruidTreent
@@ -45,6 +46,7 @@ function DruidTreent:new(x, y)
         -- Status
         isAlive = true,
         statusComponent = StatusComponent:new(),
+        statuses = {},
     }
 
     setmetatable(druid, DruidTreent)
@@ -67,7 +69,7 @@ function DruidTreent:update(dt, playerX, playerY, allEnemies)
 
     -- Update status effects
     if self.statusComponent then
-        self.statusComponent:update(dt)
+        self.statusComponent:update(dt, self)
     end
 
     -- Check if rooted
@@ -115,25 +117,29 @@ function DruidTreent:update(dt, playerX, playerY, allEnemies)
         local dy = playerY - self.y
         local dist = math.sqrt(dx * dx + dy * dy)
 
-        if dist > 0 then
+        if StatusEffects.isFrozen(self) then
+            self.x = self.x + self.knockbackX * dt
+            self.y = self.y + self.knockbackY * dt
+        elseif dist > 0 then
+            local effectiveSpeed = self.speed * StatusEffects.getSpeedMul(self)
             local dirX = dx / dist
             local dirY = dy / dist
 
             -- Maintain distance from player
             if dist < self.minDistance then
                 -- Back away
-                self.x = self.x - dirX * self.speed * dt + self.knockbackX * dt
-                self.y = self.y - dirY * self.speed * dt + self.knockbackY * dt
+                self.x = self.x - dirX * effectiveSpeed * dt + self.knockbackX * dt
+                self.y = self.y - dirY * effectiveSpeed * dt + self.knockbackY * dt
             elseif dist > self.maxDistance then
                 -- Approach
-                self.x = self.x + dirX * self.speed * dt + self.knockbackX * dt
-                self.y = self.y + dirY * self.speed * dt + self.knockbackY * dt
+                self.x = self.x + dirX * effectiveSpeed * dt + self.knockbackX * dt
+                self.y = self.y + dirY * effectiveSpeed * dt + self.knockbackY * dt
             else
                 -- Circle strafe
                 local perpX = -dirY
                 local perpY = dirX
-                self.x = self.x + perpX * self.speed * 0.5 * dt + self.knockbackX * dt
-                self.y = self.y + perpY * self.speed * 0.5 * dt + self.knockbackY * dt
+                self.x = self.x + perpX * effectiveSpeed * 0.5 * dt + self.knockbackX * dt
+                self.y = self.y + perpY * effectiveSpeed * 0.5 * dt + self.knockbackY * dt
             end
         end
     else
@@ -212,23 +218,22 @@ function DruidTreent:draw()
 
     -- Draw healing particles
     for _, p in ipairs(self.particles) do
-        love.graphics.setColor(0.4, 1, 0.6, p.alpha)
+        love.graphics.setColor(0.6, 0.5, 0.4, p.alpha)
         love.graphics.circle("fill", p.x, p.y, p.size)
     end
 
-    -- Pulsing green aura when ready to heal
+    -- Pulsing brown/amber aura when ready to heal
     if not self.isHealing then
         local pulse = 0.5 + math.sin(self.glowPhase) * 0.3
-        love.graphics.setColor(0.3, 1, 0.5, pulse * 0.3)
+        love.graphics.setColor(0.5, 0.4, 0.25, pulse * 0.3)
         love.graphics.circle("fill", self.x, self.y, self.size + 12)
     end
 
-    -- Main body color
-    local r, g, b, a = 0.35, 0.55, 0.3, 1  -- Green/tree color
+    -- Main body color (brown/bark for readability on green)
+    local r, g, b, a = 0.42, 0.35, 0.25, 1
 
     if self.isHealing then
-        -- Brighter green when healing
-        r, g, b = 0.45, 0.75, 0.4
+        r, g, b = 0.55, 0.45, 0.35
     end
 
     -- Flash white on hit
@@ -245,7 +250,7 @@ function DruidTreent:draw()
     love.graphics.circle("fill", self.x, self.y, self.size)
 
     -- Tree bark texture (darker lines)
-    love.graphics.setColor(0.2, 0.3, 0.15, 0.8)
+    love.graphics.setColor(0.2, 0.18, 0.12, 0.8)
     love.graphics.setLineWidth(2)
     for i = 1, 4 do
         local angle = (i / 4) * math.pi * 2 + self.glowPhase * 0.1
@@ -321,6 +326,12 @@ end
 
 function DruidTreent:getPosition()
     return self.x, self.y
+end
+
+function DruidTreent:applyRoot(duration, damageTakenMul)
+    if self.statusComponent then
+        self.statusComponent:applyStatus("rooted", duration)
+    end
 end
 
 return DruidTreent

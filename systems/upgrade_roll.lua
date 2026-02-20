@@ -5,8 +5,8 @@ local UpgradeRoll = {}
 
 -- Base rarity weights (sum doesn't need to be 1; we normalize)
 UpgradeRoll.baseRarityWeights = {
-  common = 0.70,
-  rare   = 0.25,
+  common = 0.60,
+  rare   = 0.35,
   epic   = 0.05,
 }
 
@@ -44,16 +44,33 @@ local function weightedChoice(rng, items)
   return items[#items].key
 end
 
-local function chooseOneFromList(rng, list, excludeSet)
+-- Slight bias for specific upgrades when picking from main pool (bounded, doesn't break global rarity)
+local PICK_BIAS = {}
+
+local function chooseOneFromList(rng, list, excludeSet, weightMap)
   -- list: array of upgrade tables
   -- excludeSet: { [id]=true } cannot be picked
+  -- weightMap: optional { [id]=weight } for weighted selection
   local candidates = {}
+  local weights = {}
   for _,u in ipairs(list) do
     if not excludeSet[u.id] then
       candidates[#candidates+1] = u
+      weights[#weights+1] = (weightMap and weightMap[u.id]) or 1
     end
   end
   if #candidates == 0 then return nil end
+  if weightMap then
+    local total = 0
+    for _,w in ipairs(weights) do total = total + w end
+    local r = rng() * total
+    local acc = 0
+    for i, w in ipairs(weights) do
+      acc = acc + w
+      if r <= acc then return candidates[i] end
+    end
+    return candidates[#candidates]
+  end
   return candidates[math.floor(rng() * #candidates) + 1]
 end
 
@@ -127,6 +144,7 @@ end
 --   abilityPaths = require("data/ability_paths_archer"), -- optional
 --   rarityCharge = rarityChargeObj, -- from RarityCharge.new()
 --   count = 3,
+--   pickBias = { [upgradeId]=weight }, -- optional weighted preference map
 --   isAllowed = customGateFn -- optional
 -- })
 function UpgradeRoll.rollOptions(args)
@@ -135,6 +153,7 @@ function UpgradeRoll.rollOptions(args)
   local player = args.player
   local count = args.count or 3
   local isAllowed = args.isAllowed or defaultIsAllowed
+  local pickBias = args.pickBias or PICK_BIAS
 
   -- 1) consume rarity charges on level-up roll
   local chargeBonus = { rareBonus=0, epicBonus=0, charges=0 }
@@ -207,7 +226,8 @@ function UpgradeRoll.rollOptions(args)
 
     -- choose from pool; fallback if empty
     local poolSource = useAbility and poolsAbility or poolsMain
-    local pick = chooseOneFromList(rng, poolSource[rarity], chosenIds)
+    local weightMap = (not useAbility) and pickBias or nil
+    local pick = chooseOneFromList(rng, poolSource[rarity], chosenIds, weightMap)
 
     -- fallback down rarity if empty
     if not pick and rarity == "epic" then

@@ -3,6 +3,8 @@
 
 local Config = require("data.config")
 local cfg = Config.enemy_spawner or {}
+local density_mult = cfg.density_multiplier or 1.0
+local global_spawn_rate_mult = cfg.global_spawn_rate_mult or 0.85
 
 local EnemySpawner = {}
 EnemySpawner.__index = EnemySpawner
@@ -11,13 +13,16 @@ function EnemySpawner:new(game_scene)
   local spawner = {
     game_scene = game_scene,
     spawn_timer = 0,
-    base_spawn_interval = cfg.base_spawn_interval or 1.8,
+    base_spawn_interval = (cfg.base_spawn_interval or 1.8) / density_mult,
     current_enemy_count = 0,
-    max_enemies = cfg.max_enemies or 80,
-    min_enemies = cfg.min_enemies or 18,
-    min_enemies_start = cfg.min_enemies_start or 4,
-    min_enemies_max = cfg.min_enemies_max or 24,
+    max_enemies = math.floor((cfg.max_enemies or 80) * density_mult),
+    min_enemies = math.floor((cfg.min_enemies or 18) * density_mult),
+    min_enemies_start = math.max(1, math.floor((cfg.min_enemies_start or 4) * density_mult)),
+    min_enemies_max = math.max(1, math.floor((cfg.min_enemies_max or 24) * density_mult)),
     min_enemies_ramp_seconds = cfg.min_enemies_ramp_seconds or 120,
+    late_wave_reduction = cfg.late_wave_reduction or 0.25,
+    late_wave_start_seconds = cfg.late_wave_start_seconds or 120,
+    late_wave_ramp_seconds = cfg.late_wave_ramp_seconds or 90,
     time_alive = 0,
     difficulty_multiplier = 1.0,
     difficulty_scale_rate = cfg.difficulty_scale_rate or 0.008,
@@ -26,11 +31,12 @@ function EnemySpawner:new(game_scene)
       slime = 10,
       bat = 6,
       skeleton = 5,
-      imp = 4,
       wolf = 4,
-      lunger = 1.5,
+      lunger = 4,
       small_treent = 1.5,
       wizard = 1.0,
+      healer = 1.5,
+      druid_treent = 0.8,
       treent = 0.5
     },
     
@@ -43,6 +49,17 @@ function EnemySpawner:new(game_scene)
   }
   setmetatable(spawner, EnemySpawner)
   return spawner
+end
+
+function EnemySpawner:getLateWaveDensityMultiplier()
+  local start_sec = self.late_wave_start_seconds or 120
+  local ramp_sec = math.max(1, self.late_wave_ramp_seconds or 90)
+  local reduction = math.max(0, math.min(0.9, self.late_wave_reduction or 0.25))
+  if self.time_alive <= start_sec then
+    return 1.0
+  end
+  local t = math.min(1, (self.time_alive - start_sec) / ramp_sec)
+  return 1.0 - (reduction * t)
 end
 
 function EnemySpawner:update(dt)
@@ -61,14 +78,16 @@ function EnemySpawner:update(dt)
   
   -- Steady increase: effective min ramps from start to max over ramp_seconds
   local ramp_t = math.min(1, self.time_alive / self.min_enemies_ramp_seconds)
-  local effective_min = self.min_enemies_start + (self.min_enemies_max - self.min_enemies_start) * ramp_t
+  local late_wave_mult = self:getLateWaveDensityMultiplier()
+  local effective_min = (self.min_enemies_start + (self.min_enemies_max - self.min_enemies_start) * ramp_t) * late_wave_mult
+  local effective_max = math.max(1, math.floor(self.max_enemies * late_wave_mult))
   
   self.spawn_timer = self.spawn_timer + dt
-  local scaled_interval = self.base_spawn_interval / math.min(self.difficulty_multiplier, 2.5)
-  
+  local scaled_interval = (self.base_spawn_interval / math.min(self.difficulty_multiplier, 2.5)) / global_spawn_rate_mult
+
   if self.spawn_timer >= scaled_interval then
     self.spawn_timer = 0
-    if self.current_enemy_count < self.max_enemies then
+    if self.current_enemy_count < effective_max then
       -- #region agent log
       local logfile = io.open("c:\\Users\\steven\\Desktop\\Cursor\\Shooter\\.cursor\\debug.log", "a")
       if logfile then
@@ -76,7 +95,7 @@ function EnemySpawner:update(dt)
         logfile:close()
       end
       -- #endregion
-      self:spawnBatch()
+      self:spawnBatch(effective_max)
     end
   end
   
@@ -88,14 +107,18 @@ function EnemySpawner:update(dt)
       logfile:close()
     end
     -- #endregion
-    self:spawnBatch()
+    self:spawnBatch(effective_max)
   end
 end
 
-function EnemySpawner:spawnBatch()
+function EnemySpawner:spawnBatch(max_enemies_override)
   local base_batch_size = math.random(2, 4)
-  local scaled_batch_size = math.floor(base_batch_size * math.min(self.difficulty_multiplier, 2.0))
-  local batch_size = math.min(scaled_batch_size, self.max_enemies - self.current_enemy_count)
+  local late_wave_mult = self:getLateWaveDensityMultiplier()
+  local scaled_batch_size = math.floor(base_batch_size * math.min(self.difficulty_multiplier, 2.0) * density_mult * late_wave_mult)
+  scaled_batch_size = math.max(1, scaled_batch_size)
+  local max_enemies_cap = max_enemies_override or self.max_enemies
+  local batch_size = math.min(scaled_batch_size, max_enemies_cap - self.current_enemy_count)
+  if batch_size <= 0 then return end
   
   -- #region agent log
   local logfile = io.open("c:\\Users\\steven\\Desktop\\Cursor\\Shooter\\.cursor\\debug.log", "a")
@@ -191,6 +214,18 @@ end
 
 function EnemySpawner:onEnemyDeath()
   self.current_enemy_count = math.max(0, self.current_enemy_count - 1)
+end
+
+function EnemySpawner:syncCountFromScene()
+  local count = 0
+  if self.game_scene.getAllEnemyLists then
+    for _, list in ipairs(self.game_scene:getAllEnemyLists()) do
+      for _, e in ipairs(list) do
+        if e.isAlive then count = count + 1 end
+      end
+    end
+  end
+  self.current_enemy_count = count
 end
 
 function EnemySpawner:stop()

@@ -3,6 +3,7 @@
 -- Reduces code duplication and ensures consistent interface
 
 local StatusComponent = require("systems.status_component")
+local StatusEffects = require("systems.status_effects")
 local JuiceManager = require("systems.juice_manager")
 
 local BaseEnemy = {}
@@ -40,6 +41,7 @@ function BaseEnemy:new(x, y, config)
         -- Legacy root support (for compatibility)
         rootedTime = 0,
         rootedDamageTakenMul = 1.0,
+        statuses = {},  -- for StatusEffects (burn, chill, freeze, etc.)
         
         -- Metadata
         isElite = config.isElite or false,
@@ -140,6 +142,14 @@ function BaseEnemy:isRooted()
     return self.rootedTime and self.rootedTime > 0
 end
 
+function BaseEnemy:isFrozen()
+    return StatusEffects.isFrozen(self)
+end
+
+function BaseEnemy:getEffectiveSpeed()
+    return self.speed * StatusEffects.getSpeedMul(self)
+end
+
 -- Standard movement towards player (can be overridden)
 function BaseEnemy:moveTowardsPlayer(dt, playerX, playerY)
     if not self.isAlive or not playerX or not playerY then return end
@@ -151,7 +161,17 @@ function BaseEnemy:moveTowardsPlayer(dt, playerX, playerY)
         self.y = self.y + (self.knockbackY * dt)
         return
     end
-    
+
+    -- Freeze/chill from ice attunement
+    if StatusEffects.isFrozen(self) then
+        self.x = self.x + (self.knockbackX * dt)
+        self.y = self.y + (self.knockbackY * dt)
+        return
+    end
+
+    local speedMul = StatusEffects.getSpeedMul(self)
+    local effectiveSpeed = self.speed * speedMul
+
     local dx = playerX - self.x
     local dy = playerY - self.y
     local distance = math.sqrt(dx * dx + dy * dy)
@@ -162,8 +182,8 @@ function BaseEnemy:moveTowardsPlayer(dt, playerX, playerY)
         dy = dy / distance
         
         -- Move towards player (with knockback applied)
-        self.x = self.x + (dx * self.speed * dt) + (self.knockbackX * dt)
-        self.y = self.y + (dy * self.speed * dt) + (self.knockbackY * dt)
+        self.x = self.x + (dx * effectiveSpeed * dt) + (self.knockbackX * dt)
+        self.y = self.y + (dy * effectiveSpeed * dt) + (self.knockbackY * dt)
     end
 end
 

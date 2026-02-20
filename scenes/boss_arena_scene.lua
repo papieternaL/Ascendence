@@ -5,11 +5,15 @@
 local TreentOverlord = require("entities.treent_overlord")
 local BarkProjectile = require("entities.bark_projectile")
 local Arrow = require("entities.arrow")
+local ArrowVolley = require("entities.arrow_volley")
+local Lunger = require("entities.lunger")
+local Wizard = require("entities.wizard")
 local Config = require("data.config")
 local UIUtils = require("ui.ui_utils")
 
 local Particles = require("systems.particles")
 local ScreenShake = require("systems.screen_shake")
+local StatusEffects = require("systems.status_effects")
 local DamageNumbers = require("systems.damage_numbers")
 local JuiceManager = require("systems.juice_manager")
 local VineLane = require("entities.vine_lane")
@@ -21,7 +25,7 @@ local StatsOverlay = require("ui.stats_overlay")
 local BossArenaScene = {}
 BossArenaScene.__index = BossArenaScene
 
-function BossArenaScene:new(player, playerStats, gameState, xpSystem, rarityCharge)
+function BossArenaScene:new(player, playerStats, gameState, xpSystem, rarityCharge, initialFrenzyCharge)
     local pCfg = Config.Player
     local scene = {
         player = player,
@@ -51,11 +55,10 @@ function BossArenaScene:new(player, playerStats, gameState, xpSystem, rarityChar
         typingProgress = 0,   -- How many letters typed correctly
         typingStartTime = 0,
 
-        -- Falling trunks (Phase 2 mechanic)
+        -- Falling trunks (Phase 1 lighter, Phase 2 heavier)
         fallingTrunks = {},           -- Array of FallingTrunk entities
-        trunkSpawnTimer = 0,          -- Timer for continuous spawning
-        trunkSpawnInterval = 1.5,     -- Spawn 1 trunk every 1.5 seconds
-        trunksEnabled = false,        -- Only spawn in Phase 2
+        trunkSpawnTimer = 0,         -- Timer for continuous spawning
+        trunksEnabled = true,        -- Spawn in both phases (phase-aware interval/damage)
 
         -- Systems
         particles = Particles:new(),
@@ -83,18 +86,31 @@ function BossArenaScene:new(player, playerStats, gameState, xpSystem, rarityChar
         dashDirX = 0,
         dashDirY = 0,
         
-        -- Frenzy
+        -- Frenzy (carry charge from main game; gain from time + boss hits)
         frenzyActive = false,
+        frenzyAuraTimer = 0,
         frenzyCharge = 0,
         frenzyChargeMax = 100,
+        frenzyCombatGainPerSec = 3.5,
+        frenzyBossHitGain = 2.5,
         
         -- Victory/Defeat
         victoryTimer = 0,
         defeatTimer = 0,
         
+        -- Phase-aware adds (lungers, wizards) - disabled (no adds during boss fight)
+        bossAdds = {},
+        addSpawnTimer = 0,
+        addSpawnInterval = 10,
+        maxAddsPhase1 = 0,
+        maxAddsPhase2 = 0,
+        
         -- Arena decorative props
         arenaProps = {},
         propImages = {},
+
+        -- Arrow Volley (falling arrows, impact-timed)
+        arrowVolleys = {},
     }
     
     setmetatable(scene, BossArenaScene)
@@ -102,16 +118,25 @@ function BossArenaScene:new(player, playerStats, gameState, xpSystem, rarityChar
     -- Set JuiceManager screen shake reference
     JuiceManager.setScreenShake(scene.screenShake)
     
+    scene.initialFrenzyCharge = initialFrenzyCharge
     scene:initialize()
     return scene
 end
 
 function BossArenaScene:initialize()
+    JuiceManager.reset()
     local screenWidth = love.graphics.getWidth()
     local screenHeight = love.graphics.getHeight()
     
     -- Spawn boss in center
     self.boss = TreentOverlord:new(screenWidth / 2, screenHeight / 2)
+    
+    -- Scale boss HP by player level at entry: +6% per level above 10, cap +120%
+    local playerLevel = self.xpSystem and self.xpSystem.level or 10
+    local levelScale = 1.0 + math.min(1.20, (playerLevel - 10) * 0.06)
+    if playerLevel <= 10 then levelScale = 1.0 end
+    self.boss.maxHealth = self.boss.maxHealth * levelScale
+    self.boss.health = self.boss.maxHealth
     
     -- Position player at bottom
     if self.player then
@@ -119,7 +144,8 @@ function BossArenaScene:initialize()
         self.player.y = screenHeight - 100
     end
     
-    -- Wire player abilities
+    -- Wire player abilities (15% base cooldown reduction)
+    local baseCDMul = (Config.game_balance and Config.game_balance.player and Config.game_balance.player.base_cooldown_mul) or 0.85
     if self.player then
         self.player.abilities = self.player.abilities or {}
         local aCfg = Config.Abilities
@@ -129,32 +155,71 @@ function BossArenaScene:initialize()
             self.player.abilities.frenzy = { name = "Frenzy", key = "R", icon = "🔥", unlocked = true }
         end
         self.player.abilities.frenzy.currentCooldown = 0
-        self.player.abilities.frenzy.cooldown = 15.0 -- Ultimate CD
+        self.player.abilities.frenzy.cooldown = 15.0 * baseCDMul
         
         -- Ensure power_shot exists
         if not self.player.abilities.power_shot then
             self.player.abilities.power_shot = { name = "Power Shot", key = "Q", icon = "⚡", unlocked = true }
         end
         self.player.abilities.power_shot.currentCooldown = 0
-        self.player.abilities.power_shot.cooldown = aCfg.powerShot.cooldown
+        self.player.abilities.power_shot.cooldown = aCfg.powerShot.cooldown * baseCDMul
         
         -- Ensure arrow_volley exists
         if not self.player.abilities.arrow_volley then
             self.player.abilities.arrow_volley = { name = "Arrow Volley", key = "E", icon = "🏹", unlocked = true }
         end
         self.player.abilities.arrow_volley.currentCooldown = 0
-        self.player.abilities.arrow_volley.cooldown = 8.0
+        self.player.abilities.arrow_volley.cooldown = 8.0 * baseCDMul
         
         -- Ensure dash exists
         if not self.player.abilities.dash then
             self.player.abilities.dash = { name = "Dash", key = "SPACE", icon = "💨", unlocked = true }
         end
         self.player.abilities.dash.currentCooldown = 0
-        self.player.abilities.dash.cooldown = Config.Player.dashCooldown
+        self.player.abilities.dash.cooldown = Config.Player.dashCooldown * baseCDMul
     end
+
+    -- Apply full run upgrades to player (carryover from game scene)
+    self:applyStatsToPlayer()
+    
+    -- Carry over Frenzy charge from main game so ultimate is usable in boss room
+    local carried = (self.initialFrenzyCharge and type(self.initialFrenzyCharge) == "number") and self.initialFrenzyCharge or 0
+    self.frenzyCharge = math.min(self.frenzyChargeMax, math.max(0, carried))
     
     -- Load decorative props for arena edges
     self:loadArenaProps()
+end
+
+function BossArenaScene:applyStatsToPlayer()
+    if not self.player or not self.playerStats then return end
+    local baseCDMul = (Config.game_balance and Config.game_balance.player and Config.game_balance.player.base_cooldown_mul) or 0.85
+
+    self.player.attackDamage = self.playerStats:get("primary_damage")
+    self.player.speed = self.playerStats:get("move_speed")
+    self.attackRange = self.playerStats:get("range")
+    local attackSpeed = self.playerStats:get("attack_speed")
+    self.fireRate = 0.4 / attackSpeed
+
+    if self.player.abilities then
+        local aCfg = Config.Abilities
+        if self.player.abilities.power_shot then
+            local basePS = (aCfg.powerShot and aCfg.powerShot.cooldown or 6.0) * baseCDMul
+            basePS = self.playerStats:getAbilityValue("power_shot", "cooldown_add", basePS)
+            basePS = self.playerStats:getAbilityValue("power_shot", "cooldown_mul", basePS)
+            self.player.abilities.power_shot.cooldown = math.max(1.0, basePS)
+        end
+        if self.player.abilities.arrow_volley then
+            local baseAV = 8.0 * baseCDMul
+            baseAV = self.playerStats:getAbilityValue("entangle", "cooldown_add", baseAV)
+            baseAV = self.playerStats:getAbilityValue("entangle", "cooldown_mul", baseAV)
+            self.player.abilities.arrow_volley.cooldown = math.max(1.0, baseAV)
+        end
+        if self.player.abilities.dash then
+            local rollCD = self.playerStats:get("roll_cooldown") * baseCDMul
+            self.player.abilities.dash.cooldown = math.max(0.3, rollCD)
+            self.dashCooldownMax = self.player.abilities.dash.cooldown
+        end
+    end
 end
 
 function BossArenaScene:loadArenaProps()
@@ -297,11 +362,27 @@ function BossArenaScene:update(dt)
     if self.playerStats then
         self.frenzyActive = self.playerStats:hasBuff("frenzy")
         
-        -- Sync frenzy VFX to player
+        -- Sync frenzy VFX to player and emit aura particles
         if self.player then
             self.player.isFrenzyActive = self.frenzyActive
+            if self.frenzyActive then
+                self.frenzyAuraTimer = (self.frenzyAuraTimer or 0) - dt
+                if self.frenzyAuraTimer <= 0 then
+                    local px, py = self.player:getPosition()
+                    self.particles:createFrenzyAura(px, py)
+                    self.frenzyAuraTimer = 0.08
+                end
+            end
         end
         
+        -- Always-on HP regen
+        if self.player and not self.player:isDead() then
+            local regen = self.playerStats:get("hp_regen_per_sec") or 0
+            if regen > 0 then
+                self.player.health = math.min(self.player.maxHealth, self.player.health + regen * dt)
+            end
+        end
+
         self.playerStats:update(dt, {
             wasHit = false,
             didRoll = self.isDashing,
@@ -313,14 +394,24 @@ function BossArenaScene:update(dt)
     self.fireCooldown = math.max(0, self.fireCooldown - dt)
     self.dashCooldown = math.max(0, self.dashCooldown - dt)
     
+    -- Frenzy charge gain: time in combat (so ultimate is usable in boss room)
+    if not self.frenzyActive and self.boss and self.boss.isAlive and self.player and not self.player:isDead() then
+        local gain = (self.frenzyCombatGainPerSec or 3.5) * dt
+        if self.playerStats then
+            gain = self.playerStats:getAbilityValue("frenzy", "charge_gain_mul", gain)
+        end
+        self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + gain)
+    end
+    
     -- Update player
     if self.player then
+        self.player.isDashing = self.isDashing
         if self.isDashing then
+            self.player:update(dt)
             self.dashTime = self.dashTime - dt
             if self.dashTime <= 0 then
                 self.isDashing = false
             else
-                -- Apply dash movement
                 local moveX = self.dashDirX * self.dashSpeed * dt
                 local moveY = self.dashDirY * self.dashSpeed * dt
                 self.player.x = self.player.x + moveX
@@ -328,7 +419,10 @@ function BossArenaScene:update(dt)
                 self.particles:createDashTrail(self.player.x, self.player.y)
             end
         else
-            self.player:update(dt)
+            -- Skip movement during phase 2 typing test (player is rooted)
+            if not self.typingTestActive then
+                self.player:update(dt)
+            end
         end
         
         local playerX, playerY = self.player:getPosition()
@@ -349,9 +443,16 @@ function BossArenaScene:update(dt)
             if self.fireCooldown <= 0 and not self.isDashing and not self.typingTestActive then
                 local baseDmg = (self.player.attackDamage or 10) * 1.0
                 local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
+                local ricBounces = (self.playerStats and self.playerStats:getWeaponMod("ricochet_bounces")) or 0
+                local ricRange = (self.playerStats and self.playerStats:getWeaponMod("ricochet_range")) or 220
                 local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
-                local arrow = Arrow:new(sx, sy, targetX, targetY, { damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140 })
+                local arrow = Arrow:new(sx, sy, targetX, targetY, {
+                    damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140,
+                    ricochetBounces = ricBounces, ricochetRange = ricRange,
+                    iceAttuned = self.playerStats and self.playerStats.activePrimaryElement == "ice",
+                })
                 table.insert(self.arrows, arrow)
+                if _G.audio then _G.audio:playSFX("shoot_arrow") end
                 self.fireCooldown = self.fireRate
                 if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
                 if self.player.playAttackAnimation then self.player:playAttackAnimation() end
@@ -374,7 +475,7 @@ function BossArenaScene:update(dt)
                 local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
                 
                 -- Apply ability mods
-                local damageMul = self.playerStats:getAbilityModValue("power_shot", "damage_mul", 1.0)
+                local damageMul = self.playerStats:getAbilityValue("power_shot", "damage_mul", 1.0)
                 local base = (self.player.attackDamage or 10) * psCfg.damageMult * damageMul
                 
                 -- Check for elite/MCM bonus damage mod (boss counts as elite)
@@ -397,6 +498,7 @@ function BossArenaScene:update(dt)
                     appliesStatus = appliesStatus,
                 })
                 table.insert(self.arrows, ps)
+                if _G.audio then _G.audio:playSFX("shoot_arrow") end
                 self.screenShake:add(3, 0.12)
                 if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
                 if self.player.playAttackAnimation then self.player:playAttackAnimation() end
@@ -433,18 +535,18 @@ function BossArenaScene:update(dt)
                 
                 if dist <= volleyRange then
                     self.player:useAbility("arrow_volley", self.playerStats)
-                    -- Deal damage to boss (Arrow Volley is damage, not root)
-                    local baseDmg = self.playerStats and self.playerStats:get("attack") or 25
-                    
-                    -- Apply ability mods
-                    local damageMul = self.playerStats:getAbilityModValue("arrow_volley", "damage_mul", 1.0)
+                    local baseDmg = self.playerStats and self.playerStats:get("primary_damage") or 25
+                    local damageMul = self.playerStats:getAbilityValue("arrow_volley", "damage_mul", 1.0)
                     local damage = baseDmg * 1.5 * damageMul
-                    
-                    self.boss:takeDamage(damage)
-                    self.particles:createExplosion(bx, by, {1, 0.8, 0.2})
+
+                    -- Spawn falling-arrow volley (impact-timed damage)
+                    local volley = ArrowVolley:new(bx, by, damage, 80, 0)
+                    table.insert(self.arrowVolleys, { volley = volley, targetBoss = true })
+
+                    if _G.audio then _G.audio:playSFX("shoot_arrow") end
                     self.screenShake:add(3, 0.15)
-                    
-                    -- Handle double_strike mod: deal damage again after delay
+
+                    -- Double_strike: spawn second volley after delay
                     local doubleStrikeMod = self.playerStats:getAbilityMod("arrow_volley", "double_strike")
                     if doubleStrikeMod then
                         local delay = doubleStrikeMod.delay or 0.3
@@ -454,6 +556,16 @@ function BossArenaScene:update(dt)
                             timer = delay,
                             tx = bx, ty = by,
                             damage = damage * secondVolleyDamageMul,
+                        })
+                    end
+                    -- Extra_zone_add: additional volleys after delay
+                    local extraZones = self.playerStats and self.playerStats:getAbilityValue("arrow_volley", "extra_zone_add", 0) or 0
+                    for _ = 1, extraZones do
+                        self.pendingArrowVolleys = self.pendingArrowVolleys or {}
+                        table.insert(self.pendingArrowVolleys, {
+                            timer = 0.5,
+                            tx = bx, ty = by,
+                            damage = damage * 0.7,
                         })
                     end
                 end
@@ -477,24 +589,43 @@ function BossArenaScene:update(dt)
                         knockback = pending.knockback,
                         appliesStatus = pending.appliesStatus,
                     })
+                    if _G.audio then _G.audio:playSFX("shoot_arrow") end
                     table.insert(self.arrows, ps)
                     table.remove(self.pendingPowerShots, i)
                 end
             end
         end
         
-        -- Process pending arrow volleys (double_strike mod)
+        -- Process pending arrow volleys (spawn volley when timer fires)
         if self.pendingArrowVolleys then
             for i = #self.pendingArrowVolleys, 1, -1 do
                 local pending = self.pendingArrowVolleys[i]
                 pending.timer = pending.timer - dt
                 if pending.timer <= 0 then
-                    if self.boss and self.boss.isAlive then
-                        self.boss:takeDamage(pending.damage)
-                        self.particles:createExplosion(pending.tx, pending.ty, {1, 0.8, 0.2})
-                    end
+                    local volley = ArrowVolley:new(pending.tx, pending.ty, pending.damage, 80, 0)
+                    table.insert(self.arrowVolleys, { volley = volley, targetBoss = true })
                     table.remove(self.pendingArrowVolleys, i)
                 end
+            end
+        end
+
+        -- Update Arrow Volleys (impact-timed damage on boss)
+        for i = #self.arrowVolleys, 1, -1 do
+            local entry = self.arrowVolleys[i]
+            local volley = entry.volley
+            volley:update(dt)
+            if volley:shouldApplyDamage() and entry.targetBoss and self.boss and self.boss.isAlive then
+                local dmg = volley:getDamage()
+                local bx, by = self.boss:getPosition()
+                self.boss:takeDamage(dmg)
+                self:applyFrenzyLifesteal(dmg)
+                self.particles:createExplosion(bx, by, {1, 0.8, 0.2})
+                if self.damageNumbers then
+                    self.damageNumbers:add(bx, by - 30, dmg, { isCrit = false })
+                end
+            end
+            if volley:isFinished() then
+                table.remove(self.arrowVolleys, i)
             end
         end
         
@@ -509,9 +640,7 @@ function BossArenaScene:update(dt)
             local onPhaseTransition = function()
                 self.screenShake:add(12, 0.5)
                 self.particles:createExplosion(self.boss.x, self.boss.y, {1, 0.3, 0.3})
-
-                -- Enable falling trunks in Phase 2 (enraged mode)
-                self.trunksEnabled = true
+                -- Trunks already enabled in Phase 1; Phase 2 uses faster/heavier config
                 self.trunkSpawnTimer = 0
             end
             
@@ -589,6 +718,15 @@ function BossArenaScene:update(dt)
                     local cfg = Config.TreentOverlord
                     self.safeLaneIndex = math.random(1, cfg.vineLaneCount or 5)
 
+                    -- Start vine cast timer immediately (race condition with typing test).
+                    -- If the player fails to finish in time, vine attack resolves while still rooted.
+                    if self.boss then
+                        self.boss.earthquakeCasting = true
+                        self.boss.earthquakeCastProgress = 0
+                        self.boss.earthquakeTimer = 0
+                        self.boss.earthquakeActive = false
+                    end
+
                     -- Generate 6 random letters (only qwerasdf keys)
                     local letters = {"q", "w", "e", "r", "a", "s", "d", "f"}
                     self.typingSequence = {}
@@ -602,6 +740,20 @@ function BossArenaScene:update(dt)
             end
 
             self.boss:update(dt, playerX, playerY, onBarkShoot, onPhaseTransition, onEncompassRoot, onVineLanes, onTypingTest)
+
+            -- Phase 2 fail condition: typing test did not finish before vine attack resolved.
+            if self.typingTestActive and self.vineLanesActive and self.player and not self.player:isDead() then
+                local lethal = Config.TreentOverlord.vineLaneDamage or 9999
+                if self.frenzyActive then
+                    lethal = lethal * (Config.Abilities.frenzy.damageTakenMult or 1.15)
+                end
+                self.player:takeDamage(lethal)
+                self.typingTestActive = false
+                self.player.isRooted = false
+                self.player.rootDuration = 0
+                self.screenShake:add(10, 0.3)
+                self.particles:createExplosion(playerX, playerY, {0.7, 0.2, 0.2})
+            end
             
             -- Boss collision with player
             if not self.isDashing then
@@ -693,21 +845,24 @@ function BossArenaScene:update(dt)
             end
         end
 
-        -- Update falling trunks (Phase 2 mechanic, paused during typing test)
+        -- Update falling trunks (Phase 1 lighter, Phase 2 heavier; paused during typing test)
         if self.trunksEnabled and not self.typingTestActive then
-            -- Spawn new trunks continuously
+            local cfg = Config.TreentOverlord or {}
+            local phase = (self.boss and self.boss.phase) or 1
+            local interval = (phase == 2) and (cfg.trunkPhase2Interval or 1.5) or (cfg.trunkPhase1Interval or 2.2)
+            local damage = (phase == 2) and (cfg.trunkPhase2Damage or 60) or (cfg.trunkPhase1Damage or 40)
+
             self.trunkSpawnTimer = self.trunkSpawnTimer + dt
-            if self.trunkSpawnTimer >= self.trunkSpawnInterval then
+            if self.trunkSpawnTimer >= interval then
                 self.trunkSpawnTimer = 0
 
-                -- Spawn trunk at random position in arena
                 local screenWidth = love.graphics.getWidth()
                 local screenHeight = love.graphics.getHeight()
                 local margin = 100
                 local targetX = margin + math.random() * (screenWidth - margin * 2)
                 local targetY = margin + math.random() * (screenHeight - margin * 2)
 
-                local trunk = FallingTrunk:new(targetX, targetY, 60)
+                local trunk = FallingTrunk:new(targetX, targetY, damage)
                 table.insert(self.fallingTrunks, trunk)
             end
 
@@ -733,6 +888,71 @@ function BossArenaScene:update(dt)
                 end
             end
         end
+        
+        -- Phase-aware add spawning (no adds during typing test)
+        if self.boss and self.boss.isAlive and not self.typingTestActive then
+            local phase = self.boss.phase or 1
+            local maxAdds = (phase == 2) and self.maxAddsPhase2 or self.maxAddsPhase1
+            local interval = (phase == 2) and 6 or 10
+            local addCount = 0
+            for _, a in ipairs(self.bossAdds) do
+                if a.isAlive then addCount = addCount + 1 end
+            end
+            self.addSpawnTimer = (self.addSpawnTimer or 0) + dt
+            if self.addSpawnTimer >= interval and addCount < maxAdds then
+                self.addSpawnTimer = 0
+                local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
+                local side = math.random(1, 4)
+                local x, y
+                if side == 1 then x = math.random(50, sw - 50); y = 40
+                elseif side == 2 then x = sw - 40; y = math.random(50, sh - 50)
+                elseif side == 3 then x = math.random(50, sw - 50); y = sh - 40
+                else x = 40; y = math.random(50, sh - 50) end
+                local add
+                if math.random() < 0.6 then
+                    add = Lunger:new(x, y)
+                else
+                    add = Wizard:new(x, y)
+                end
+                table.insert(self.bossAdds, add)
+            end
+        end
+        
+        -- Update boss adds (AI) - wizard cone deals damage, no root
+        local function onBossWizardCone(wx, wy, angleToPlayer, coneAngle, coneRange, rootDuration)
+            if not self.player or not self.player.getPosition then return end
+            local px, py = self.player:getPosition()
+            local dx = px - wx
+            local dy = py - wy
+            local dist = math.sqrt(dx * dx + dy * dy)
+            if dist > coneRange then return end
+            local angleToP = math.atan2(dy, dx)
+            local angleDiff = math.abs(angleToP - angleToPlayer)
+            while angleDiff > math.pi do angleDiff = angleDiff - math.pi * 2 end
+            if math.abs(angleDiff) <= coneAngle / 2 then
+                local dmg = 12
+                if self.frenzyActive then dmg = dmg * 1.15 end
+                self.player:takeDamage(dmg)
+                if self.playerStats then self.playerStats:update(0, { wasHit = true, didRoll = false, inFrenzy = self.frenzyActive }) end
+            end
+        end
+        for _, add in ipairs(self.bossAdds) do
+            if add.isAlive then
+                if add.update then
+                    add:update(dt, playerX, playerY, onBossWizardCone)
+                end
+                if not self.isDashing and add.getPosition and add.getSize then
+                    local ax, ay = add:getPosition()
+                    local dist = math.sqrt((playerX - ax)^2 + (playerY - ay)^2)
+                    if dist < self.player:getSize() + add:getSize() then
+                        local dmg = (add.damage or (add.getDamage and add:getDamage()) or 10) * 1.0
+                        if self.frenzyActive then dmg = dmg * 1.15 end
+                        self.player:takeDamage(dmg)
+                        self.screenShake:add(5, 0.15)
+                    end
+                end
+            end
+        end
 
         -- Update arrows
         for i = #self.arrows, 1, -1 do
@@ -740,6 +960,11 @@ function BossArenaScene:update(dt)
             arrow:update(dt)
             
             if arrow:isExpired() then
+                -- Ice attunement: dissolve blast on expire (primary arrows only)
+                if arrow.iceAttuned and arrow.kind == "primary" then
+                    local ax, ay = arrow:getPosition()
+                    self:iceDissolveBlast(ax, ay)
+                end
                 table.remove(self.arrows, i)
             else
                 local ax, ay = arrow:getPosition()
@@ -755,14 +980,56 @@ function BossArenaScene:update(dt)
                     return dmg, isCrit
                 end
                 
+                -- Check boss adds first
+                if not hitEnemy then
+                    for _, add in ipairs(self.bossAdds) do
+                        if add.isAlive and add.getPosition and add.getSize then
+                            local adx, ady = add:getPosition()
+                            local dx = ax - adx
+                            local dy = ay - ady
+                            local sumR = add:getSize() + arrow:getSize()
+                            if dx * dx + dy * dy < sumR * sumR and arrow:canHit(add) then
+                                arrow:markHit(add)
+                                local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
+                                self.particles:createHitSpark(adx, ady, isCrit and {1, 1, 0.2} or {1, 1, 0.6})
+                                if _G.audio then
+                                    local sfx = math.random() > 0.5 and "hit_light" or "hit_light_alt"
+                                    _G.audio:playSFX(sfx, { pitch = isCrit and 1.15 or (0.95 + math.random() * 0.12) })
+                                end
+                                if self.damageNumbers then
+                                    self.damageNumbers:add(adx, ady - add:getSize(), dmg, { isCrit = isCrit })
+                                end
+                                local died = add:takeDamage(dmg, ax, ay, arrow.knockback)
+                                self:applyFrenzyLifesteal(dmg)
+                                if died then
+                                    self.particles:createExplosion(adx, ady, {0.6, 0.3, 0.8})
+                                    self.screenShake:add(4, 0.12)
+                                    self.xpSystem:spawnOrb(adx, ady, 25 + math.random(0, 15))
+                                end
+                                -- Ricochet: redirect to nearest un-hit target
+                                if arrow.ricochetBounces and arrow.ricochetBounces > 0 then
+                                    local nextTarget = self:findNearestBossTargetTo(adx, ady, arrow.ricochetRange or 220, arrow.hit)
+                                    if nextTarget then
+                                        local ntx, nty = nextTarget.getPosition and nextTarget:getPosition() or nextTarget.x, nextTarget.y
+                                        arrow:bounceToward(ntx, nty)
+                                        hitEnemy = false
+                                        break
+                                    end
+                                end
+                                if arrow:consumePierce() then hitEnemy = false else hitEnemy = true end
+                                break
+                            end
+                        end
+                    end
+                end
+                
                 -- Check boss
                 if not hitEnemy and self.boss and self.boss.isAlive then
                     local bx, by = self.boss:getPosition()
                     local dx = ax - bx
                     local dy = ay - by
-                    local distance = math.sqrt(dx * dx + dy * dy)
-                    
-                    if distance < self.boss:getSize() + arrow:getSize() and arrow:canHit(self.boss) then
+                    local sumR = self.boss:getSize() + arrow:getSize()
+                    if dx * dx + dy * dy < sumR * sumR and arrow:canHit(self.boss) then
                         arrow:markHit(self.boss)
                         local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
                         
@@ -772,10 +1039,23 @@ function BossArenaScene:update(dt)
                         end
                         
                         self.particles:createHitSpark(bx, by, {1, 1, 0.6})
+                        if _G.audio then
+                            local sfx = math.random() > 0.5 and "hit_light" or "hit_light_alt"
+                            _G.audio:playSFX(sfx, { pitch = isCrit and 1.15 or (0.95 + math.random() * 0.12) })
+                        end
                         if self.damageNumbers then
                             self.damageNumbers:add(bx, by - self.boss:getSize(), dmg, { isCrit = isCrit })
                         end
                         local died = self.boss:takeDamage(dmg, ax, ay, arrow.knockback)
+                        self:applyFrenzyLifesteal(dmg)
+                        -- Frenzy charge gain on boss hit (so ultimate is usable in boss room)
+                        if not self.frenzyActive then
+                            local hitGain = self.frenzyBossHitGain or 2.5
+                            if self.playerStats then
+                                hitGain = self.playerStats:getAbilityValue("frenzy", "charge_gain_mul", hitGain)
+                            end
+                            self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + hitGain)
+                        end
                         
                         if died then
                             self.particles:createExplosion(bx, by, {0.2, 1, 0.2})
@@ -785,10 +1065,18 @@ function BossArenaScene:update(dt)
                             self.screenShake:add(2, 0.08)
                         end
                         
-                        if arrow:consumePierce() then
-                            hitEnemy = false
+                        -- Ricochet: redirect to nearest un-hit target
+                        if arrow.ricochetBounces and arrow.ricochetBounces > 0 then
+                            local nextTarget = self:findNearestBossTargetTo(bx, by, arrow.ricochetRange or 220, arrow.hit)
+                            if nextTarget then
+                                local ntx, nty = nextTarget.getPosition and nextTarget:getPosition() or nextTarget.x, nextTarget.y
+                                arrow:bounceToward(ntx, nty)
+                                hitEnemy = false
+                            else
+                                if arrow:consumePierce() then hitEnemy = false else hitEnemy = true end
+                            end
                         else
-                            hitEnemy = true
+                            if arrow:consumePierce() then hitEnemy = false else hitEnemy = true end
                         end
                     end
                 end
@@ -803,7 +1091,7 @@ function BossArenaScene:update(dt)
         if self.victoryTimer > 0 then
             self.victoryTimer = self.victoryTimer - dt
             if self.victoryTimer <= 0 then
-                -- Victory!
+                if _G.audio then _G.audio:playMenuMusic() end
                 self.gameState:transitionTo(self.gameState.States.VICTORY)
             end
         end
@@ -812,6 +1100,7 @@ function BossArenaScene:update(dt)
         if self.player and self.player:isDead() then
             self.defeatTimer = self.defeatTimer + dt
             if self.defeatTimer >= 2.0 then
+                if _G.audio then _G.audio:playGameOverMusic() end
                 self.gameState:transitionTo(self.gameState.States.GAME_OVER)
             end
         end
@@ -896,6 +1185,13 @@ function BossArenaScene:draw()
         vine:draw()
     end
 
+    -- Draw Arrow Volleys (falling arrows)
+    for _, entry in ipairs(self.arrowVolleys) do
+        if entry.volley then
+            entry.volley:draw()
+        end
+    end
+
     -- Draw falling trunks (ground telegraphs first, then falling trunks later)
     -- Draw telegraphs on ground (before entities)
     for _, trunk in ipairs(self.fallingTrunks) do
@@ -910,6 +1206,13 @@ function BossArenaScene:draw()
     -- Add boss
     if self.boss and self.boss.isAlive then
         table.insert(drawables, { entity = self.boss, y = self.boss.y, type = "boss" })
+    end
+    
+    -- Add boss adds
+    for _, add in ipairs(self.bossAdds) do
+        if add.isAlive and add.y then
+            table.insert(drawables, { entity = add, y = add.y, type = "add" })
+        end
     end
     
     -- Add player
@@ -930,6 +1233,39 @@ function BossArenaScene:draw()
             end
         end
         drawable.entity:draw()
+
+        -- Marked status: gold outline
+        if drawable.entity and drawable.entity.isAlive and StatusEffects.has(drawable.entity, "marked") then
+            local ex, ey = drawable.entity:getPosition()
+            local sz = (drawable.entity.getSize and drawable.entity:getSize()) or 16
+            local pulse = 0.7 + 0.3 * math.sin(love.timer.getTime() * 4)
+            love.graphics.setColor(1, 0.85, 0.2, pulse)
+            love.graphics.setLineWidth(2)
+            love.graphics.circle("line", ex, ey, sz + 4)
+            love.graphics.setLineWidth(1)
+        end
+
+        -- Freeze status: icy cyan ring
+        if drawable.entity and drawable.entity.isAlive and StatusEffects.has(drawable.entity, "freeze") then
+            local ex, ey = drawable.entity:getPosition()
+            local sz = (drawable.entity.getSize and drawable.entity:getSize()) or 16
+            love.graphics.setColor(0.5, 0.85, 1.0, 0.9)
+            love.graphics.setLineWidth(2)
+            love.graphics.circle("line", ex, ey, sz + 4)
+            love.graphics.setLineWidth(1)
+        end
+
+        -- Chill/slow status: lighter blue aura
+        if drawable.entity and drawable.entity.isAlive and StatusEffects.has(drawable.entity, "chill") then
+            local ex, ey = drawable.entity:getPosition()
+            local sz = (drawable.entity.getSize and drawable.entity:getSize()) or 16
+            love.graphics.setColor(0.6, 0.9, 1.0, 0.5)
+            love.graphics.setLineWidth(1)
+            love.graphics.circle("line", ex, ey, sz + 2)
+            love.graphics.setLineWidth(1)
+        end
+
+        love.graphics.setColor(1, 1, 1, 1)
 
         -- Draw invulnerability shield on boss during typing test
         if drawable.type == "boss" and self.boss and self.boss.isInvulnerable then
@@ -1015,15 +1351,23 @@ function BossArenaScene:drawUI()
         love.graphics.rectangle("line", screenWidth/2 - 280, panelY - 20, 560, 140, 15, 15)
         love.graphics.setLineWidth(1)
 
-        -- Title (vibrant red with glow)
-        love.graphics.setNewFont(24)
+        -- Title (vibrant red with glow) - use UI font for readability
+        if _G.PixelFonts and _G.PixelFonts.uiSmall then
+            love.graphics.setFont(_G.PixelFonts.uiSmall)
+        else
+            love.graphics.setNewFont(24)
+        end
         love.graphics.setColor(1, 0.1, 0.1, 0.8)
         love.graphics.printf("TYPE TO ESCAPE!", 0, panelY - 5, screenWidth, "center")
         love.graphics.setColor(1, 0.4, 0.2, 1)
         love.graphics.printf("TYPE TO ESCAPE!", 0, panelY - 8, screenWidth, "center")
 
         -- Letters (much larger and more vibrant)
-        love.graphics.setNewFont(54)
+        if _G.PixelFonts and _G.PixelFonts.uiLarge then
+            love.graphics.setFont(_G.PixelFonts.uiLarge)
+        else
+            love.graphics.setNewFont(54)
+        end
         local letterSpacing = 70
         local startX = screenWidth/2 - (#self.typingSequence * letterSpacing / 2)
         local letterY = panelY + 45
@@ -1062,7 +1406,22 @@ function BossArenaScene:drawUI()
             end
         end
 
-        love.graphics.setNewFont(12)
+        -- Countdown to vine impact while typing (race condition feedback)
+        local remaining = nil
+        if self.boss and self.boss.earthquakeCasting then
+            remaining = math.max(0, (self.boss.earthquakeCastTime or 0) - (self.boss.earthquakeCastProgress or 0))
+        elseif self.vineLanesActive then
+            remaining = 0
+        end
+        if remaining ~= nil then
+            if _G.PixelFonts and _G.PixelFonts.uiTiny then
+                love.graphics.setFont(_G.PixelFonts.uiTiny)
+            end
+            love.graphics.setColor(1, 0.45, 0.2, 1)
+            love.graphics.printf(string.format("VINES IN %.1fs", remaining), 0, panelY + 112, screenWidth, "center")
+        end
+
+        if _G.PixelFonts then love.graphics.setFont(_G.PixelFonts.body) end
     end
     
     -- Draw ability HUD (corner-based layout: health bottom-left, abilities bottom-right)
@@ -1082,6 +1441,124 @@ function BossArenaScene:drawUI()
     end
     
     love.graphics.setColor(1, 1, 1, 1)
+end
+
+-- Ice dissolve blast (when ice-attuned primary arrow expires)
+function BossArenaScene:iceDissolveBlast(x, y)
+    if not self.playerStats or self.playerStats.activePrimaryElement ~= "ice" then return end
+    local baseRadius = 70
+    local radiusAdd = self.playerStats:getElementMod("ice", "ice_blast_radius_add", 0)
+    local radius = baseRadius + radiusAdd
+    local baseDmg = (self.player and self.player.attackDamage or 10) * 1.6
+    -- Damage boss and adds in radius
+    local function damageInRadius()
+        for _, add in ipairs(self.bossAdds or {}) do
+            if add.isAlive and add.getPosition and add.getSize then
+                local ex, ey = add:getPosition()
+                local dx = ex - x
+                local dy = ey - y
+                if math.sqrt(dx * dx + dy * dy) <= radius then
+                    local died = add:takeDamage(baseDmg, x, y, 80)
+                    self:applyFrenzyLifesteal(baseDmg)
+                    if self.damageNumbers then
+                        self.damageNumbers:add(ex, ey - add:getSize(), baseDmg, { isCrit = false })
+                    end
+                    if died then
+                        self.particles:createExplosion(ex, ey, {1, 0.5, 0.1})
+                        self.screenShake:add(4, 0.15)
+                        self.xpSystem:spawnOrb(ex, ey, 25 + math.random(0, 15))
+                    end
+                end
+            end
+        end
+        if self.boss and self.boss.isAlive then
+            local bx, by = self.boss:getPosition()
+            local dx = bx - x
+            local dy = by - y
+            if math.sqrt(dx * dx + dy * dy) <= radius then
+                local died = self.boss:takeDamage(baseDmg, x, y, 80)
+                self:applyFrenzyLifesteal(baseDmg)
+                if self.damageNumbers then
+                    self.damageNumbers:add(bx, by - self.boss:getSize(), baseDmg, { isCrit = false })
+                end
+                if died then
+                    self.particles:createExplosion(bx, by, {0.2, 1, 0.2})
+                    self.screenShake:add(15, 0.8)
+                    self.victoryTimer = 3.0
+                else
+                    self.screenShake:add(2, 0.08)
+                end
+            end
+        end
+    end
+    damageInRadius()
+    -- Freeze spread
+    if self.playerStats:hasUpgrade("arch_r_freeze_spread") then
+        local duration = 1.5 + (self.playerStats:getElementMod("ice", "chill_duration_add", 0) or 0)
+        local slowMul = self.playerStats:getElementMod("ice", "slow_mul", 1.0) or 1.0
+        for _, add in ipairs(self.bossAdds or {}) do
+            if add.isAlive and add.getPosition then
+                local ex, ey = add:getPosition()
+                local dx = ex - x
+                local dy = ey - y
+                if math.sqrt(dx * dx + dy * dy) <= radius then
+                    StatusEffects.apply(add, "freeze", 1, duration, slowMul ~= 1.0 and { slowMul = slowMul } or nil)
+                end
+            end
+        end
+        if self.boss and self.boss.isAlive then
+            local bx, by = self.boss:getPosition()
+            local dx = bx - x
+            local dy = by - y
+            if math.sqrt(dx * dx + dy * dy) <= radius then
+                StatusEffects.apply(self.boss, "chill", 1, duration, slowMul ~= 1.0 and { slowMul = slowMul } or nil)
+            end
+        end
+    end
+    self.particles:createIceBlast(x, y, radius)
+    self.screenShake:add(5, 0.12)
+    JuiceManager.freezeTime(0.04)
+    if _G.triggerScreenFlash then
+        _G.triggerScreenFlash({0.6, 0.9, 1.0, 0.25}, 0.08)
+    end
+end
+
+-- Find nearest boss or add to a point (for ricochet retarget)
+function BossArenaScene:findNearestBossTargetTo(x, y, maxRange, excludeSet)
+    local best, bestDist = nil, maxRange
+    for _, e in ipairs(self.bossAdds or {}) do
+        if e.isAlive and (not excludeSet or not excludeSet[e]) then
+            local ex, ey = (e.getPosition and e:getPosition()) or e.x, e.y
+            local dx = ex - x
+            local dy = ey - y
+            local d = math.sqrt(dx * dx + dy * dy)
+            if d < bestDist then
+                best = e
+                bestDist = d
+            end
+        end
+    end
+    if self.boss and self.boss.isAlive and (not excludeSet or not excludeSet[self.boss]) then
+        local bx, by = (self.boss.getPosition and self.boss:getPosition()) or self.boss.x, self.boss.y
+        local dx = bx - x
+        local dy = by - y
+        local d = math.sqrt(dx * dx + dy * dy)
+        if d < bestDist then
+            best = self.boss
+            bestDist = d
+        end
+    end
+    return best
+end
+
+-- Apply Frenzy lifesteal from outgoing player damage.
+function BossArenaScene:applyFrenzyLifesteal(damageDealt)
+    if not self.frenzyActive or not self.player then return end
+    if not damageDealt or damageDealt <= 0 then return end
+    local lifeSteal = (Config.Abilities and Config.Abilities.frenzy and Config.Abilities.frenzy.lifeSteal) or 0.10
+    if lifeSteal <= 0 then return end
+    local healAmount = damageDealt * lifeSteal
+    self.player.health = math.min(self.player.maxHealth, self.player.health + healAmount)
 end
 
 function BossArenaScene:keypressed(key)
@@ -1111,21 +1588,11 @@ function BossArenaScene:keypressed(key)
             
             -- Check if completed
             if self.typingProgress >= #self.typingSequence then
-                -- SUCCESS! Unroot player and trigger vine attack
+                -- SUCCESS! Unroot player; vine cast timer is already running.
                 self.typingTestActive = false
                 if self.player then
                     self.player.isRooted = false
                     self.player.rootDuration = 0
-                end
-                if self.boss then
-                    self.boss.isInvulnerable = false
-
-                    -- Trigger vine lane attack after short delay (player has time to move to safety)
-                    self.boss.earthquakeCasting = true
-                    self.boss.earthquakeCastProgress = 0
-                    self.boss.earthquakeTimer = 0
-                    self.boss.earthquakeActive = false
-                    self.boss.isInvulnerable = true  -- Boss invulnerable during vine attack
                 end
                 self.screenShake:add(4, 0.15)
                 self.particles:createExplosion(self.player.x, self.player.y, {0.2, 1, 0.3})
@@ -1145,10 +1612,10 @@ function BossArenaScene:keypressed(key)
         local fCfg = Config.Abilities.frenzy
         
         -- Apply ability mods
-        local durationAdd = self.playerStats:getAbilityModValue("frenzy", "duration_add", 0)
-        local critChanceAdd = self.playerStats:getAbilityModValue("frenzy", "crit_chance_add", 0)
-        local moveSpeedMul = self.playerStats:getAbilityModValue("frenzy", "move_speed_mul", 1.0)
-        local rollCooldownMul = self.playerStats:getAbilityModValue("frenzy", "roll_cooldown_mul", 1.0)
+        local durationAdd = self.playerStats:getAbilityValue("frenzy", "duration_add", 0)
+        local critChanceAdd = self.playerStats:getAbilityValue("frenzy", "crit_chance_add", 0)
+        local moveSpeedMul = self.playerStats:getAbilityValue("frenzy", "move_speed_mul", 1.0)
+        local rollCooldownMul = self.playerStats:getAbilityValue("frenzy", "roll_cooldown_mul", 1.0)
         
         local finalDuration = fCfg.duration + durationAdd
         local finalCritAdd = fCfg.critChanceAdd + critChanceAdd
@@ -1159,10 +1626,11 @@ function BossArenaScene:keypressed(key)
             { stat = "attack_speed", mul = fCfg.attackSpeedMult },
             { stat = "crit_chance", add = finalCritAdd },
             { stat = "roll_cooldown", mul = rollCooldownMul },
-        }, { break_on_hit_taken = true, damage_taken_multiplier = fCfg.damageTakenMult })
+        }, { damage_taken_multiplier = fCfg.damageTakenMult })
         self.frenzyActive = true
         self.frenzyKillsThisActivation = 0
         self.frenzyExtendedTime = 0
+        if _G.audio then _G.audio:playSFX("hit_heavy") end
         self.screenShake:add(4, 0.15)
         return true
     end
@@ -1176,8 +1644,8 @@ function BossArenaScene:keypressed(key)
 end
 
 function BossArenaScene:startDash()
-    -- Can't dash while rooted!
-    if self.player and self.player.isRooted then
+    -- Can't dash while rooted (phase 2 typing test) or during typing test
+    if self.typingTestActive or (self.player and self.player.isRooted) then
         return
     end
     
@@ -1199,6 +1667,7 @@ function BossArenaScene:startDash()
             self.isDashing = true
             self.dashTime = self.dashDuration
             self.dashCooldown = self.dashCooldownMax
+            if _G.audio then _G.audio:playSFX("hit_light") end
             
             if self.player.startDash then
                 self.player:startDash()
@@ -1220,7 +1689,11 @@ function BossArenaScene:drawBossHealthBar()
     
     -- Boss name
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.setNewFont(18)
+    if _G.PixelFonts and _G.PixelFonts.uiTiny then
+        love.graphics.setFont(_G.PixelFonts.uiTiny)
+    else
+        love.graphics.setNewFont(18)
+    end
     local bossName = "TREENT OVERLORD"
     local nameWidth = love.graphics.getFont():getWidth(bossName)
     love.graphics.print(bossName, (w - nameWidth) / 2, barY - 25)
@@ -1228,7 +1701,11 @@ function BossArenaScene:drawBossHealthBar()
     -- Phase indicator
     local phase = self.boss.phase or 1
     local phaseText = "Phase " .. phase
-    love.graphics.setNewFont(14)
+    if _G.PixelFonts and _G.PixelFonts.uiSmallText then
+        love.graphics.setFont(_G.PixelFonts.uiSmallText)
+    else
+        love.graphics.setNewFont(14)
+    end
     local phaseWidth = love.graphics.getFont():getWidth(phaseText)
     local phaseColor = phase == 1 and {0.3, 1, 0.5} or {1, 0.3, 0.3}
     love.graphics.setColor(phaseColor[1], phaseColor[2], phaseColor[3], 1)
@@ -1284,13 +1761,17 @@ function BossArenaScene:drawBossHealthBar()
     
     -- HP text
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.setNewFont(16)
+    if _G.PixelFonts and _G.PixelFonts.uiSmallText then
+        love.graphics.setFont(_G.PixelFonts.uiSmallText)
+    else
+        love.graphics.setNewFont(16)
+    end
     local hpText = string.format("%d / %d", math.floor(self.boss.health), math.floor(self.boss.maxHealth))
     local hpWidth = love.graphics.getFont():getWidth(hpText)
     love.graphics.print(hpText, (w - hpWidth) / 2, barY + 7)
     
     -- Reset font
-    love.graphics.setNewFont(12)
+    if _G.PixelFonts then love.graphics.setFont(_G.PixelFonts.body) end
 end
 
 return BossArenaScene

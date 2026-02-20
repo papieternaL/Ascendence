@@ -48,11 +48,21 @@ function StatsOverlay:scroll(delta, upgradeCount)
   self.scrollIndex = clamp(self.scrollIndex + delta, 1, upgradeCount)
 end
 
+local FONT_PATH = "assets/Other/Fonts/Kenney Pixel.ttf"
+
 local function ensureFonts(self)
   if not self.fontTitle then
-    self.fontTitle = love.graphics.newFont(20)
-    self.fontBody = love.graphics.newFont(13)
-    self.fontSmall = love.graphics.newFont(11)
+    local ok, f
+    local function loadUI(size)
+      ok, f = pcall(love.graphics.newFont, FONT_PATH, size)
+      if ok then f:setFilter("linear", "linear"); return f end
+      f = love.graphics.newFont(size)
+      f:setFilter("linear", "linear")
+      return f
+    end
+    self.fontTitle = loadUI(22)
+    self.fontBody = loadUI(15)
+    self.fontSmall = loadUI(13)
   end
 end
 
@@ -130,7 +140,7 @@ function StatsOverlay:draw(playerStats, xpSystem, player)
   love.graphics.setFont(self.fontSmall)
   love.graphics.setColor(1, 1, 1, 0.75)
   local levelText = xpSystem and ("Level " .. tostring(xpSystem.level)) or ""
-  love.graphics.print(levelText .. "  (Press P to close)", x + panelW - 220, y + 18)
+  love.graphics.print(levelText .. "  (Press Tab to close)", x + panelW - 220, y + 18)
 
   local contentY = y + 52
   local contentH = panelH - 68
@@ -292,7 +302,7 @@ function StatsOverlay:draw(playerStats, xpSystem, player)
 
   -- Arrow Volley
   love.graphics.setColor(0.9, 0.6, 0.2, 1)
-  love.graphics.print("Arrow Volley [W]", col2X, abilityY)
+  love.graphics.print("Arrow Volley [E]", col2X, abilityY)
   abilityY = abilityY + 18
 
   if #grouped.arrow_volley == 0 then

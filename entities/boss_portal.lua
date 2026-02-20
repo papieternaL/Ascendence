@@ -24,7 +24,8 @@ function BossPortal:new(x, y)
     particle_spawn_timer = 0,
     
     activated = false,
-    spawn_time = 0
+    spawn_time = 0,
+    spawn_burst_done = false
   }
   setmetatable(portal, BossPortal)
   return portal
@@ -35,9 +36,13 @@ function BossPortal:update(dt, player)
   
   if self.spawn_animation < 1.0 then
     self.spawn_animation = math.min(1.0, self.spawn_animation + dt * 2)
+    if self.spawn_animation >= 1.0 and not self.spawn_burst_done then
+      self.spawn_burst_done = true
+      for _ = 1, 12 do self:spawnParticle() end
+    end
   end
-  
-  self.pulse_phase = self.pulse_phase + dt * 1.8
+
+  self.pulse_phase = self.pulse_phase + dt * 2.2
   self.rotation = self.rotation + dt * 0.4
   self.inner_rotation = self.inner_rotation - dt * 0.8
   
@@ -90,18 +95,25 @@ end
 function BossPortal:draw()
   local scale = self.spawn_animation
   local pulse = (math.sin(self.pulse_phase) + 1) * 0.5
-  
-  local glow_radius = (self.radius + pulse * 25) * scale
-  love.graphics.setColor(self.color[1], self.color[2], self.color[3], 0.15 * self.glow_intensity * scale)
+
+  -- Stronger outer glow and pulse
+  local glow_radius = (self.radius + pulse * 40) * scale
+  love.graphics.setColor(self.color[1], self.color[2], self.color[3], 0.22 * (self.glow_intensity * 0.5 + 0.5) * scale)
   love.graphics.circle("fill", self.x, self.y, glow_radius)
-  
-  love.graphics.setColor(self.color[1], self.color[2], self.color[3], 0.25 * self.glow_intensity * scale)
+
+  love.graphics.setColor(self.color[1], self.color[2], self.color[3], 0.32 * self.glow_intensity * scale)
   love.graphics.circle("fill", self.x, self.y, glow_radius * 0.7)
-  
-  love.graphics.setColor(self.color[1], self.color[2], self.color[3], 0.9 * scale)
-  love.graphics.setLineWidth(5)
+
+  -- Pulsing outer ring
+  local ring_radius = (self.radius + pulse * 15) * scale
+  love.graphics.setColor(self.color[1], self.color[2], self.color[3], 0.5 * (pulse * 0.5 + 0.5) * scale)
+  love.graphics.setLineWidth(4)
+  love.graphics.circle("line", self.x, self.y, ring_radius)
+
+  love.graphics.setColor(self.color[1], self.color[2], self.color[3], 0.95 * scale)
+  love.graphics.setLineWidth(6)
   love.graphics.circle("line", self.x, self.y, self.radius * scale)
-  
+
   love.graphics.setLineWidth(3)
   love.graphics.circle("line", self.x, self.y, self.radius * 0.7 * scale)
   
@@ -142,7 +154,8 @@ function BossPortal:draw()
     love.graphics.circle("fill", p.x, p.y, p.size)
   end
   
-  if self.show_prompt and scale >= 0.9 then
+  -- Show prompt once spawn animation completes (not only when player is in range)
+  if scale >= 0.9 then
     local prompt_text = "Walk Over to Enter Boss Fight"
     local font = love.graphics.getFont()
     local text_width = font:getWidth(prompt_text)

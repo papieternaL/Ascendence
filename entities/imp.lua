@@ -1,5 +1,6 @@
 -- Imp Entity (fast, low HP melee)
 local JuiceManager = require("systems.juice_manager")
+local StatusEffects = require("systems.status_effects")
 
 local Imp = {}
 Imp.__index = Imp
@@ -34,6 +35,7 @@ function Imp:new(x, y)
         -- Status effects
         rootedTime = 0,
         rootedDamageTakenMul = 1.0,
+        statuses = {},
     }
     setmetatable(imp, Imp)
     return imp
@@ -66,6 +68,13 @@ function Imp:update(dt, playerX, playerY)
             return
         end
 
+        if StatusEffects.isFrozen(self) then
+            self.x = self.x + (self.knockbackX * dt)
+            self.y = self.y + (self.knockbackY * dt)
+            return
+        end
+
+        local effectiveSpeed = self.speed * StatusEffects.getSpeedMul(self)
         local dx = playerX - self.x
         local dy = playerY - self.y
         local distance = math.sqrt(dx * dx + dy * dy)
@@ -75,8 +84,8 @@ function Imp:update(dt, playerX, playerY)
             dy = dy / distance
             
             -- Move towards player (with knockback applied)
-            self.x = self.x + (dx * self.speed * dt) + (self.knockbackX * dt)
-            self.y = self.y + (dy * self.speed * dt) + (self.knockbackY * dt)
+            self.x = self.x + (dx * effectiveSpeed * dt) + (self.knockbackX * dt)
+            self.y = self.y + (dy * effectiveSpeed * dt) + (self.knockbackY * dt)
         end
     end
 end

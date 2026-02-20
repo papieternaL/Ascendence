@@ -1,0 +1,588 @@
+================================================================================
+ASCENDENCE - ALL UPGRADES (Export for Editing)
+================================================================================
+This file contains all upgrades from upgrades_archer.lua and ability_paths_archer.lua.
+Source of truth remains the Lua files; use this for reference and planning edits.
+Re-export or manually apply changes back to the Lua files after editing.
+
+================================================================================
+STAT UPGRADES (from upgrades_archer.lua)
+================================================================================
+
+================================================================================
+[COMMON] Sharpened Tips
+================================================================================
+ID: arch_c_sharpened_tips
+Rarity: common
+Description: Your arrows deal 10% more damage
+Tags: damage, primary
+
+Effects:
+  - stat_mul: primary_damage = 1.10
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[COMMON] Quick Nock
+================================================================================
+ID: arch_c_quick_nock
+Rarity: common
+Description: Draw and fire arrows 10% faster
+Tags: attack_speed, primary
+
+Effects:
+  - stat_mul: attack_speed = 1.10
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[COMMON] Fleetfoot
+================================================================================
+ID: arch_c_fleetfoot
+Rarity: common
+Description: Move 8% faster
+Tags: move, survival
+
+Effects:
+  - stat_mul: move_speed = 1.08
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[COMMON] Long Draw
+================================================================================
+ID: arch_c_long_draw
+Rarity: common
+Description: Arrows travel 12% farther before fading
+Tags: range, primary
+
+Effects:
+  - stat_mul: range = 1.12
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[COMMON] Piercing Practice
+================================================================================
+ID: arch_c_piercing_practice
+Rarity: common
+Description: Arrows pierce through 1 additional enemy
+Tags: projectile, primary
+
+Effects:
+  - weapon_mod: pierce_add = 1
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[COMMON] Barbed Shafts
+================================================================================
+ID: arch_c_barbed_shafts
+Rarity: common
+Description: Arrows cause bleeding, dealing 20% of hit damage every 0.5s for 3 seconds
+Tags: bleed, dot
+
+Effects:
+  - proc: on_primary_hit (chance=1.0) -> status_apply bleed, stacks=1, duration=3.0
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[COMMON] Hollow Points
+================================================================================
+ID: arch_c_hollow_points
+Rarity: common
+Description: Critical hits deal 15% more damage
+Tags: crit, damage
+
+Effects:
+  - stat_mul: crit_damage = 1.15
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[COMMON] Hunter's Instinct
+================================================================================
+ID: arch_c_hunters_instinct
+Rarity: common
+Description: 5% increased chance to land critical hits
+Tags: crit
+
+Effects:
+  - stat_add: crit_chance = 0.05
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[COMMON] Stamina Training
+================================================================================
+ID: arch_c_stamina_training
+Rarity: common
+Description: Dash recovers 10% faster
+Tags: cooldown, mobility
+
+Effects:
+  - stat_mul: roll_cooldown = 0.90
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[COMMON] Keen Focus
+================================================================================
+ID: arch_c_keen_focus
+Rarity: common
+Description: Deal 10% more damage to enemies within close range
+Tags: damage, close_range
+
+Effects:
+  - proc: while_enemy_within (range=140) -> stat_mul primary_damage = 1.10
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[COMMON] Light Quiver
+================================================================================
+ID: arch_c_light_quiver
+Rarity: common
+Description: Every 5th shot fires an extra arrow
+Tags: multishot, primary
+
+Effects:
+  - proc: every_n_primary_shots (n=5) -> weapon_mod bonus_projectiles=1, spread_deg=6
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[COMMON] XP Magnet
+================================================================================
+ID: arch_c_xp_magnet
+Rarity: common
+Description: Collect experience orbs from 15% farther away
+Tags: xp, utility
+
+Effects:
+  - stat_mul: xp_pickup_radius = 1.15
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[RARE] Ricochet Arrows
+================================================================================
+ID: arch_r_ricochet_arrows
+Rarity: rare
+Description: Arrows bounce to a nearby enemy after hitting
+Tags: projectile, chaos
+
+Effects:
+  - weapon_mod: ricochet, bounces=1, range=220
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[RARE] Split Shot
+================================================================================
+ID: arch_r_split_shot
+Rarity: rare
+Description: Every 4th shot fires 2 extra arrows in a spread
+Tags: multishot, chaos
+
+Effects:
+  - proc: every_n_primary_shots (n=4) -> weapon_mod bonus_projectiles=2, spread_deg=16
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[RARE] Marked Prey
+================================================================================
+ID: arch_r_marked_prey
+Rarity: rare
+Description: Critical hits mark enemies. Marked enemies take 20% more damage for 4 seconds
+Tags: crit, targeting
+
+Effects:
+  - proc: on_crit_hit (chance=1.0) -> status_apply marked, stacks=1, duration=4.0
+  - proc: while_target_has_status (status=marked) -> stat_mul primary_damage = 1.20
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[RARE] Bleeding Frenzy
+================================================================================
+ID: arch_r_bleeding_frenzy
+Rarity: rare
+Description: Deal 1% more damage for each bleeding enemy, up to 10%
+Tags: bleed, scaling
+
+Effects:
+  - proc: while_enemies_bleeding -> stat_add primary_damage_pct_per_bleed_stack=0.01, cap=0.10
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[RARE] Phase Roll: Focused
+================================================================================
+ID: arch_r_phase_roll_focused
+Rarity: rare
+Description: After dashing, your next 2 shots deal 30% more damage
+Tags: mobility, burst
+
+Effects:
+  - proc: after_roll -> buff focused_shots, duration=4.0, charges=2
+    stats: primary_damage mul=1.30
+    rules: no_stack_in_frenzy=true
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[RARE] Precision Momentum
+================================================================================
+ID: arch_r_precision_momentum
+Rarity: rare
+Description: Critical kills grant 10% movement speed for 1.5 seconds
+Tags: crit, mobility
+
+Effects:
+  - proc: on_crit_kill (chance=1.0) -> buff momentum, duration=1.5
+    stats: move_speed mul=1.10
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[RARE] Battle Rhythm
+================================================================================
+ID: arch_r_battle_rhythm
+Rarity: rare
+Description: Firing continuously for 2 seconds grants 15% attack speed. Breaks if you dash or take damage
+Tags: attack_speed, tempo
+
+Effects:
+  - proc: firing_continuously_for (seconds=2.0) -> buff battle_rhythm, duration=2.5
+    stats: attack_speed mul=1.15
+    rules: break_on_roll=true, break_on_hit_taken=true
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[RARE] Tactical Spacing
+================================================================================
+ID: arch_r_tactical_spacing
+Rarity: rare
+Description: Deal 25% more damage to distant enemies
+Tags: damage, positioning
+
+Effects:
+  - proc: while_target_beyond_range_pct (pct=0.55) -> stat_mul primary_damage = 1.25
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[RARE] Tactical Draw
+================================================================================
+ID: arch_r_tactical_draw
+Rarity: rare
+Description: Power Shot: -1.5s cooldown but deals 10% less damage
+Tags: power_shot, cooldown
+
+Effects:
+  - ability_mod: power_shot cooldown_add = -1.5
+  - ability_mod: power_shot damage_mul = 0.90
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[EPIC] Chain Reaction
+================================================================================
+ID: arch_e_chain_reaction
+Rarity: epic
+Description: Critical hits unleash lightning that chains to 2 nearby enemies, dealing 35% damage to each
+Tags: crit, chain, chaos
+
+Effects:
+  - proc: on_crit_hit (chance=1.0) -> chain_damage, element=lightning, jumps=2, range=180, damage_mul=0.35
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[EPIC] Arrowstorm
+================================================================================
+ID: arch_e_arrowstorm
+Rarity: epic
+Description: Every 10th shot releases a burst of 12 arrows in all directions, each dealing 40% damage
+Tags: aoe, chaos
+
+Effects:
+  - proc: every_n_primary_shots (n=10) -> aoe_projectile_burst, count=12, speed_mul=0.90, damage_mul=0.40
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[EPIC] Hemorrhage
+================================================================================
+ID: arch_e_hemorrhage
+Rarity: epic
+Description: Killing bleeding enemies causes them to explode, dealing damage to nearby foes
+Tags: bleed, explosion
+
+Effects:
+  - proc: on_kill_target_with_status (status=bleed, chance=1.0) -> aoe_explosion, radius=90, damage_mul_of_target_maxhp=0.06
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[EPIC] Ghost Quiver
+================================================================================
+ID: arch_e_ghost_quiver
+Rarity: epic
+Description: After dashing, your arrows pierce through all enemies for 1.25 seconds
+Tags: mobility, pierce
+
+Effects:
+  - proc: after_roll -> buff ghost_quiver, duration=1.25
+    stats: primary_ghosting add=1
+    rules: primary_only=true, excludes_abilities={power_shot}
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[EPIC] Perfect Predator
+================================================================================
+ID: arch_e_perfect_predator
+Rarity: epic
+Description: If you avoid damage for 5 seconds: gain 30% attack speed and 20% crit chance until hit
+Tags: tempo, crit
+
+Effects:
+  - proc: no_damage_taken_for (seconds=5.0) -> buff perfect_predator, duration=999
+    stats: attack_speed mul=1.30, crit_chance add=0.20
+    rules: break_on_hit_taken=true, disabled_during_frenzy=true
+
+--------------------------------------------------------------------------------
+
+================================================================================
+ABILITY-PATH UPGRADES (from ability_paths_archer.lua)
+================================================================================
+
+--- POWER SHOT ---
+
+================================================================================
+[COMMON] Scope Line
+================================================================================
+ID: ps_c_scope_line
+Rarity: common
+Ability: Power Shot
+Description: Power Shot travels 20% farther
+Tags: (ability-path)
+
+Effects:
+  - ability_mod: power_shot range_mul = 1.20
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[COMMON] Broadhead
+================================================================================
+ID: ps_c_broadhead
+Rarity: common
+Ability: Power Shot
+Description: Power Shot deals 15% more damage
+Tags: (ability-path)
+
+Effects:
+  - ability_mod: power_shot damage_mul = 1.15
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[RARE] Double Tap
+================================================================================
+ID: ps_r_double_tap
+Rarity: rare
+Ability: Power Shot
+Description: Power Shot fires a second arrow shortly after the first, dealing 55% damage
+Tags: (ability-path)
+
+Effects:
+  - ability_mod: power_shot fires_twice, value=1, delay=0.08, second_shot_damage_mul=0.55
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[RARE] Sundering Arrow
+================================================================================
+ID: ps_r_sundering
+Rarity: rare
+Ability: Power Shot
+Description: Power Shot applies Shattered Armor: target takes 12% more damage for 3 seconds
+Tags: (ability-path)
+
+Effects:
+  - ability_mod: power_shot applies_status, status=shattered_armor, duration=3.0
+    status_effect: target_damage_taken_mul=1.12
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[EPIC] Execution Line
+================================================================================
+ID: ps_e_execution_line
+Rarity: epic
+Ability: Power Shot
+Description: Power Shot deals 35% more damage to elites and MCMs
+Tags: (ability-path)
+
+Effects:
+  - ability_mod: power_shot bonus_damage_vs_elite_mcm = 1.35
+
+--------------------------------------------------------------------------------
+
+--- ENTANGLE (Arrow Volley) ---
+
+================================================================================
+[COMMON] Wide Volley
+================================================================================
+ID: en_c_wide_volley
+Rarity: common
+Ability: Entangle (Arrow Volley)
+Description: Arrow Volley fires 3 additional arrows
+Tags: (ability-path)
+
+Effects:
+  - ability_mod: entangle arrow_count_add = 3
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[COMMON] Quick Cast
+================================================================================
+ID: en_c_quick_cast
+Rarity: common
+Ability: Entangle (Arrow Volley)
+Description: Arrow Volley cooldown reduced by 10%
+Tags: (ability-path)
+
+Effects:
+  - ability_mod: entangle cooldown_mul = 0.90
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[RARE] Thorned Volley
+================================================================================
+ID: en_r_thorned_volley
+Rarity: rare
+Ability: Entangle (Arrow Volley)
+Description: Arrow Volley deals 35% more damage
+Tags: (ability-path)
+
+Effects:
+  - ability_mod: entangle damage_mul = 1.35
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[RARE] Piercing Vines
+================================================================================
+ID: en_r_piercing_vines
+Rarity: rare
+Ability: Entangle (Arrow Volley)
+Description: Arrow Volley vines pierce through 3 additional enemies
+Tags: (ability-path)
+
+Effects:
+  - ability_mod: entangle pierce_add = 3
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[EPIC] Thorn Storm
+================================================================================
+ID: en_e_thorn_storm
+Rarity: epic
+Ability: Entangle (Arrow Volley)
+Description: Arrow Volley: +5 arrows, 15% more damage, 15% faster cooldown
+Tags: (ability-path)
+
+Effects:
+  - ability_mod: entangle arrow_count_add = 5
+  - ability_mod: entangle damage_mul = 1.15
+  - ability_mod: entangle cooldown_mul = 0.85
+
+--------------------------------------------------------------------------------
+
+--- FRENZY ---
+
+================================================================================
+[COMMON] Hot Start
+================================================================================
+ID: fr_c_hot_start
+Rarity: common
+Ability: Frenzy
+Description: Frenzy charges 10% faster from dealing damage
+Tags: (ability-path)
+
+Effects:
+  - ability_mod: frenzy charge_gain_mul = 1.10
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[COMMON] Long Breath
+================================================================================
+ID: fr_c_long_breath
+Rarity: common
+Ability: Frenzy
+Description: Frenzy lasts 1 second longer
+Tags: (ability-path)
+
+Effects:
+  - ability_mod: frenzy duration_add = 1.0
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[RARE] Predatory Focus
+================================================================================
+ID: fr_r_predatory_focus
+Rarity: rare
+Ability: Frenzy
+Description: During Frenzy, gain 8% additional crit chance
+Tags: (ability-path)
+
+Effects:
+  - ability_mod: frenzy crit_chance_add = 0.08
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[RARE] Adrenal Step
+================================================================================
+ID: fr_r_adrenal_step
+Rarity: rare
+Ability: Frenzy
+Description: During Frenzy: 10% move speed and 15% faster dash recovery
+Tags: (ability-path)
+
+Effects:
+  - ability_mod: frenzy move_speed_mul = 1.10
+  - ability_mod: frenzy roll_cooldown_mul = 0.85
+
+--------------------------------------------------------------------------------
+
+================================================================================
+[EPIC] Kill Fuel
+================================================================================
+ID: fr_e_kill_fuel
+Rarity: epic
+Ability: Frenzy
+Description: Kills during Frenzy extend its duration by 0.15s, up to 2s total
+Tags: (ability-path)
+
+Effects:
+  - ability_mod: frenzy extend_on_kill=0.15, max_extend=2.0
+
+--------------------------------------------------------------------------------
+
+================================================================================
+END OF UPGRADES
+================================================================================
+Total: 26 stat upgrades + 15 ability-path upgrades = 41 upgrades

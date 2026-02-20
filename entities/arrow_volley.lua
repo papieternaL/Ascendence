@@ -1,8 +1,27 @@
 -- Arrow Volley Entity
--- AOE attack with falling arrow rain effect
+-- AOE attack with falling arrow rain effect (primary-arrow visual style)
 
 local ArrowVolley = {}
 ArrowVolley.__index = ArrowVolley
+
+-- Lazy-load primary arrow image for falling-arrow visuals
+local function getArrowImage()
+    if ArrowVolley._arrowImage then return ArrowVolley._arrowImage end
+    local paths = {
+        "assets/2D assets/Tiny Town/Tiles/tile_0119.png",
+        "assets/32x32/fb1097.png",
+        "images/32x32/fb1097.png",
+    }
+    for _, p in ipairs(paths) do
+        local success, result = pcall(love.graphics.newImage, p)
+        if success and result then
+            result:setFilter("nearest", "nearest")
+            ArrowVolley._arrowImage = result
+            return result
+        end
+    end
+    return nil
+end
 
 -- Configuration
 local DAMAGE_RADIUS = 60      -- AOE damage radius
@@ -129,30 +148,36 @@ function ArrowVolley:draw()
     love.graphics.circle("line", self.x, self.y, self.damageRadius)
     love.graphics.setLineWidth(1)
     
-    -- Draw falling arrows
+    -- Draw falling arrows (primary-arrow sprite style, pointing down)
+    local arrowImg = getArrowImage()
+    local imgW, imgH = 16, 16
+    if arrowImg then
+        imgW, imgH = arrowImg:getDimensions()
+    end
+    local scale = 1.0
+    if arrowImg then
+        local refSize = (self.arrows[1] and self.arrows[1].size) or 8
+        scale = (refSize * 2) / math.max(imgW, imgH)
+    end
+    local cx, cy = imgW * 0.5, imgH * 0.5
+    local rot = math.pi / 2  -- Point downward
+
     for _, arrow in ipairs(self.arrows) do
-        -- Calculate arrow alpha based on progress
         local arrowAlpha = fadeProgress
         if self.timer < 0.1 then
-            -- Fade in at start
             arrowAlpha = arrowAlpha * (self.timer / 0.1)
         end
-        
-        love.graphics.setColor(0.8, 0.1, 0.1, arrowAlpha)
-        
-        -- Draw arrow as a triangle pointing down
-        local size = arrow.size
-        local x, y = arrow.currentX, arrow.currentY
-        
-        -- Triangle vertices (pointing down)
-        local x1 = x
-        local y1 = y - size
-        local x2 = x - size * 0.4
-        local y2 = y + size * 0.5
-        local x3 = x + size * 0.4
-        local y3 = y + size * 0.5
-        
-        love.graphics.polygon("fill", x1, y1, x2, y2, x3, y3)
+
+        love.graphics.setColor(1, 1, 1, arrowAlpha)
+        if arrowImg then
+            love.graphics.draw(arrowImg, arrow.currentX, arrow.currentY, rot, scale, scale, cx, cy)
+        else
+            -- Fallback: triangle pointing down
+            love.graphics.setColor(0.8, 0.1, 0.1, arrowAlpha)
+            local size = arrow.size
+            local x, y = arrow.currentX, arrow.currentY
+            love.graphics.polygon("fill", x, y - size, x - size * 0.4, y + size * 0.5, x + size * 0.4, y + size * 0.5)
+        end
     end
     
     -- Impact flash effect

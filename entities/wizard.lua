@@ -1,6 +1,7 @@
 -- Wizard Enemy - Cone Attack + Root (MCM)
 -- Teaches positioning and root escape for boss Phase 2
 local JuiceManager = require("systems.juice_manager")
+local StatusEffects = require("systems.status_effects")
 
 local Wizard = {}
 Wizard.__index = Wizard
@@ -8,12 +9,19 @@ Wizard.__index = Wizard
 Wizard.image = nil
 
 function Wizard:new(x, y)
-    -- Load scorpion sprite
+    -- Load sprite (Tiny Dungeon mage, then fallback)
     if not Wizard.image then
-        local success, result = pcall(love.graphics.newImage, "assets/32x32/fb1400.png")
-        if success then
-            Wizard.image = result
-            Wizard.image:setFilter("nearest", "nearest")
+        local paths = {
+            "assets/2D assets/Tiny Dungeon/Tiles/tile_0072.png",
+            "assets/32x32/fb1400.png",
+        }
+        for _, p in ipairs(paths) do
+            local success, result = pcall(love.graphics.newImage, p)
+            if success and result then
+                Wizard.image = result
+                Wizard.image:setFilter("nearest", "nearest")
+                break
+            end
         end
     end
     
@@ -30,7 +38,7 @@ function Wizard:new(x, y)
         
         -- Cone attack behavior
         coneCooldown = 0,
-        coneInterval = 3.5, -- Cone attack every 3.5s
+        coneInterval = 5.0, -- Cone attack every 5s (slower for dodge window)
         coneRange = 280, -- Max range for cone
         coneAngle = math.pi / 3, -- 60-degree cone
         rootDuration = 1.5, -- How long root lasts
@@ -45,9 +53,11 @@ function Wizard:new(x, y)
         -- Cast animation
         isCasting = false,
         castTime = 0,
-        castDuration = 0.6, -- Telegraph before cone fires
+        castDuration = 1.15, -- Telegraph before cone fires (0.2s longer for visibility)
         coneFiredAt = nil,
         coneFiredAngle = 0,
+        statuses = {},
+        glowPhase = 0,
     }
     setmetatable(wizard, Wizard)
     return wizard
@@ -60,7 +70,9 @@ function Wizard:update(dt, playerX, playerY, onConeAttack)
     if self.flashTime > 0 then
         self.flashTime = self.flashTime - dt
     end
-    
+
+    self.glowPhase = (self.glowPhase or 0) + dt * 3
+
     -- Update knockback
     self.knockbackX = self.knockbackX * (1 - self.knockbackDecay * dt)
     self.knockbackY = self.knockbackY * (1 - self.knockbackDecay * dt)
@@ -89,20 +101,28 @@ function Wizard:update(dt, playerX, playerY, onConeAttack)
         self.y = self.y + self.knockbackY * dt
         return
     end
+
+    if StatusEffects.isFrozen(self) then
+        self.x = self.x + self.knockbackX * dt
+        self.y = self.y + self.knockbackY * dt
+        return
+    end
+
+    local effectiveSpeed = self.speed * StatusEffects.getSpeedMul(self)
     
     -- Behavior: stay at medium range
     if distance > self.coneRange * 0.7 then
         -- Move closer
         local normDx = dx / distance
         local normDy = dy / distance
-        self.x = self.x + normDx * self.speed * dt + self.knockbackX * dt
-        self.y = self.y + normDy * self.speed * dt + self.knockbackY * dt
+        self.x = self.x + normDx * effectiveSpeed * dt + self.knockbackX * dt
+        self.y = self.y + normDy * effectiveSpeed * dt + self.knockbackY * dt
     elseif distance < self.coneRange * 0.4 then
         -- Back away
         local normDx = dx / distance
         local normDy = dy / distance
-        self.x = self.x - normDx * self.speed * dt + self.knockbackX * dt
-        self.y = self.y - normDy * self.speed * dt + self.knockbackY * dt
+        self.x = self.x - normDx * effectiveSpeed * dt + self.knockbackX * dt
+        self.y = self.y - normDy * effectiveSpeed * dt + self.knockbackY * dt
     else
         -- In range: prepare to cast
         self.x = self.x + self.knockbackX * dt
@@ -158,17 +178,17 @@ function Wizard:draw()
     love.graphics.setColor(0.5, 0.3, 1, 0.15)
     love.graphics.circle("fill", self.x, self.y, self.size + 8)
     
-    -- Cast telegraph (growing circle)
+    -- Cast telegraph (growing circle) - brighter for visibility
     if self.isCasting then
         local castProgress = self.castTime / self.castDuration
-        love.graphics.setColor(0.8, 0.2, 1, 0.3 + castProgress * 0.3)
+        love.graphics.setColor(1.0, 0.4, 1.0, 0.5 + castProgress * 0.4)
         love.graphics.circle("fill", self.x, self.y, self.size + castProgress * 20)
     end
     
-    -- Cone just fired: draw cone hitbox briefly so player sees what hit them
+    -- Cone just fired: draw cone hitbox so player sees what hit them (0.4s visibility)
     if self.coneFiredAt then
         local age = love.timer.getTime() - self.coneFiredAt
-        if age >= 0.2 then
+        if age >= 0.4 then
             self.coneFiredAt = nil
         else
             local half = self.coneAngle / 2
@@ -177,8 +197,8 @@ function Wizard:draw()
             local y1 = self.y + math.sin(self.coneFiredAngle - half) * r
             local x2 = self.x + math.cos(self.coneFiredAngle + half) * r
             local y2 = self.y + math.sin(self.coneFiredAngle + half) * r
-            local alpha = 0.4 * (1 - age / 0.2)
-            love.graphics.setColor(0.8, 0.2, 1, alpha)
+            local alpha = 0.7 * (1 - age / 0.4)
+            love.graphics.setColor(1.0, 0.4, 1.0, alpha)
             love.graphics.polygon("fill", self.x, self.y, x1, y1, x2, y2)
         end
     end
@@ -186,8 +206,8 @@ function Wizard:draw()
     -- Draw sprite
     local img = Wizard.image
     if img then
-        local scale = 1.0
         local imgW = img:getWidth()
+        local scale = (imgW <= 18) and 1.5 or 1.0  -- Tiny 16px sprites scale up
         local imgH = img:getHeight()
         
         -- Flash effect or normal color (check JuiceManager too)
@@ -216,7 +236,30 @@ function Wizard:draw()
         end
         love.graphics.circle("fill", self.x, self.y, self.size)
     end
-    
+
+    -- Staff overlay (procedural, cast animation)
+    local staffLen = 22
+    local staffAngle
+    if self.isCasting then
+        local castProgress = self.castTime / self.castDuration
+        staffAngle = -math.pi / 2 + castProgress * (math.pi / 2)
+    else
+        staffAngle = -math.pi / 2 + math.sin(self.glowPhase or 0) * 0.1
+    end
+    local sx = self.x + math.cos(staffAngle) * staffLen * 0.4
+    local sy = self.y + math.sin(staffAngle) * staffLen * 0.4
+    local ex = self.x + math.cos(staffAngle) * staffLen
+    local ey = self.y + math.sin(staffAngle) * staffLen
+    love.graphics.setColor(0.5, 0.35, 0.2, 1)
+    love.graphics.setLineWidth(3)
+    love.graphics.line(sx, sy, ex, ey)
+    if self.isCasting then
+        local pulse = 0.6 + math.sin((self.glowPhase or 0) * 8) * 0.4
+        love.graphics.setColor(1, 0.6, 1, pulse)
+        love.graphics.circle("fill", ex, ey, 4)
+    end
+    love.graphics.setLineWidth(1)
+
     love.graphics.setColor(1, 1, 1, 1)
 end
 

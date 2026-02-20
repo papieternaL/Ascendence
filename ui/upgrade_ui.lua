@@ -17,6 +17,83 @@ local rarityGlow = {
   epic = { 0.7, 0.3, 0.9, 0.5 },
 }
 
+-- UTF-8-safe truncation (avoids splitting multi-byte chars, prevents getWidth crash)
+local function utf8SafeSub(str, charCount)
+  if not str or charCount <= 0 then return "" end
+  if utf8 and utf8.len and utf8.offset then
+    local len = utf8.len(str)
+    if not len or charCount >= len then return str end
+    local byteEnd = utf8.offset(str, charCount + 1)
+    if byteEnd then
+      return str:sub(1, byteEnd - 1)
+    end
+  end
+  -- Fallback: find last UTF-8 char boundary at or before byte charCount
+  local n = math.min(charCount, #str)
+  while n > 0 do
+    local b = str:byte(n)
+    if not b or b < 0x80 or b > 0xBF then  -- ASCII or start byte
+      return str:sub(1, n)
+    end
+    n = n - 1
+  end
+  return ""
+end
+
+local function splitUtf8Units(str)
+  local units = {}
+  if not str or str == "" then return units end
+  local i = 1
+  local n = #str
+  while i <= n do
+    local b = str:byte(i)
+    local len = 1
+    if b and b >= 0xF0 then
+      len = 4
+    elseif b and b >= 0xE0 then
+      len = 3
+    elseif b and b >= 0xC0 then
+      len = 2
+    end
+    if i + len - 1 > n then
+      len = 1
+    end
+    table.insert(units, str:sub(i, i + len - 1))
+    i = i + len
+  end
+  return units
+end
+
+local function truncateToWidth(text, maxWidth, font, suffix)
+  if not text or text == "" or not font then return text or "" end
+  local utf8Available = (utf8 and utf8.len and utf8.offset) and true or false
+  if font:getWidth(text) <= maxWidth then return text end
+  suffix = suffix or "..."
+  local suffixW = font:getWidth(suffix)
+  local maxContentW = maxWidth - suffixW
+  if maxContentW <= 0 then return suffix end
+
+  if utf8Available then
+    local charCount = utf8.len(text)
+    if not charCount or charCount <= 0 then return suffix end
+    for n = charCount, 1, -1 do
+      local sub = utf8SafeSub(text, n)
+      if sub and font:getWidth(sub) <= maxContentW then
+        return sub .. suffix
+      end
+    end
+  else
+    local units = splitUtf8Units(text)
+    for n = #units, 1, -1 do
+      local sub = table.concat(units, "", 1, n)
+      if font:getWidth(sub) <= maxContentW then
+        return sub .. suffix
+      end
+    end
+  end
+  return suffix
+end
+
 function UpgradeUI:new()
   local ui = setmetatable({
     visible = false,
@@ -34,12 +111,13 @@ function UpgradeUI:new()
   return ui
 end
 
-function UpgradeUI:show(options, onSelect)
+function UpgradeUI:show(options, onSelect, playerStats)
   self.visible = true
   self.options = options or {}
   self.selectedIndex = 1
   self.hoveredIndex = nil
   self.onSelect = onSelect
+  self.playerStats = playerStats
   self.showTime = 0
   
   -- Initialize card animations (stagger entrance + flip)
@@ -109,6 +187,10 @@ function UpgradeUI:draw()
   
   local screenWidth = love.graphics.getWidth()
   local screenHeight = love.graphics.getHeight()
+  
+  -- Use UI fonts (linear filter) for readability when available
+  local uiFont = _G.PixelFonts and (_G.PixelFonts.uiBody or _G.PixelFonts.body)
+  if uiFont then love.graphics.setFont(uiFont) end
   
   -- Darken background
   love.graphics.setColor(0, 0, 0, 0.7)
@@ -217,9 +299,9 @@ function UpgradeUI:drawCardFront(upgrade, width, height, isSelected)
   local rarityWidth = font:getWidth(rarityText)
   love.graphics.print(rarityText, width / 2 - rarityWidth / 2, 8)
   
-  -- Upgrade name
+  -- Upgrade name (UTF-8-safe truncate if too long)
   love.graphics.setColor(1, 1, 1, 1)
-  local name = upgrade.name or "Unknown"
+  local name = truncateToWidth(upgrade.name or "Unknown", width - 20, font, "...")
   local nameWidth = font:getWidth(name)
   love.graphics.print(name, width / 2 - nameWidth / 2, 45)
   
@@ -231,25 +313,41 @@ function UpgradeUI:drawCardFront(upgrade, width, height, isSelected)
   love.graphics.setColor(0.8, 0.8, 0.8, 1)
   local description = self:getUpgradeDescription(upgrade)
   
-  -- Word wrap the description
+  -- Word wrap the description; use font-based line height and clip before tags
   local maxWidth = width - 20
+  local lineHeight = font:getHeight() + 2
+  local tagY = height - 35
   local lines = self:wrapText(description, maxWidth)
   local lineY = 85
   for _, line in ipairs(lines) do
+    if lineY + lineHeight > tagY then break end
     love.graphics.print(line, 10, lineY)
-    lineY = lineY + 18
+    lineY = lineY + lineHeight
   end
   
-  -- Tags at bottom
+  -- Current -> next preview for already-picked upgrades
+  if self.playerStats and self.playerStats.hasUpgrade and self.playerStats:hasUpgrade(upgrade.id) then
+    local preview = self:getCurrentNextPreview(upgrade)
+    if preview and preview ~= "" then
+      love.graphics.setColor(0.4, 0.9, 0.5, 1)
+      local previewLines = self:wrapText(preview, maxWidth)
+      for _, line in ipairs(previewLines) do
+        if lineY + lineHeight > tagY then break end
+        love.graphics.print(line, 10, lineY)
+        lineY = lineY + lineHeight
+      end
+    end
+  end
+  
+  -- Tags at bottom (UTF-8-safe truncate with ellipsis if too wide)
   if upgrade.tags and #upgrade.tags > 0 then
     love.graphics.setColor(0.5, 0.5, 0.5, 0.8)
     local tagText = table.concat(upgrade.tags, " • ")
-    local tagWidth = font:getWidth(tagText)
-    if tagWidth > width - 10 then
-      tagText = table.concat({upgrade.tags[1], upgrade.tags[2] or ""}, " • ")
-      tagWidth = font:getWidth(tagText)
+    tagText = truncateToWidth(tagText, width - 20, font, "...")
+    if tagText ~= "" then
+      local tagWidth = font:getWidth(tagText)
+      love.graphics.print(tagText, width / 2 - tagWidth / 2, height - 25)
     end
-    love.graphics.print(tagText, width / 2 - tagWidth / 2, height - 25)
   end
 end
 
@@ -294,6 +392,65 @@ function UpgradeUI:playFlipSound()
     self.flipSound:stop()
     self.flipSound:play()
   end
+end
+
+function UpgradeUI:getCurrentNextPreview(upgrade)
+  if not self.playerStats or not upgrade.effects or #upgrade.effects == 0 then return "" end
+  local parts = {}
+  for _, effect in ipairs(upgrade.effects) do
+    local stat = effect.stat
+    local value = effect.value
+    local name = self:formatStatName(stat or "")
+    if effect.kind == "stat_add" and stat then
+      local current = self.playerStats:getPermanent(stat) or 0
+      local nextVal = current + (value or 0)
+      if stat == "crit_chance" then
+        table.insert(parts, string.format("Crit Chance: %d%% -> %d%% next", math.floor(current * 100), math.floor(nextVal * 100)))
+      else
+        table.insert(parts, string.format("%s: %.0f -> %.0f next", name, current, nextVal))
+      end
+    elseif effect.kind == "stat_mul" and stat then
+      local current = self.playerStats:getPermanent(stat) or 0
+      local nextVal = current * (value or 1)
+      if stat == "crit_chance" then
+        table.insert(parts, string.format("Crit Chance: %d%% -> %d%% next", math.floor(current * 100), math.floor(nextVal * 100)))
+      elseif stat == "crit_damage" then
+        table.insert(parts, string.format("Crit Damage: %.0f%% -> %.0f%% next", current * 100, nextVal * 100))
+      elseif stat == "roll_cooldown" then
+        table.insert(parts, string.format("Roll CD: %.1fs -> %.1fs next", current, nextVal))
+      else
+        table.insert(parts, string.format("%s: %.0f -> %.0f next", name, current, nextVal))
+      end
+    elseif effect.kind == "weapon_mod" and effect.mod == "pierce_add" then
+      local current = self.playerStats:getWeaponMod("pierce") or 0
+      local nextVal = current + (value or 0)
+      table.insert(parts, string.format("Pierce: %d -> %d next", current, nextVal))
+    elseif effect.kind == "weapon_mod" and effect.mod == "ricochet" then
+      local current = self.playerStats:getWeaponMod("ricochet_bounces") or 0
+      local addBounces = effect.bounces or 1
+      local nextVal = current + addBounces
+      table.insert(parts, string.format("Bounce targets: %d -> %d next", current, nextVal))
+    elseif effect.kind == "ability_mod" then
+      local ability = effect.ability or ""
+      local mod = effect.mod or ""
+      local baseVal = 1.0
+      if mod == "damage_mul" or mod == "range_mul" then
+        baseVal = 3.0
+        if ability == "entangle" or ability == "arrow_volley" then baseVal = 1.5 end
+      end
+      local current = self.playerStats:getAbilityValue(ability, mod, baseVal)
+      local nextVal = current * (value or 1)
+      local label = ability:gsub("_", " "):gsub("^%l", string.upper)
+      if mod == "damage_mul" then
+        table.insert(parts, string.format("%s dmg: %.0f%% -> %.0f%% next", label, current * 100, nextVal * 100))
+      elseif mod == "range_mul" then
+        table.insert(parts, string.format("%s range: %.0f%% -> %.0f%% next", label, current * 100, nextVal * 100))
+      elseif mod == "cooldown_mul" then
+        table.insert(parts, string.format("%s CD: %.0f%% -> %.0f%% next", label, current * 100, nextVal * 100))
+      end
+    end
+  end
+  return table.concat(parts, "\n")
 end
 
 function UpgradeUI:getUpgradeDescription(upgrade)

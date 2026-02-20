@@ -1,6 +1,7 @@
 -- Healer Enemy - Support enemy that heals nearby wounded allies
 local JuiceManager = require("systems.juice_manager")
 local StatusComponent = require("systems.status_component")
+local StatusEffects = require("systems.status_effects")
 
 local Healer = {}
 Healer.__index = Healer
@@ -9,11 +10,17 @@ Healer.image = nil
 
 local function loadImageOnce()
     if Healer.image then return end
-    -- Use green/white sprite for healer
-    local success, img = pcall(love.graphics.newImage, "assets/32x32/fb31.png")
-    if success and img then
-        Healer.image = img
-        Healer.image:setFilter("nearest", "nearest")
+    local paths = {
+        "assets/2D assets/Tiny Dungeon/Tiles/tile_0074.png",
+        "assets/32x32/fb31.png",
+    }
+    for _, p in ipairs(paths) do
+        local success, img = pcall(love.graphics.newImage, p)
+        if success and img then
+            Healer.image = img
+            Healer.image:setFilter("nearest", "nearest")
+            break
+        end
     end
 end
 
@@ -47,6 +54,7 @@ function Healer:new(x, y)
         
         -- Status Component
         statusComponent = StatusComponent:new(),
+        statuses = {},
     }
     setmetatable(healer, Healer)
     return healer
@@ -120,18 +128,22 @@ function Healer:update(dt, playerX, playerY, allEnemies)
             targetX, targetY = playerX, playerY
         end
         
-        if targetX and targetY then
+        if StatusEffects.isFrozen(self) then
+            self.x = self.x + self.knockbackX * dt
+            self.y = self.y + self.knockbackY * dt
+        elseif targetX and targetY then
             local dx = targetX - self.x
             local dy = targetY - self.y
             local distance = math.sqrt(dx * dx + dy * dy)
             
             if distance > 0 then
+                local effectiveSpeed = self.speed * StatusEffects.getSpeedMul(self)
                 dx = dx / distance
                 dy = dy / distance
                 
                 -- Move with knockback applied
-                self.x = self.x + (dx * self.speed + self.knockbackX) * dt
-                self.y = self.y + (dy * self.speed + self.knockbackY) * dt
+                self.x = self.x + (dx * effectiveSpeed + self.knockbackX) * dt
+                self.y = self.y + (dy * effectiveSpeed + self.knockbackY) * dt
             end
         else
             -- Just apply knockback
@@ -174,18 +186,52 @@ end
 function Healer:draw()
     if not self.isAlive then return end
     
-    -- Draw healing beam if actively healing
+    -- Draw healing beam if actively healing (vibrant layered beam + green crosses)
     if self.isHealing and self.currentTarget then
-        love.graphics.setColor(0.3, 1, 0.5, 0.4)
-        love.graphics.setLineWidth(3)
-        love.graphics.line(self.x, self.y, self.currentTarget.x, self.currentTarget.y)
-        love.graphics.setLineWidth(1)
-        
-        -- Healing particles along the beam
-        local pulseAlpha = 0.5 + math.sin(self.glowPhase * 4) * 0.5
-        love.graphics.setColor(0.5, 1, 0.7, pulseAlpha)
-        love.graphics.circle("fill", self.x, self.y, 8)
-        love.graphics.circle("fill", self.currentTarget.x, self.currentTarget.y, 6)
+        local tx, ty = self.currentTarget.x, self.currentTarget.y
+        local dx = tx - self.x
+        local dy = ty - self.y
+        local dist = math.sqrt(dx * dx + dy * dy)
+        if dist > 0 then
+            local nx, ny = dx / dist, dy / dist
+            -- Outer glow (thick, soft)
+            love.graphics.setColor(0.2, 1, 0.5, 0.25)
+            love.graphics.setLineWidth(14)
+            love.graphics.line(self.x, self.y, tx, ty)
+            -- Mid glow
+            love.graphics.setColor(0.35, 1, 0.6, 0.5)
+            love.graphics.setLineWidth(8)
+            love.graphics.line(self.x, self.y, tx, ty)
+            -- Core beam (bright)
+            local pulse = 0.7 + math.sin(self.glowPhase * 6) * 0.3
+            love.graphics.setColor(0.4, 1, 0.65, pulse)
+            love.graphics.setLineWidth(4)
+            love.graphics.line(self.x, self.y, tx, ty)
+            love.graphics.setLineWidth(1)
+
+            -- Green crosses traveling along beam (healing indicator)
+            local crossCount = 4
+            for i = 1, crossCount do
+                local t = ((self.glowPhase * 2 + (i - 1) / crossCount) % 1)
+                local cx = self.x + dx * t
+                local cy = self.y + dy * t
+                local crossSize = 5
+                local alpha = 0.9 * (1 - math.abs(t - 0.5) * 1.2)
+                if alpha > 0 then
+                    love.graphics.setColor(0.3, 1, 0.4, alpha)
+                    love.graphics.setLineWidth(2)
+                    love.graphics.line(cx - crossSize, cy, cx + crossSize, cy)
+                    love.graphics.line(cx, cy - crossSize, cx, cy + crossSize)
+                    love.graphics.setLineWidth(1)
+                end
+            end
+        end
+
+        -- Endpoint glows
+        local pulseAlpha = 0.6 + math.sin(self.glowPhase * 4) * 0.4
+        love.graphics.setColor(0.4, 1, 0.6, pulseAlpha)
+        love.graphics.circle("fill", self.x, self.y, 10)
+        love.graphics.circle("fill", tx, ty, 8)
     end
     
     -- Draw glow aura (pulsing)
@@ -202,7 +248,8 @@ function Healer:draw()
     
     -- Draw healer sprite
     if Healer.image then
-        local scale = (self.size * 2) / Healer.image:getWidth()
+        local imgW = Healer.image:getWidth()
+        local scale = (imgW <= 18) and ((self.size * 2) / 16) or ((self.size * 2) / imgW)
         love.graphics.draw(Healer.image, self.x, self.y, 0, scale, scale, Healer.image:getWidth()/2, Healer.image:getHeight()/2)
     else
         -- Fallback circle (green/white)

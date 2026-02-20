@@ -25,19 +25,22 @@ function Menu:new(gameState)
 end
 
 function Menu:init()
-    -- Create fonts using Kenney Pixel
+    -- Create fonts using Kenney Pixel (linear filter for UI readability)
     local fontPath = "assets/Other/Fonts/Kenney Pixel.ttf"
-    local function loadFont(size)
+    local function loadFont(size, useLinear)
         local ok, f = pcall(love.graphics.newFont, fontPath, size)
-        if ok then f:setFilter("nearest", "nearest"); return f end
+        if ok then
+            f:setFilter(useLinear and "linear" or "nearest", useLinear and "linear" or "nearest")
+            return f
+        end
         f = love.graphics.newFont(size)
-        f:setFilter("nearest", "nearest")
+        f:setFilter(useLinear and "linear" or "nearest", useLinear and "linear" or "nearest")
         return f
     end
-    self.titleFont  = loadFont(48)
-    self.headerFont = loadFont(28)
-    self.bodyFont   = loadFont(18)
-    self.smallFont  = loadFont(14)
+    self.titleFont  = loadFont(72, false)
+    self.headerFont = loadFont(48, false)
+    self.bodyFont   = loadFont(35, true)   -- UI body: linear for readability
+    self.smallFont  = loadFont(26, true)   -- UI small: linear for long descriptions
     
     -- Initialize floating particles
     for i = 1, 30 do
@@ -49,6 +52,15 @@ function Menu:init()
             alpha = math.random() * 0.5 + 0.2
         })
     end
+end
+
+-- Helper: draw text with subtle shadow for readability
+local function drawTextWithShadow(text, x, y)
+    local r, g, b, a = love.graphics.getColor()
+    love.graphics.setColor(0, 0, 0, 0.6)
+    love.graphics.print(text, x + 1, y + 1)
+    love.graphics.setColor(r, g, b, a)
+    love.graphics.print(text, x, y)
 end
 
 -- Helper function to check if a point is inside a button
@@ -79,10 +91,15 @@ function Menu:update(dt)
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
     
     if state == States.MENU then
-        -- Check if hovering over BEGIN TRIAL button
         if self:isPointInButton(mx, my, w/2, h * 0.6, 200, 50) then
             self.selectedIndex = 1
             self.hoveredButton = "begin"
+        elseif self:isPointInButton(mx, my, w/2, h * 0.68, 200, 50) then
+            self.selectedIndex = 2
+            self.hoveredButton = "settings"
+        elseif self:isPointInButton(mx, my, w/2, h * 0.76, 200, 50) then
+            self.selectedIndex = 3
+            self.hoveredButton = "quit"
         else
             self.hoveredButton = nil
         end
@@ -96,12 +113,12 @@ function Menu:draw()
     -- Draw appropriate screen
     if state == States.MENU then
         self:drawMainMenu()
+    elseif state == States.SETTINGS then
+        self:drawSettings()
     elseif state == States.CHARACTER_SELECT then
         self:drawCharacterSelect()
     elseif state == States.BIOME_SELECT then
         self:drawBiomeSelect()
-    elseif state == States.DIFFICULTY_SELECT then
-        self:drawDifficultySelect()
     elseif state == States.GAME_OVER then
         self:drawGameOver()
     elseif state == States.VICTORY then
@@ -156,24 +173,77 @@ function Menu:drawMainMenu()
     
     -- Main title
     love.graphics.setColor(1, 0.85, 0.6, 1)
-    love.graphics.print(title, w/2 - titleW/2, h * 0.25 + self.titleBob)
+    drawTextWithShadow(title, w/2 - titleW/2, h * 0.25 + self.titleBob)
     
     -- Subtitle
     love.graphics.setFont(self.bodyFont)
     local subtitle = "A Descent Into Darkness"
     local subW = self.bodyFont:getWidth(subtitle)
-    love.graphics.setColor(0.6, 0.5, 0.4, 0.8)
-    love.graphics.print(subtitle, w/2 - subW/2, h * 0.25 + 60 + self.titleBob)
+    love.graphics.setColor(0.7, 0.6, 0.5, 0.9)
+    drawTextWithShadow(subtitle, w/2 - subW/2, h * 0.25 + 60 + self.titleBob)
     
     -- Begin button
     self:drawButton("BEGIN TRIAL", w/2, h * 0.6, 200, 50, self.selectedIndex == 1)
+    -- Settings button
+    self:drawButton("SETTINGS", w/2, h * 0.68, 200, 50, self.selectedIndex == 2)
+    -- Quit button
+    self:drawButton("QUIT", w/2, h * 0.76, 200, 50, self.selectedIndex == 3)
     
     -- Instructions
     love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(0.5, 0.5, 0.5, 0.7)
+    love.graphics.setColor(0.65, 0.6, 0.55, 0.9)
     local instr = "Press ENTER or Click to Continue"
     local instrW = self.smallFont:getWidth(instr)
-    love.graphics.print(instr, w/2 - instrW/2, h * 0.85)
+    drawTextWithShadow(instr, w/2 - instrW/2, h * 0.85)
+end
+
+function Menu:drawSlider(label, value, x, y, width, isSelected)
+    local clamped = math.max(0, math.min(1, value or 0))
+    love.graphics.setColor(0.2, 0.2, 0.26, 0.95)
+    love.graphics.rectangle("fill", x, y, width, 16, 6, 6)
+
+    local fillW = math.floor((width - 4) * clamped)
+    if isSelected then
+        love.graphics.setColor(0.95, 0.75, 0.35, 1)
+    else
+        love.graphics.setColor(0.65, 0.72, 0.95, 1)
+    end
+    love.graphics.rectangle("fill", x + 2, y + 2, fillW, 12, 5, 5)
+
+    love.graphics.setColor(0.9, 0.9, 0.95, 1)
+    love.graphics.setFont(self.bodyFont)
+    drawTextWithShadow(label, x - 220, y - 7)
+    love.graphics.setFont(self.smallFont)
+    drawTextWithShadow(string.format("%d%%", math.floor(clamped * 100)), x + width + 20, y - 3)
+end
+
+function Menu:drawSettings()
+    local w, h = love.graphics.getWidth(), love.graphics.getHeight()
+    self:drawBackground()
+
+    love.graphics.setFont(self.headerFont)
+    love.graphics.setColor(1, 0.9, 0.7, 1)
+    local title = "SETTINGS"
+    drawTextWithShadow(title, w/2 - self.headerFont:getWidth(title)/2, h * 0.15)
+
+    local settings = _G.settings and _G.settings:get() or nil
+    local music = settings and settings.audio and settings.audio.musicVolume or 0.35
+    local sfx = settings and settings.audio and settings.audio.sfxVolume or 0.5
+    local shake = settings and settings.graphics and settings.graphics.screenShake or 1.0
+
+    local barX = w/2 - 120
+    local startY = h * 0.35
+    local gap = 70
+
+    self:drawSlider("Music Volume", music, barX, startY, 260, self.selectedIndex == 1)
+    self:drawSlider("Sound Volume", sfx, barX, startY + gap, 260, self.selectedIndex == 2)
+    self:drawSlider("Screen Shake", shake, barX, startY + gap * 2, 260, self.selectedIndex == 3)
+
+    self:drawButton("BACK", w/2, h * 0.78, 180, 50, self.selectedIndex == 4)
+
+    love.graphics.setFont(self.smallFont)
+    love.graphics.setColor(0.75, 0.72, 0.68, 0.95)
+    drawTextWithShadow("UP/DOWN: select  LEFT/RIGHT: adjust  ESC: back", w/2 - 280, h * 0.88)
 end
 
 function Menu:drawCharacterSelect()
@@ -186,7 +256,7 @@ function Menu:drawCharacterSelect()
     local header = "CHOOSE YOUR HERO"
     local headerW = self.headerFont:getWidth(header)
     love.graphics.setColor(1, 0.9, 0.7, 1)
-    love.graphics.print(header, w/2 - headerW/2, 40)
+    drawTextWithShadow(header, w/2 - headerW/2, 40)
     
     -- Character cards
     local classes = {"ARCHER", "WIZARD", "KNIGHT"}
@@ -207,8 +277,8 @@ function Menu:drawCharacterSelect()
     
     -- Back button hint
     love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(0.5, 0.5, 0.5, 0.7)
-    love.graphics.print("ESC to go back | ENTER to select | Arrow keys to navigate", 20, h - 30)
+    love.graphics.setColor(0.65, 0.6, 0.55, 0.9)
+    drawTextWithShadow("ESC to go back | ENTER to select | Arrow keys to navigate", 20, h - 30)
 end
 
 function Menu:drawHeroCard(classData, x, y, w, h, isSelected)
@@ -247,15 +317,15 @@ function Menu:drawHeroCard(classData, x, y, w, h, isSelected)
     love.graphics.setFont(self.headerFont)
     local nameW = self.headerFont:getWidth(classData.name)
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print(classData.name, x + w/2 - nameW/2, y + 90)
+    drawTextWithShadow(classData.name, x + w/2 - nameW/2, y + 90)
     
     -- Description
     love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(0.7, 0.7, 0.7, 0.9)
+    love.graphics.setColor(0.78, 0.78, 0.75, 0.95)
     local descLines = self:wrapText(classData.description, w - 20)
     for i, line in ipairs(descLines) do
         local lineW = self.smallFont:getWidth(line)
-        love.graphics.print(line, x + w/2 - lineW/2, y + 125 + (i-1) * 16)
+        drawTextWithShadow(line, x + w/2 - lineW/2, y + 125 + (i-1) * 18)
     end
     
     -- Stats
@@ -293,7 +363,7 @@ function Menu:drawBiomeSelect()
     local header = "SELECT YOUR DOMAIN"
     local headerW = self.headerFont:getWidth(header)
     love.graphics.setColor(1, 0.9, 0.7, 1)
-    love.graphics.print(header, w/2 - headerW/2, 40)
+    drawTextWithShadow(header, w/2 - headerW/2, 40)
     
     -- Biome cards
     local biomes = {"DEEPWOOD", "GREY_HALLS", "ASH_CRAG"}
@@ -314,8 +384,8 @@ function Menu:drawBiomeSelect()
     
     -- Instructions
     love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(0.5, 0.5, 0.5, 0.7)
-    love.graphics.print("ESC to go back | ENTER to select | Arrow keys to navigate", 20, h - 30)
+    love.graphics.setColor(0.65, 0.6, 0.55, 0.9)
+    drawTextWithShadow("ESC to go back | ENTER to select | Arrow keys to navigate", 20, h - 30)
 end
 
 function Menu:drawBiomeCard(biomeData, x, y, w, h, isSelected)
@@ -346,7 +416,7 @@ function Menu:drawBiomeCard(biomeData, x, y, w, h, isSelected)
     love.graphics.setFont(self.headerFont)
     local nameW = self.headerFont:getWidth(biomeData.name)
     love.graphics.setColor(biomeData.accentColor[1], biomeData.accentColor[2], biomeData.accentColor[3], 1)
-    love.graphics.print(biomeData.name, x + w/2 - nameW/2, y + 20)
+    drawTextWithShadow(biomeData.name, x + w/2 - nameW/2, y + 20)
     
     -- Subtitle
     love.graphics.setFont(self.smallFont)
@@ -355,11 +425,11 @@ function Menu:drawBiomeCard(biomeData, x, y, w, h, isSelected)
     love.graphics.print(biomeData.subtitle, x + w/2 - subW/2, y + 55)
     
     -- Description
-    love.graphics.setColor(0.6, 0.6, 0.6, 0.9)
+    love.graphics.setColor(0.72, 0.72, 0.68, 0.95)
     local descLines = self:wrapText(biomeData.description, w - 20)
     for i, line in ipairs(descLines) do
         local lineW = self.smallFont:getWidth(line)
-        love.graphics.print(line, x + w/2 - lineW/2, y + 85 + (i-1) * 16)
+        drawTextWithShadow(line, x + w/2 - lineW/2, y + 85 + (i-1) * 18)
     end
 end
 
@@ -373,7 +443,7 @@ function Menu:drawDifficultySelect()
     local header = "CHOOSE YOUR TRIAL"
     local headerW = self.headerFont:getWidth(header)
     love.graphics.setColor(1, 0.9, 0.7, 1)
-    love.graphics.print(header, w/2 - headerW/2, 40)
+    drawTextWithShadow(header, w/2 - headerW/2, 40)
     
     -- Difficulty options
     local difficulties = {"ADEPT", "VETERAN", "ASCENDANT"}
@@ -400,8 +470,8 @@ function Menu:drawDifficultySelect()
     
     -- Instructions
     love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(0.5, 0.5, 0.5, 0.7)
-    love.graphics.print("ESC to go back | ENTER to begin your ascent", 20, h - 30)
+    love.graphics.setColor(0.65, 0.6, 0.55, 0.9)
+    drawTextWithShadow("ESC to go back | ENTER to begin your ascent", 20, h - 30)
 end
 
 function Menu:drawDifficultyCard(diffData, x, y, w, h, isSelected, color)
@@ -441,11 +511,11 @@ function Menu:drawDifficultyCard(diffData, x, y, w, h, isSelected, color)
     love.graphics.print(diffData.subtitle, x + w/2 - subW/2, y + 50)
     
     -- Description
-    love.graphics.setColor(0.5, 0.5, 0.5, 0.9)
+    love.graphics.setColor(0.65, 0.65, 0.6, 0.95)
     local descLines = self:wrapText(diffData.description, w - 20)
     for i, line in ipairs(descLines) do
         local lineW = self.smallFont:getWidth(line)
-        love.graphics.print(line, x + w/2 - lineW/2, y + 75 + (i-1) * 16)
+        drawTextWithShadow(line, x + w/2 - lineW/2, y + 75 + (i-1) * 18)
     end
 end
 
@@ -461,14 +531,14 @@ function Menu:drawGameOver()
     local text = "FALLEN"
     local textW = self.titleFont:getWidth(text)
     love.graphics.setColor(0.8, 0.2, 0.2, 1)
-    love.graphics.print(text, w/2 - textW/2, h * 0.3)
+    drawTextWithShadow(text, w/2 - textW/2, h * 0.3)
     
     -- Subtitle
     love.graphics.setFont(self.bodyFont)
     local sub = "Your journey ends here..."
     local subW = self.bodyFont:getWidth(sub)
-    love.graphics.setColor(0.6, 0.4, 0.4, 0.9)
-    love.graphics.print(sub, w/2 - subW/2, h * 0.3 + 60)
+    love.graphics.setColor(0.75, 0.5, 0.5, 0.95)
+    drawTextWithShadow(sub, w/2 - subW/2, h * 0.3 + 60)
     
     -- Retry button
     self:drawButton("TRY AGAIN", w/2, h * 0.6, 180, 50, self.selectedIndex == 1)
@@ -493,14 +563,14 @@ function Menu:drawVictory()
         love.graphics.print(text, w/2 - textW/2 - i, h * 0.3 + self.titleBob - i)
     end
     love.graphics.setColor(1, 0.9, 0.5, 1)
-    love.graphics.print(text, w/2 - textW/2, h * 0.3 + self.titleBob)
+    drawTextWithShadow(text, w/2 - textW/2, h * 0.3 + self.titleBob)
     
     -- Subtitle
     love.graphics.setFont(self.bodyFont)
     local sub = "You have conquered the darkness!"
     local subW = self.bodyFont:getWidth(sub)
-    love.graphics.setColor(0.8, 0.7, 0.4, 0.9)
-    love.graphics.print(sub, w/2 - subW/2, h * 0.3 + 60)
+    love.graphics.setColor(0.85, 0.75, 0.45, 0.95)
+    drawTextWithShadow(sub, w/2 - subW/2, h * 0.3 + 60)
     
     -- Menu button
     self:drawButton("MAIN MENU", w/2, h * 0.6, 180, 50, self.selectedIndex == 1)
@@ -544,9 +614,9 @@ function Menu:drawButton(text, cx, cy, w, h, isSelected)
     if isSelected then
         love.graphics.setColor(1, 0.9, 0.7, 1)
     else
-        love.graphics.setColor(0.7, 0.7, 0.7, 1)
+        love.graphics.setColor(0.75, 0.75, 0.7, 1)
     end
-    love.graphics.print(text, cx - textW/2, cy - textH/2)
+    drawTextWithShadow(text, cx - textW/2, cy - textH/2)
 end
 
 function Menu:wrapText(text, maxWidth)
@@ -580,9 +650,54 @@ function Menu:keypressed(key)
     local States = self.gameState.States
     
     if state == States.MENU then
-        if key == "return" or key == "space" then
-            self.gameState:transitionTo(States.CHARACTER_SELECT)
-            self.selectedIndex = 1
+        if key == "up" or key == "down" then
+            if key == "up" then
+                self.selectedIndex = self.selectedIndex - 1
+                if self.selectedIndex < 1 then self.selectedIndex = 3 end
+            else
+                self.selectedIndex = self.selectedIndex + 1
+                if self.selectedIndex > 3 then self.selectedIndex = 1 end
+            end
+        elseif key == "return" or key == "space" then
+            if self.selectedIndex == 1 then
+                self.gameState:transitionTo(States.CHARACTER_SELECT)
+                self.selectedIndex = 1
+            elseif self.selectedIndex == 2 then
+                self.gameState:transitionTo(States.SETTINGS)
+                self.selectedIndex = 1
+            else
+                love.event.quit()
+            end
+        end
+    elseif state == States.SETTINGS then
+        local mgr = _G.settings
+        local step = 0.05
+        if key == "up" then
+            self.selectedIndex = self.selectedIndex - 1
+            if self.selectedIndex < 1 then self.selectedIndex = 4 end
+        elseif key == "down" then
+            self.selectedIndex = self.selectedIndex + 1
+            if self.selectedIndex > 4 then self.selectedIndex = 1 end
+        elseif key == "left" or key == "right" then
+            local dir = (key == "right") and 1 or -1
+            if mgr then
+                local s = mgr:get()
+                if self.selectedIndex == 1 then
+                    mgr:setMusicVolume((s.audio.musicVolume or 0.35) + step * dir)
+                elseif self.selectedIndex == 2 then
+                    mgr:setSFXVolume((s.audio.sfxVolume or 0.5) + step * dir)
+                elseif self.selectedIndex == 3 then
+                    mgr:setScreenShake((s.graphics.screenShake or 1.0) + step * dir)
+                end
+            end
+        elseif key == "return" or key == "space" then
+            if self.selectedIndex == 4 then
+                self.gameState:transitionTo(States.MENU)
+                self.selectedIndex = 2
+            end
+        elseif key == "escape" then
+            self.gameState:transitionTo(States.MENU)
+            self.selectedIndex = 2
         end
     elseif state == States.CHARACTER_SELECT then
         local classes = {"ARCHER", "WIZARD", "KNIGHT"}
@@ -610,26 +725,12 @@ function Menu:keypressed(key)
             if self.selectedIndex > #biomes then self.selectedIndex = 1 end
         elseif key == "return" or key == "space" then
             self.gameState:selectBiome(biomes[self.selectedIndex])
-            self.gameState:transitionTo(States.DIFFICULTY_SELECT)
+            self.gameState:setDefaultDifficulty()
+            self.gameState:initFloor(1)
+            self.gameState:transitionTo(States.PLAYING)
             self.selectedIndex = 1
         elseif key == "escape" then
             self.gameState:transitionTo(States.CHARACTER_SELECT)
-            self.selectedIndex = 1
-        end
-    elseif state == States.DIFFICULTY_SELECT then
-        local difficulties = {"ADEPT", "VETERAN", "ASCENDANT"}
-        if key == "left" then
-            self.selectedIndex = self.selectedIndex - 1
-            if self.selectedIndex < 1 then self.selectedIndex = #difficulties end
-        elseif key == "right" then
-            self.selectedIndex = self.selectedIndex + 1
-            if self.selectedIndex > #difficulties then self.selectedIndex = 1 end
-        elseif key == "return" or key == "space" then
-            self.gameState:selectDifficulty(difficulties[self.selectedIndex])
-            self.gameState:initFloor(1)
-            self.gameState:transitionTo(States.PLAYING)
-        elseif key == "escape" then
-            self.gameState:transitionTo(States.BIOME_SELECT)
             self.selectedIndex = 1
         end
     elseif state == States.GAME_OVER then
@@ -659,17 +760,20 @@ function Menu:mousepressed(x, y, button)
     local States = self.gameState.States
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
     
-    -- Debug: print click info
-    print("Mouse clicked at:", x, y, "State:", state)
-    
     if state == States.MENU then
-        -- Check "BEGIN TRIAL" button
-        local inButton = self:isPointInButton(x, y, w/2, h * 0.6, 200, 50)
-        print("In BEGIN button:", inButton, "Button center:", w/2, h * 0.6)
-        if inButton then
-            print("Transitioning to CHARACTER_SELECT")
+        if self:isPointInButton(x, y, w/2, h * 0.6, 200, 50) then
             self.gameState:transitionTo(States.CHARACTER_SELECT)
             self.selectedIndex = 1
+        elseif self:isPointInButton(x, y, w/2, h * 0.68, 200, 50) then
+            self.gameState:transitionTo(States.SETTINGS)
+            self.selectedIndex = 1
+        elseif self:isPointInButton(x, y, w/2, h * 0.76, 200, 50) then
+            love.event.quit()
+        end
+    elseif state == States.SETTINGS then
+        if self:isPointInButton(x, y, w/2, h * 0.78, 180, 50) then
+            self.gameState:transitionTo(States.MENU)
+            self.selectedIndex = 2
         end
         
     elseif state == States.CHARACTER_SELECT then
@@ -708,29 +812,10 @@ function Menu:mousepressed(x, y, button)
             
             if x >= cardX and x <= cardX + cardWidth and y >= cardY and y <= cardY + cardHeight then
                 self.gameState:selectBiome(biomeKey)
-                self.gameState:transitionTo(States.DIFFICULTY_SELECT)
-                self.selectedIndex = 1
-                return
-            end
-        end
-        
-    elseif state == States.DIFFICULTY_SELECT then
-        -- Check difficulty cards
-        local difficulties = {"ADEPT", "VETERAN", "ASCENDANT"}
-        local cardWidth = 200
-        local cardHeight = 120
-        local spacing = 40
-        local totalWidth = #difficulties * cardWidth + (#difficulties - 1) * spacing
-        local startX = w/2 - totalWidth/2
-        
-        for i, diffKey in ipairs(difficulties) do
-            local cardX = startX + (i - 1) * (cardWidth + spacing)
-            local cardY = h/2 - cardHeight/2
-            
-            if x >= cardX and x <= cardX + cardWidth and y >= cardY and y <= cardY + cardHeight then
-                self.gameState:selectDifficulty(diffKey)
+                self.gameState:setDefaultDifficulty()
                 self.gameState:initFloor(1)
                 self.gameState:transitionTo(States.PLAYING)
+                self.selectedIndex = 1
                 return
             end
         end
@@ -786,24 +871,6 @@ function Menu:mousemoved(x, y)
         local startX = w/2 - totalWidth/2
         
         for i, biomeKey in ipairs(biomes) do
-            local cardX = startX + (i - 1) * (cardWidth + spacing)
-            local cardY = h/2 - cardHeight/2
-            
-            if x >= cardX and x <= cardX + cardWidth and y >= cardY and y <= cardY + cardHeight then
-                self.selectedIndex = i
-                return
-            end
-        end
-        
-    elseif state == States.DIFFICULTY_SELECT then
-        local difficulties = {"ADEPT", "VETERAN", "ASCENDANT"}
-        local cardWidth = 200
-        local cardHeight = 120
-        local spacing = 40
-        local totalWidth = #difficulties * cardWidth + (#difficulties - 1) * spacing
-        local startX = w/2 - totalWidth/2
-        
-        for i, diffKey in ipairs(difficulties) do
             local cardX = startX + (i - 1) * (cardWidth + spacing)
             local cardY = h/2 - cardHeight/2
             

@@ -4,9 +4,22 @@ local Tree = require("entities.tree")
 local Enemy = require("entities.enemy")
 local Lunger = require("entities.lunger")
 local Treent = require("entities.treent")
+local Slime = require("entities.slime")
+local Bat = require("entities.bat")
+local Skeleton = require("entities.skeleton")
+local Imp = require("entities.imp")
+local Wolf = require("entities.wolf")
+local Wizard = require("entities.wizard")
+local Healer = require("entities.healer")
+local DruidTreent = require("entities.druid_treent")
+local SmallTreent = require("entities.small_treent")
+local BarkProjectile = require("entities.bark_projectile")
 local Arrow = require("entities.arrow")
+local ArrowVolley = require("entities.arrow_volley")
+local EnemySpawner = require("systems.enemy_spawner")
 local Particles = require("systems.particles")
 local ScreenShake = require("systems.screen_shake")
+local Camera = require("systems.camera")
 local Tilemap = require("systems.tilemap")
 local ForestTilemap = require("systems.forest_tilemap")
 local XpSystem = require("systems.xp_system")
@@ -18,6 +31,9 @@ local StatsOverlay = require("ui.stats_overlay")
 local DamageNumbers = require("systems.damage_numbers")
 local StatusEffects = require("systems.status_effects")
 local ProcEngine = require("systems.proc_engine")
+local ObstacleNav = require("systems.obstacle_navigation")
+local Config = require("data.config")
+local BossPortal = require("entities.boss_portal")
 
 -- Load upgrade data
 local ArcherUpgrades = require("data.upgrades_archer")
@@ -39,11 +55,22 @@ function GameScene:new(gameState)
         enemies = {},
         lungers = {},
         treents = {},
+        slimes = {},
+        bats = {},
+        skeletons = {},
+        imps = {},
+        wolves = {},
+        smallTreents = {},
+        wizards = {},
+        healers = {},
+        druidTreents = {},
+        barkProjectiles = {},
+        enemySpawner = nil,
         fireCooldown = 0,
-        -- Dash ability
+        -- Dash ability (from config)
         dashCooldown = 0,
-        dashDuration = 0.15,
-        dashSpeed = 600,
+        dashDuration = Config.Player.dashDuration or 0.2,
+        dashSpeed = Config.Player.dashSpeed or 800,
         isDashing = false,
         dashTime = 0,
         dashDirX = 0,
@@ -54,6 +81,10 @@ function GameScene:new(gameState)
         rarityCharge = nil,
         upgradeUI = nil,
         isPaused = false,  -- Pause during upgrade selection
+        pauseMenuVisible = false,
+        pauseMenuIndex = 1,
+        pauseSettingsVisible = false,
+        pauseSettingsIndex = 1,
         statsOverlay = nil,
         damageNumbers = nil,
 
@@ -65,6 +96,7 @@ function GameScene:new(gameState)
         frenzyCharge = 0,
         frenzyChargeMax = 100,
         frenzyActive = false,
+        frenzyAuraTimer = 0,
         frenzyCombatGainPerSec = 3.5,
         frenzyKillGain = 10,
 
@@ -75,6 +107,11 @@ function GameScene:new(gameState)
 
         -- Hit-freeze (brief game pause on impact for juice)
         hitFreezeTime = 0,
+
+        -- Arrow Volley (falling-arrow impact zones)
+        arrowVolleys = {},
+        bossPortal = nil,
+        bossPortalSpawned = false,
     }
     setmetatable(scene, GameScene)
     return scene
@@ -89,9 +126,11 @@ function GameScene:load()
     local difficulty = self.gameState.selectedDifficulty
     local biome = self.gameState.selectedBiome
     
-    -- Initialize player with class stats
-    self.player = Player:new(screenWidth / 2, screenHeight / 2)
-    self.mouseX, self.mouseY = screenWidth / 2, screenHeight / 2
+    -- Initialize player with class stats (spawn at world center)
+    local worldW = Config.World and Config.World.width or screenWidth
+    local worldH = Config.World and Config.World.height or screenHeight
+    self.player = Player:new(worldW / 2, worldH / 2)
+    self.mouseX, self.mouseY = worldW / 2, worldH / 2
     
     if heroClass then
         self.player.maxHealth = heroClass.baseHP
@@ -113,6 +152,14 @@ function GameScene:load()
     -- Initialize systems
     self.particles = Particles:new()
     self.screenShake = ScreenShake:new()
+    
+    -- Initialize camera (follows player, clamped to world bounds)
+    local worldW = Config.World and Config.World.width or 2400
+    local worldH = Config.World and Config.World.height or 1600
+    self.camera = Camera:new(0, 0, worldW, worldH)
+    -- Snap camera to player spawn immediately (no lerp on first frame)
+    self.camera:setPosition(screenWidth / 2 - love.graphics.getWidth() / 2,
+                            screenHeight / 2 - love.graphics.getHeight() / 2)
     
     -- Use forest tilemap for lush forest biome
     self.forestTilemap = ForestTilemap:new()
@@ -161,49 +208,50 @@ function GameScene:load()
     
     -- Spawn enemies based on floor and difficulty
     self:spawnEnemies()
+    
+    -- Continuous spawning
+    self.enemySpawner = EnemySpawner:new(self)
+    
+    -- Apply stats (including 15% cooldown reduction) at run start
+    self:applyStatsToPlayer()
 end
 
 function GameScene:spawnEnemies()
-    local screenWidth = love.graphics.getWidth()
-    local screenHeight = love.graphics.getHeight()
+    local worldW = Config.World and Config.World.width or love.graphics.getWidth()
+    local worldH = Config.World and Config.World.height or love.graphics.getHeight()
+    local centerX, centerY = worldW / 2, worldH / 2
     local floor = self.gameState.currentFloor
     
-    -- More enemies on higher floors
-    local numEnemies = 2 + math.floor(floor / 2)
-    local numLungers = 1 + math.floor(floor / 4)
-    local numTreents = math.floor(floor / 3)
+    -- More enemies on higher floors (increased lunger pressure)
+    local density = (Config.enemy_spawner and Config.enemy_spawner.density_multiplier) or 1.0
+    local numLungers = math.max(1, math.floor((2 + math.floor(floor / 2)) * density))
+    local numTreents = math.floor((math.floor(floor / 3)) * density)
     
     self.enemies = {}
     self.lungers = {}
     self.treents = {}
-    
-    -- Spawn regular enemies
-    for i = 1, numEnemies do
-        local angle = math.random() * math.pi * 2
-        local distance = math.random(200, 400)
-        local x = screenWidth / 2 + math.cos(angle) * distance
-        local y = screenHeight / 2 + math.sin(angle) * distance
-        
-        local enemy = Enemy:new(x, y)
-        -- Apply difficulty multipliers
-        enemy.health = enemy.health * self.difficultyMult.enemyHealthMult
-        enemy.maxHealth = enemy.health
-        enemy.damage = (enemy.damage or 10) * self.difficultyMult.enemyDamageMult
-        
-        table.insert(self.enemies, enemy)
-    end
+    self.slimes = {}
+    self.bats = {}
+    self.skeletons = {}
+    self.imps = {}
+    self.wolves = {}
+    self.smallTreents = {}
+    self.wizards = {}
+    self.healers = {}
+    self.druidTreents = {}
     
     -- Spawn lungers
     for i = 1, numLungers do
         local angle = math.random() * math.pi * 2
         local distance = math.random(300, 500)
-        local x = screenWidth / 2 + math.cos(angle) * distance
-        local y = screenHeight / 2 + math.sin(angle) * distance
+        local x = centerX + math.cos(angle) * distance
+        local y = centerY + math.sin(angle) * distance
         
         local lunger = Lunger:new(x, y)
-        lunger.health = lunger.health * self.difficultyMult.enemyHealthMult
+        lunger.health = lunger.health * self:getEnemyHpMultiplier()
         lunger.maxHealth = lunger.health
-        
+        lunger.speed = (lunger.speed or 30) * 1.12
+        lunger.lungeSpeed = (lunger.lungeSpeed or 500) * 1.12
         table.insert(self.lungers, lunger)
     end
 
@@ -211,15 +259,127 @@ function GameScene:spawnEnemies()
     for i = 1, numTreents do
         local angle = math.random() * math.pi * 2
         local distance = math.random(350, 550)
-        local x = screenWidth / 2 + math.cos(angle) * distance
-        local y = screenHeight / 2 + math.sin(angle) * distance
+        local x = centerX + math.cos(angle) * distance
+        local y = centerY + math.sin(angle) * distance
 
         local treent = Treent:new(x, y)
-        treent.health = treent.health * self.difficultyMult.enemyHealthMult
+        treent.health = treent.health * self:getEnemyHpMultiplier()
         treent.maxHealth = treent.health
         treent.damage = (treent.damage or 18) * self.difficultyMult.enemyDamageMult
-
+        treent.speed = (treent.speed or 28) * 1.12
         table.insert(self.treents, treent)
+    end
+    if self.enemySpawner then
+        self.enemySpawner:syncCountFromScene()
+    end
+end
+
+function GameScene:getEnemyHpMultiplier()
+    local cfg = Config.enemy_hp_scaling or {}
+    if cfg.enabled == false then
+        return (self.difficultyMult or {}).enemyHealthMult or 1
+    end
+    local base = (self.difficultyMult or {}).enemyHealthMult or 1
+    local levelMult = 1
+    if self.xpSystem and cfg.level_factor then
+        levelMult = 1 + (self.xpSystem.level - 1) * cfg.level_factor
+        levelMult = math.max(1, levelMult)
+    end
+    local floorMult = 1
+    if self.gameState and self.gameState.currentFloor and cfg.floor_factor then
+        floorMult = 1 + self.gameState.currentFloor * cfg.floor_factor
+        floorMult = math.max(1, floorMult)
+    end
+    local timeMult = 1
+    if self.enemySpawner and cfg.time_cap then
+        timeMult = math.min(cfg.time_cap or 2.5, self.enemySpawner.difficulty_multiplier or 1)
+    end
+    return base * levelMult * floorMult * timeMult
+end
+
+function GameScene:spawnEnemy(enemy_type, x, y)
+    local mult = self.difficultyMult or { enemyHealthMult = 1, enemyDamageMult = 1 }
+    local hpMult = self:getEnemyHpMultiplier()
+    local speedScale = 1.12
+    local entity
+    
+    if enemy_type == "slime" then
+        entity = Slime:new(x, y)
+        entity.health = entity.health * hpMult
+        entity.maxHealth = entity.health
+        entity.damage = 8 * mult.enemyDamageMult
+        entity.speed = (entity.speed or 30) * speedScale
+        table.insert(self.slimes, entity)
+    elseif enemy_type == "bat" then
+        entity = Bat:new(x, y)
+        entity.health = entity.health * hpMult
+        entity.maxHealth = entity.health
+        entity.damage = 6 * mult.enemyDamageMult
+        entity.speed = (entity.speed or 70) * speedScale
+        table.insert(self.bats, entity)
+    elseif enemy_type == "skeleton" then
+        entity = Skeleton:new(x, y)
+        entity.health = entity.health * hpMult
+        entity.maxHealth = entity.health
+        entity.damage = 10 * mult.enemyDamageMult
+        entity.speed = (entity.speed or 55) * speedScale
+        table.insert(self.skeletons, entity)
+    elseif enemy_type == "wolf" then
+        entity = Wolf:new(x, y)
+        entity.health = entity.health * hpMult
+        entity.maxHealth = entity.health
+        entity.damage = (entity.damage or 12) * mult.enemyDamageMult
+        entity.speed = (entity.speed or 80) * speedScale
+        table.insert(self.wolves, entity)
+    elseif enemy_type == "lunger" then
+        entity = Lunger:new(x, y)
+        entity.health = entity.health * hpMult
+        entity.maxHealth = entity.health
+        entity.speed = (entity.speed or 30) * speedScale
+        entity.lungeSpeed = (entity.lungeSpeed or 500) * speedScale
+        table.insert(self.lungers, entity)
+    elseif enemy_type == "small_treent" then
+        entity = SmallTreent:new(x, y)
+        entity.health = entity.health * hpMult
+        entity.maxHealth = entity.health
+        entity.damage = (entity.damage or 9) * mult.enemyDamageMult
+        entity.speed = (entity.speed or 70) * speedScale
+        table.insert(self.smallTreents, entity)
+    elseif enemy_type == "wizard" then
+        entity = Wizard:new(x, y)
+        entity.health = entity.health * hpMult
+        entity.maxHealth = entity.health
+        entity.damage = (entity.damage or 10) * mult.enemyDamageMult
+        entity.speed = (entity.speed or 45) * speedScale
+        table.insert(self.wizards, entity)
+    elseif enemy_type == "treent" then
+        entity = Treent:new(x, y)
+        entity.health = entity.health * hpMult
+        entity.maxHealth = entity.health
+        entity.damage = (entity.damage or 18) * mult.enemyDamageMult
+        entity.speed = (entity.speed or 28) * speedScale
+        table.insert(self.treents, entity)
+    elseif enemy_type == "healer" then
+        entity = Healer:new(x, y)
+        entity.health = entity.health * hpMult
+        entity.maxHealth = entity.health
+        entity.speed = (entity.speed or 60) * speedScale
+        table.insert(self.healers, entity)
+    elseif enemy_type == "druid_treent" then
+        entity = DruidTreent:new(x, y)
+        entity.health = entity.health * hpMult
+        entity.maxHealth = entity.health
+        entity.damage = (entity.damage or 8) * mult.enemyDamageMult
+        entity.speed = (entity.speed or 50) * speedScale
+        table.insert(self.druidTreents, entity)
+    else
+        -- Fallback to slime (enemy/imp removed from roster)
+        entity = Slime:new(x, y)
+        entity.health = entity.health * hpMult
+        entity.maxHealth = entity.health
+        entity.damage = 8 * mult.enemyDamageMult
+        entity.speed = (entity.speed or 30) * speedScale
+        table.insert(self.slimes, entity)
     end
 end
 
@@ -230,7 +390,7 @@ function GameScene:update(dt)
     end
 
     -- Pause gameplay while stats overlay is open
-    self.isPaused = (self.statsOverlay and self.statsOverlay:isVisible()) or false
+    self.isPaused = ((self.statsOverlay and self.statsOverlay:isVisible()) or false) or self.pauseMenuVisible
     
     -- Check for pending level-ups
     if self.xpSystem and self.xpSystem:hasPendingLevelUp() and not self.upgradeUI:isVisible() then
@@ -255,16 +415,58 @@ function GameScene:update(dt)
         self.damageNumbers:update(dt)
     end
     
+    -- Continuous enemy spawning
+    if self.enemySpawner then
+        self.enemySpawner:update(dt)
+    end
+    
     -- Update XP orbs
     if self.xpSystem and self.player then
-        local pickupRadius = self.playerStats and self.playerStats:get("xp_pickup_radius") or 60
+        local pickupRadius = self.playerStats and self.playerStats:get("xp_pickup_radius") or 63
         self.xpSystem:update(dt, self.player.x, self.player.y, pickupRadius)
+    end
+
+    -- Spawn boss portal when player reaches required level
+    local levelRequired = Config.boss_progression and Config.boss_progression.level_required or 10
+    if self.xpSystem and self.xpSystem.level >= levelRequired and not self.bossPortalSpawned and self.player then
+        self.bossPortal = BossPortal:new(self.player.x + 150, self.player.y)
+        self.bossPortalSpawned = true
+        if _G.audio then _G.audio:playSFX("portal_open") end
+    end
+
+    -- Update boss portal and check activation
+    if self.bossPortal and self.player then
+        self.bossPortal:update(dt, self.player)
+        if self.bossPortal:canActivate(self.player) and self.bossPortal:activate() then
+            if _G.audio then _G.audio:playSFX("portal_open") end
+            self.gameState:enterBossFight()
+        end
     end
     
     -- Update player stats (tick buff durations)
     if self.playerStats then
         -- Keep frenzy flag in sync with buff presence
         self.frenzyActive = self.playerStats:hasBuff("frenzy")
+        if self.player then
+            self.player.isFrenzyActive = self.frenzyActive
+        end
+        -- Emit frenzy aura particles periodically
+        if self.frenzyActive and self.player then
+            self.frenzyAuraTimer = (self.frenzyAuraTimer or 0) - dt
+            if self.frenzyAuraTimer <= 0 then
+                local px, py = self.player:getPosition()
+                self.particles:createFrenzyAura(px, py)
+                self.frenzyAuraTimer = 0.08
+            end
+        end
+
+        -- Always-on HP regen
+        if self.player and not self.player:isDead() then
+            local regen = self.playerStats:get("hp_regen_per_sec") or 0
+            if regen > 0 then
+                self.player.health = math.min(self.player.maxHealth, self.player.health + regen * dt)
+            end
+        end
 
         self.playerStats:update(dt, {
             wasHit = false,  -- Would be set by damage system
@@ -287,16 +489,28 @@ function GameScene:update(dt)
     for _, list in ipairs(self:getAllEnemyLists()) do
         for _, e in ipairs(list) do
             if e.isAlive then
-                local ticks = StatusEffects.update(e, dt)
+                local bleedBase = 2
+                local burnBase = 2
+                if self.playerStats then
+                    burnBase = burnBase * (self.playerStats:getElementMod("fire", "burn_damage_mul", 1.0) or 1.0)
+                end
+                local ticks = StatusEffects.update(e, dt, bleedBase, burnBase)
                 for _, tick in ipairs(ticks) do
                     if tick.entity.isAlive then
                         local died = tick.entity:takeDamage(tick.damage, nil, nil, 0)
+                        self:applyFrenzyLifesteal(tick.damage)
                         local ex, ey = tick.entity:getPosition()
                         if self.damageNumbers then
-                            self.damageNumbers:add(ex, ey - tick.entity:getSize(), tick.damage, { isCrit = false, color = {0.8, 0.2, 0.2} })
+                            local dmgColor = (tick.status == "burn") and {1.0, 0.5, 0.1} or {0.8, 0.2, 0.2}
+                            self.damageNumbers:add(ex, ey - tick.entity:getSize(), tick.damage, { isCrit = false, color = dmgColor })
                         end
-                        self.particles:createBleedDrip(ex, ey)
+                        if tick.status == "burn" then
+                            self.particles:createBleedDrip(ex, ey, {1.0, 0.4, 0.1})
+                        else
+                            self.particles:createBleedDrip(ex, ey)
+                        end
                         if died then
+                            if self.enemySpawner then self.enemySpawner:onEnemyDeath() end
                             self.particles:createExplosion(ex, ey, {0.8, 0.1, 0.1})
                             self.screenShake:add(3, 0.12)
                             self.xpSystem:spawnOrb(ex, ey, 8 + math.random(0, 5))
@@ -312,74 +526,33 @@ function GameScene:update(dt)
         end
     end
     
+    -- Update camera to follow player
+    if self.camera and self.player then
+        self.camera:update(dt, self.player.x, self.player.y)
+    end
+    
     -- Update player
     if self.player then
-        -- Handle dash
+        self.player.isDashing = self.isDashing
         if self.isDashing then
+            self.player:update(dt)
             self.dashTime = self.dashTime - dt
             if self.dashTime <= 0 then
                 self.isDashing = false
             else
-                -- Move in dash direction
                 self.player.x = self.player.x + self.dashDirX * self.dashSpeed * dt
                 self.player.y = self.player.y + self.dashDirY * self.dashSpeed * dt
-                
-                -- Create dash trail particles
                 self.particles:createDashTrail(self.player.x, self.player.y)
             end
         else
             self.player:update(dt)
         end
-        
+        self:resolvePlayerBlockers()
+
         local playerX, playerY = self.player:getPosition()
         
-        -- Find nearest enemy for targeting
-        local nearestEnemy = nil
-        local nearestDistance = self.attackRange
-        
-        -- Check regular enemies
-        for i, enemy in ipairs(self.enemies) do
-            if enemy.isAlive then
-                local ex, ey = enemy:getPosition()
-                local dx = ex - playerX
-                local dy = ey - playerY
-                local distance = math.sqrt(dx * dx + dy * dy)
-                
-                if distance < nearestDistance then
-                    nearestEnemy = enemy
-                    nearestDistance = distance
-                end
-            end
-        end
-        
-        -- Check lungers
-        for i, lunger in ipairs(self.lungers) do
-            if lunger.isAlive then
-                local lx, ly = lunger:getPosition()
-                local dx = lx - playerX
-                local dy = ly - playerY
-                local distance = math.sqrt(dx * dx + dy * dy)
-                
-                if distance < nearestDistance then
-                    nearestEnemy = lunger
-                    nearestDistance = distance
-                end
-            end
-        end
-
-        -- Check treents
-        for _, treent in ipairs(self.treents) do
-            if treent.isAlive then
-                local tx, ty = treent:getPosition()
-                local dx = tx - playerX
-                local dy = ty - playerY
-                local distance = math.sqrt(dx * dx + dy * dy)
-                if distance < nearestDistance then
-                    nearestEnemy = treent
-                    nearestDistance = distance
-                end
-            end
-        end
+        -- Find nearest enemy for targeting (all types)
+        local nearestEnemy, nearestDistance = self:findNearestEnemyTo(playerX, playerY, self.attackRange)
         
         -- Aim at nearest enemy for bow presentation + primary targeting
         if nearestEnemy then
@@ -403,8 +576,11 @@ function GameScene:update(dt)
                     damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140,
                     ricochetBounces = ricBounces, ricochetRange = ricRange,
                     ghosting = isGhosting,
+                    iceAttuned = self.playerStats and self.playerStats.activePrimaryElement == "ice",
                 })
                 table.insert(self.arrows, arrow)
+                if _G.audio then _G.audio:playSFX("shoot_arrow") end
+                if self.player.playAttackAnimation then self.player:playAttackAnimation() end
 
                 -- Bonus projectiles from weapon mods
                 local bonusProj = (self.playerStats and self.playerStats:getWeaponMod("bonus_projectiles")) or 0
@@ -441,8 +617,10 @@ function GameScene:update(dt)
                             knockback = 100,
                             ricochetBounces = ricBounces, ricochetRange = ricRange,
                             ghosting = isGhosting,
+                            iceAttuned = self.playerStats and self.playerStats.activePrimaryElement == "ice",
                         })
                         table.insert(self.arrows, bonusArrow)
+                        if _G.audio then _G.audio:playSFX("shoot_arrow") end
                     end
                 end
 
@@ -478,61 +656,54 @@ function GameScene:update(dt)
                 knockback = 260,
             })
             table.insert(self.arrows, ps)
+            if _G.audio then _G.audio:playSFX("shoot_arrow") end
+            if self.player.playAttackAnimation then self.player:playAttackAnimation() end
             self.screenShake:add(3, 0.12)
             if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
         end
 
-        -- Entangle (Arrow Volley): fires a cone of vine-arrows at nearest enemy
+        -- Entangle (Arrow Volley): ground circle AOE at nearest enemy (2s falling-arrows field)
         if self.player and self.player:isAbilityReady("entangle") and not self.isDashing then
             local px, py = playerX, playerY
             local entangleRange = 260
             if self.playerStats then
-                entangleRange = self.playerStats:getAbilityValue("entangle", "range_add", entangleRange)
+                entangleRange = entangleRange + (self.playerStats:getAbilityValue("entangle", "range_add", 0) or 0)
             end
-            local target = self:findNearestEnemyTo(px, py, entangleRange)
+            local target = self:findBestClusterTarget(px, py, entangleRange)
             if target then
                 self.player:useAbility("entangle")
                 local tx, ty = target:getPosition()
-                local baseAngle = math.atan2(ty - py, tx - px)
                 self.player:aimAt(tx, ty)
 
-                local arrowCount = 7
-                if self.playerStats then
-                    arrowCount = arrowCount + self.playerStats:getAbilityValue("entangle", "arrow_count_add", 0)
-                end
-                local spreadRad = math.rad(40)
-                local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult * 0.55
+                local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult * 0.35
                 if self.playerStats then
                     baseDmg = baseDmg * self.playerStats:getAbilityValue("entangle", "damage_mul", 1.0)
                 end
-                local pierceCount = 2
-                if self.playerStats then
-                    pierceCount = pierceCount + self.playerStats:getAbilityValue("entangle", "pierce_add", 0)
+                local duration = 2.0
+                local tickInterval = 0.15
+                local numTicks = math.ceil(duration / tickInterval)
+                local totalDamage = baseDmg * numTicks
+                local extraZones = self.playerStats and self.playerStats:getAbilityValue("entangle", "extra_zone_add", 0) or 0
+                local arrowCountAdd = self.playerStats and self.playerStats:getAbilityValue("entangle", "arrow_count_add", 0) or 0
+
+                for z = 0, extraZones do
+                    local ox, oy = tx, ty
+                    if z > 0 then
+                        local angle = (z - 1) * (math.pi * 2 / math.max(1, extraZones)) + math.random() * 0.5
+                        ox = tx + math.cos(angle) * 110
+                        oy = ty + math.sin(angle) * 110
+                    end
+                    local volley = ArrowVolley:new(ox, oy, totalDamage, 80, arrowCountAdd)
+                    table.insert(self.arrowVolleys, volley)
                 end
 
-                local sx, sy = self.player.getBowTip and self.player:getBowTip() or px, py
-                for i = 1, arrowCount do
-                    local angleOffset = spreadRad * ((i - 1) / math.max(1, arrowCount - 1) - 0.5)
-                    local angle = baseAngle + angleOffset
-                    local ttx = sx + math.cos(angle) * 400
-                    local tty = sy + math.sin(angle) * 400
-                    local arrow = Arrow:new(sx, sy, ttx, tty, {
-                        damage = baseDmg,
-                        speed = 550,
-                        kind = "entangle",
-                        pierce = pierceCount,
-                        knockback = 80,
-                        lifetime = 0.7,
-                    })
-                    table.insert(self.arrows, arrow)
-                end
-
-                self.particles:createRootBurst(sx, sy)
+                if _G.audio then _G.audio:playSFX("shoot_arrow") end
+                self.particles:createRootBurst(px, py)
                 self.screenShake:add(3, 0.12)
                 self:hitFreeze(0.04)
                 if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
                 if _G.triggerScreenFlash then
-                    _G.triggerScreenFlash({0.2, 0.8, 0.2, 0.2}, 0.08)
+                    _G.triggerScreenFlash({0.8, 0.2, 0.2, 0.2}, 0.08)
                 end
             end
         end
@@ -540,12 +711,20 @@ function GameScene:update(dt)
         -- Frenzy is USER-ACTIVATED (press R). We only build charge here.
         
         -- Update arrows
+        local arrowBlockers = self.forestTilemap and self.forestTilemap:getLargeBlockers() or {}
         for i = #self.arrows, 1, -1 do
             local arrow = self.arrows[i]
             arrow:update(dt)
             
             local ax, ay = arrow:getPosition()
             local hitEnemy = false
+
+            -- Projectile LOS: block arrows that hit terrain
+            if #arrowBlockers > 0 and ObstacleNav.isPointBlocked(ax, ay, arrow:getSize() or 10, arrowBlockers) then
+                self.particles:createHitSpark(ax, ay, {0.6, 0.6, 0.5})
+                table.remove(self.arrows, i)
+                goto continue_arrow
+            end
 
             -- Crit calc (includes temporary buffs like Frenzy)
             local critChance = self.playerStats and self.playerStats:get("crit_chance") or 0
@@ -563,9 +742,18 @@ function GameScene:update(dt)
             
             -- Unified collision check against all enemy lists
             local allEnemyData = {
-                { list = self.enemies,  deathColor = {1, 0.3, 0.1}, deathShake = {5, 0.2},  xpBase = 15, xpRand = 10, killGainBonus = 0, kbScale = 1.0 },
-                { list = self.lungers,  deathColor = {0.8, 0.3, 0.8}, deathShake = {6, 0.25}, xpBase = 25, xpRand = 15, killGainBonus = 5, kbScale = 1.0, isMCM = true, mcmCharge = 2 },
-                { list = self.treents,  deathColor = {0.2, 0.9, 0.2}, deathShake = {8, 0.3},  xpBase = 60, xpRand = 25, killGainBonus = 8, kbScale = 0.75 },
+                { list = self.enemies,   deathColor = {1, 0.3, 0.1}, deathShake = {5, 0.2},  xpBase = 15, xpRand = 10, killGainBonus = 0, kbScale = 1.0 },
+                { list = self.lungers,   deathColor = {0.8, 0.3, 0.8}, deathShake = {6, 0.25}, xpBase = 25, xpRand = 15, killGainBonus = 5, kbScale = 1.0, isMCM = true, mcmCharge = 2 },
+                { list = self.treents,  deathColor = {0.5, 0.4, 0.3}, deathShake = {8, 0.3},  xpBase = 60, xpRand = 25, killGainBonus = 8, kbScale = 0.75 },
+                { list = self.slimes,   deathColor = {0.35, 0.6, 0.4}, deathShake = {5, 0.2},  xpBase = 18, xpRand = 6, killGainBonus = 0, kbScale = 0.7 },
+                { list = self.bats,     deathColor = {0.5, 0.4, 0.6}, deathShake = {4, 0.15}, xpBase = 12, xpRand = 6, killGainBonus = 0, kbScale = 1.0 },
+                { list = self.skeletons, deathColor = {0.7, 0.7, 0.8}, deathShake = {5, 0.18}, xpBase = 14, xpRand = 8, killGainBonus = 0, kbScale = 1.0 },
+                { list = self.imps,     deathColor = {0.9, 0.2, 0.2}, deathShake = {4, 0.15}, xpBase = 16, xpRand = 6, killGainBonus = 0, kbScale = 1.0 },
+                { list = self.wolves,   deathColor = {0.6, 0.5, 0.4}, deathShake = {5, 0.2},  xpBase = 35, xpRand = 12, killGainBonus = 0, kbScale = 1.0 },
+                { list = self.smallTreents, deathColor = {0.45, 0.38, 0.28}, deathShake = {6, 0.22}, xpBase = 45, xpRand = 18, killGainBonus = 5, kbScale = 0.8, isMCM = true, mcmCharge = 2 },
+                { list = self.wizards,  deathColor = {0.6, 0.3, 0.8}, deathShake = {6, 0.22}, xpBase = 45, xpRand = 18, killGainBonus = 5, kbScale = 0.85, isMCM = true, mcmCharge = 2 },
+                { list = self.healers,  deathColor = {0.4, 0.7, 0.5}, deathShake = {4, 0.15}, xpBase = 18, xpRand = 6, killGainBonus = 0, kbScale = 1.0 },
+                { list = self.druidTreents, deathColor = {0.48, 0.42, 0.32}, deathShake = {6, 0.22}, xpBase = 60, xpRand = 25, killGainBonus = 8, kbScale = 0.85, isMCM = true, mcmCharge = 2 },
             }
             for _, group in ipairs(allEnemyData) do
                 if hitEnemy then break end
@@ -574,9 +762,8 @@ function GameScene:update(dt)
                         local ex2, ey2 = enemy:getPosition()
                         local dx2 = ax - ex2
                         local dy2 = ay - ey2
-                        local distance2 = math.sqrt(dx2 * dx2 + dy2 * dy2)
-
-                        if distance2 < enemy:getSize() + arrow:getSize() and arrow:canHit(enemy) then
+                        local sumR = enemy:getSize() + arrow:getSize()
+                        if dx2 * dx2 + dy2 * dy2 < sumR * sumR and arrow:canHit(enemy) then
                             arrow:markHit(enemy)
 
                             -- Apply per-hit conditional procs (Marked Prey damage, Tactical Spacing, etc.)
@@ -599,13 +786,24 @@ function GameScene:update(dt)
                             end
 
                             local dmg, isCrit = rollDamage(arrow.damage * hitDmgMul, arrow.alwaysCrit)
-                            self.particles:createHitSpark(ex2, ey2, isCrit and {1, 1, 0.2} or {1, 1, 0.6})
-                            if self.damageNumbers then
-                                self.damageNumbers:add(ex2, ey2 - enemy:getSize(), dmg, { isCrit = isCrit })
+                            -- Throttle VFX/SFX for piercing arrows (Power Shot) to reduce lag on multi-hit
+                            local hitCount = (arrow.cosmeticHitCount or 0) + 1
+                            arrow.cosmeticHitCount = hitCount
+                            local doCosmetic = hitCount <= 4 or (arrow.kind ~= "power_shot" and arrow.kind ~= "arrowstorm")
+                            if doCosmetic then
+                                self.particles:createHitSpark(ex2, ey2, isCrit and {1, 1, 0.2} or {1, 1, 0.6})
+                                if _G.audio then
+                                    local sfx = math.random() > 0.5 and "hit_light" or "hit_light_alt"
+                                    _G.audio:playSFX(sfx, { pitch = isCrit and 1.15 or (0.95 + math.random() * 0.12) })
+                                end
                             end
 
                             local kbForce = arrow.knockback and (arrow.knockback * group.kbScale) or nil
                             local died = enemy:takeDamage(dmg, ax, ay, kbForce)
+                            if self.damageNumbers and (doCosmetic or died) then
+                                self.damageNumbers:add(ex2, ey2 - enemy:getSize(), dmg, { isCrit = isCrit })
+                            end
+                            self:applyFrenzyLifesteal(dmg)
 
                             -- On-hit procs (status apply, chain damage, etc.)
                             if self.procEngine then
@@ -625,6 +823,7 @@ function GameScene:update(dt)
                             end
 
                             if died then
+                                if self.enemySpawner then self.enemySpawner:onEnemyDeath() end
                                 self.particles:createExplosion(ex2, ey2, group.deathColor)
                                 self.screenShake:add(group.deathShake[1], group.deathShake[2])
                                 self:hitFreeze(isCrit and 0.045 or 0.03)
@@ -652,7 +851,7 @@ function GameScene:update(dt)
                                         self:executeAction(ka)
                                     end
                                 end
-                            else
+                            elseif doCosmetic then
                                 self.screenShake:add(2, 0.1)
                             end
 
@@ -682,16 +881,57 @@ function GameScene:update(dt)
             end
             
             if hitEnemy or arrow:isExpired() then
+                -- Ice attunement: dissolve blast on expire (primary arrows only)
+                if arrow.iceAttuned and arrow.kind == "primary" and arrow:isExpired() then
+                    self:iceDissolveBlast(ax, ay)
+                end
                 table.remove(self.arrows, i)
+            end
+            ::continue_arrow::
+        end
+
+        -- Update Arrow Volleys (impact-timed damage, remove when finished)
+        for i = #self.arrowVolleys, 1, -1 do
+            local volley = self.arrowVolleys[i]
+            volley:update(dt)
+            if volley:shouldApplyDamage() then
+                local dmg = volley:getDamage()
+                local vx, vy = volley:getPosition()
+                local radius = volley:getDamageRadius()
+                for _, list in ipairs(self:getAllEnemyLists()) do
+                    for _, enemy in ipairs(list) do
+                        if enemy.isAlive then
+                            local ex, ey = enemy:getPosition()
+                            local dx = ex - vx
+                            local dy = ey - vy
+                            if dx * dx + dy * dy <= radius * radius then
+                                local died = enemy:takeDamage(dmg, vx, vy, nil)
+                                self:applyFrenzyLifesteal(dmg)
+                                if self.damageNumbers then
+                                    self.damageNumbers:add(ex, ey - (enemy.getSize and enemy:getSize() or 16), dmg, { isCrit = false })
+                                end
+                                if died then
+                                    if self.enemySpawner then self.enemySpawner:onEnemyDeath() end
+                                    self.xpSystem:spawnOrb(ex, ey, 12 + math.random(0, 8))
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            if volley:isFinished() then
+                table.remove(self.arrowVolleys, i)
             end
         end
 
         -- Build Frenzy charge from "being in combat" (simple: any living enemies)
         if not self.frenzyActive then
             local inCombat = false
-            for _, e in ipairs(self.enemies) do if e.isAlive then inCombat = true break end end
-            if not inCombat then
-                for _, e in ipairs(self.lungers) do if e.isAlive then inCombat = true break end end
+            for _, list in ipairs(self:getAllEnemyLists()) do
+                for _, e in ipairs(list) do
+                    if e.isAlive then inCombat = true break end
+                end
+                if inCombat then break end
             end
             if inCombat then
                 self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + (self.frenzyCombatGainPerSec * dt))
@@ -728,23 +968,94 @@ function GameScene:update(dt)
             bush:update(dt)
         end
         
+        -- Wizard cone callback: damage only, no root (per AGENTS.md)
+        local function onWizardCone(wx, wy, angleToPlayer, coneAngle, coneRange, rootDuration)
+            if not self.player or not self.player.getPosition then return end
+            local px, py = self.player:getPosition()
+            local dx = px - wx
+            local dy = py - wy
+            local dist = math.sqrt(dx * dx + dy * dy)
+            if dist > coneRange then return end
+            local angleToP = math.atan2(dy, dx)
+            local angleDiff = math.abs(angleToP - angleToPlayer)
+            while angleDiff > math.pi do angleDiff = angleDiff - math.pi * 2 end
+            if math.abs(angleDiff) <= coneAngle / 2 then
+                local dmg = 12 * self.difficultyMult.enemyDamageMult
+                if self.frenzyActive then dmg = dmg * 1.15 end
+                self.player:takeDamage(dmg)
+                self.wasHitThisFrame = true
+                if self.playerStats then self.playerStats:update(0, { wasHit = true, didRoll = false, inFrenzy = self.frenzyActive }) end
+            end
+        end
+        -- Small treent bark callback
+        local function onSmallTreentShoot(sx, sy, tx, ty)
+            local bark = BarkProjectile:new(sx, sy, tx, ty, 180)
+            bark.damage = 9 * (self.difficultyMult.enemyDamageMult or 1)
+            table.insert(self.barkProjectiles, bark)
+        end
+        
         -- Update and collide all enemies with player
+        local blockers = self.forestTilemap and self.forestTilemap:getLargeBlockers() or {}
         local enemyUpdateData = {
-            { list = self.enemies, getDmg = function(e) return (e.damage or 10) end, shake = {4, 0.15} },
-            { list = self.lungers, getDmg = function(e) local d = e:getDamage(); if e:isLunging() then d = d * 1.5 end; return d end, shake = {6, 0.2} },
-            { list = self.treents, getDmg = function(e) return (e.damage or 18) end, shake = {7, 0.22} },
+            { list = self.enemies,      getDmg = function(e) return (e.damage or 10) end, shake = {4, 0.15}, melee = true },
+            { list = self.lungers,      getDmg = function(e) local d = e.getDamage and e:getDamage() or e.damage or 15; if e.isLunging and e:isLunging() then d = d * 1.5 end; return d end, shake = {6, 0.2}, melee = true },
+            { list = self.treents,      getDmg = function(e) return (e.damage or 18) end, shake = {7, 0.22}, melee = true },
+            { list = self.slimes,       getDmg = function(e) return (e.damage or 8) end,  shake = {5, 0.18}, melee = true },
+            { list = self.bats,        getDmg = function(e) return (e.damage or 6) end,  shake = {4, 0.14}, melee = true },
+            { list = self.skeletons,   getDmg = function(e) return (e.damage or 10) end, shake = {5, 0.16}, melee = true },
+            { list = self.imps,        getDmg = function(e) return (e.damage or 12) end, shake = {4, 0.14}, melee = true },
+            { list = self.wolves,      getDmg = function(e) return (e.damage or 12) end, shake = {5, 0.18}, melee = true },
+            { list = self.smallTreents, getDmg = function(e) return (e.damage or 9) end,  shake = {5, 0.18}, melee = true, updateExtra = function(e) e:update(dt, playerX, playerY, onSmallTreentShoot) end },
+            { list = self.wizards,      getDmg = function(e) return (e.damage or 10) end, shake = {5, 0.18}, updateExtra = function(e) e:update(dt, playerX, playerY, onWizardCone) end },
+            { list = self.healers,      getDmg = function() return 0 end, shake = {2, 0.1}, updateExtra = function(e) e:update(dt, playerX, playerY, self:getFlattenedEnemies()) end },
+            { list = self.druidTreents, getDmg = function(e) return (e.damage or 8) end, shake = {5, 0.18}, melee = true, updateExtra = function(e) e:update(dt, playerX, playerY, self:getFlattenedEnemies()) end },
         }
         for _, group in ipairs(enemyUpdateData) do
             for _, enemy in ipairs(group.list) do
                 if enemy.isAlive then
-                    enemy:update(dt, playerX, playerY)
+                    local prevX, prevY = enemy:getPosition()
+                    if group.updateExtra then
+                        group.updateExtra(enemy)
+                    else
+                        enemy:update(dt, playerX, playerY)
+                    end
+                    -- Resolve position against large blockers
+                    if #blockers > 0 then
+                        local ex, ey = enemy:getPosition()
+                        local er = enemy:getSize() or 16
+                        local nx, ny = ObstacleNav.resolvePosition(ex, ey, er, blockers)
+                        enemy.x, enemy.y = nx, ny
+                    end
+                    -- Melee turn-lock: 0.25s no-attack when reorienting
+                    if group.melee then
+                        enemy.turnLockRemaining = (enemy.turnLockRemaining or 0) - dt
+                        if enemy.turnLockRemaining < 0 then enemy.turnLockRemaining = 0 end
+                        local ex, ey = enemy:getPosition()
+                        local moveDx = ex - prevX
+                        local moveDy = ey - prevY
+                        local moveLenSq = moveDx * moveDx + moveDy * moveDy
+                        if moveLenSq > 4 then
+                            local angle = math.atan2(moveDy, moveDx)
+                            local last = enemy.lastFacingAngle
+                            if last ~= nil then
+                                local diff = angle - last
+                                while diff > math.pi do diff = diff - math.pi * 2 end
+                                while diff < -math.pi do diff = diff + math.pi * 2 end
+                                if math.abs(diff) > math.rad(45) then
+                                    enemy.turnLockRemaining = 0.25
+                                end
+                            end
+                            enemy.lastFacingAngle = angle
+                        end
+                    end
 
                     if not self.isDashing then
                         local ex2, ey2 = enemy:getPosition()
                         local dx2 = playerX - ex2
                         local dy2 = playerY - ey2
                         local distance2 = math.sqrt(dx2 * dx2 + dy2 * dy2)
-                        if distance2 < self.player:getSize() + enemy:getSize() then
+                        local turnLocked = group.melee and (enemy.turnLockRemaining or 0) > 0
+                        if distance2 < self.player:getSize() + enemy:getSize() and not turnLocked then
                             local damage = group.getDmg(enemy) * self.difficultyMult.enemyDamageMult
                             if self.frenzyActive then damage = damage * 1.15 end
                             local before = self.player.health
@@ -768,16 +1079,40 @@ function GameScene:update(dt)
             end
         end
         
+        -- Update bark projectiles (from small treents)
+        local barkBlockers = self.forestTilemap and self.forestTilemap:getLargeBlockers() or {}
+        for i = #self.barkProjectiles, 1, -1 do
+            local bark = self.barkProjectiles[i]
+            bark:update(dt)
+            if bark:isExpired() then
+                table.remove(self.barkProjectiles, i)
+            else
+                local bx, by = bark:getPosition()
+                if #barkBlockers > 0 and ObstacleNav.isPointBlocked(bx, by, bark:getSize() or 8, barkBlockers) then
+                    self.particles:createHitSpark(bx, by, {0.5, 0.4, 0.2})
+                    table.remove(self.barkProjectiles, i)
+                else
+                    local dist = math.sqrt((playerX - bx)^2 + (playerY - by)^2)
+                    if dist < self.player:getSize() + bark:getSize() and not self.isDashing then
+                        local barkDmg = bark.damage or 9
+                        if self.frenzyActive then barkDmg = barkDmg * 1.15 end
+                        self.player:takeDamage(barkDmg)
+                        self.wasHitThisFrame = true
+                        if self.playerStats then self.playerStats:update(0, { wasHit = true, didRoll = false, inFrenzy = self.frenzyActive }) end
+                        self.screenShake:add(4, 0.12)
+                        table.remove(self.barkProjectiles, i)
+                    end
+                end
+            end
+        end
+        
         -- Check if all enemies dead - advance floor
         local allDead = true
-        for _, enemy in ipairs(self.enemies) do
-            if enemy.isAlive then allDead = false break end
-        end
-        for _, lunger in ipairs(self.lungers) do
-            if lunger.isAlive then allDead = false break end
-        end
-        for _, treent in ipairs(self.treents) do
-            if treent.isAlive then allDead = false break end
+        for _, list in ipairs(self:getAllEnemyLists()) do
+            for _, e in ipairs(list) do
+                if e.isAlive then allDead = false break end
+            end
+            if not allDead then break end
         end
         
         if allDead then
@@ -793,9 +1128,51 @@ function GameScene:advanceFloor()
         self.player.health = math.min(self.player.maxHealth, self.player.health + 20)
         -- Spawn new enemies
         self:spawnEnemies()
-        -- Reset arrows
+        -- Reset arrows and bark projectiles
         self.arrows = {}
+        self.barkProjectiles = {}
     end
+end
+
+local function hasTag(upgrade, wanted)
+    if not upgrade or not upgrade.tags then return false end
+    for _, t in ipairs(upgrade.tags) do
+        if t == wanted then return true end
+    end
+    return false
+end
+
+-- Core attunements are integral to Archer kit; exempt from strict path gating so they appear early
+local CORE_ATTUNEMENT_IDS = {
+    arch_c_fire_attunement = true,
+    arch_c_ice_attunement = true,
+    arch_c_lightning_attunement = true,
+}
+
+function GameScene:isCoreAttunement(upgrade)
+    return upgrade and upgrade.id and CORE_ATTUNEMENT_IDS[upgrade.id]
+end
+
+function GameScene:getBuildPathStage()
+    if not self.playerStats then return 0 end
+    if self.playerStats:hasUpgrade("arch_c_ice_attunement") then return 4 end
+    if self.playerStats:hasUpgrade("arch_c_lightning_attunement") then return 3 end
+    if self.playerStats:hasUpgrade("arch_c_fire_attunement") then return 2 end
+    if self.playerStats:hasUpgrade("arch_c_barbed_shafts") then return 1 end
+    return 0
+end
+
+function GameScene:getUpgradePathTier(upgrade)
+    if not upgrade then return nil end
+    if hasTag(upgrade, "bleed") then return 1 end
+    if hasTag(upgrade, "element") and hasTag(upgrade, "fire") then return 2 end
+    if hasTag(upgrade, "element") and hasTag(upgrade, "lightning") then return 3 end
+    if hasTag(upgrade, "element") and hasTag(upgrade, "ice") then return 4 end
+    return nil
+end
+
+function GameScene:isUtilityUpgrade(upgrade)
+    return hasTag(upgrade, "crit") or hasTag(upgrade, "regen")
 end
 
 function GameScene:showUpgradeSelection()
@@ -804,7 +1181,27 @@ function GameScene:showUpgradeSelection()
     -- Consume the level-up
     self.xpSystem:consumeLevelUp()
     
-    -- Roll upgrade options
+    -- Roll upgrade options with controlled path gating:
+    -- bleed -> fire -> lightning -> ice, while crit/regen stays always available.
+    local stage = self:getBuildPathStage()
+    local nextStage = math.min(4, stage + 1)
+    local pickBias = {}
+    for _, u in ipairs(ArcherUpgrades.list) do
+        if self:isUtilityUpgrade(u) then
+            pickBias[u.id] = 1.35
+        elseif self:isCoreAttunement(u) then
+            -- Core attunements: integral to kit, bias so they show early
+            pickBias[u.id] = 1.6
+        else
+            local tier = self:getUpgradePathTier(u)
+            if tier == nextStage then
+                pickBias[u.id] = 1.8
+            elseif tier and tier < nextStage then
+                pickBias[u.id] = 1.15
+            end
+        end
+    end
+
     local result = UpgradeRoll.rollOptions({
         rng = function() return love.math.random() end,
         now = love.timer.getTime(),
@@ -813,9 +1210,29 @@ function GameScene:showUpgradeSelection()
         abilityPaths = AbilityPaths,
         rarityCharge = self.rarityCharge,
         count = 3,
+        pickBias = pickBias,
+        isAllowed = function(_ctx, upgrade)
+            if upgrade.requires_upgrade and self.playerStats then
+                if not self.playerStats:hasUpgrade(upgrade.requires_upgrade) then
+                    return false
+                end
+            end
+            if self:isUtilityUpgrade(upgrade) then
+                return true
+            end
+            -- Core attunements (fire/ice/lightning) are always eligible; integral to Archer kit
+            if self:isCoreAttunement(upgrade) then
+                return true
+            end
+            local tier = self:getUpgradePathTier(upgrade)
+            if tier and tier > nextStage then
+                return false
+            end
+            return true
+        end,
     })
     
-    -- Show the upgrade UI
+    -- Show the upgrade UI (pass playerStats for current->next preview on repeat picks)
     self.upgradeUI:show(result.options, function(upgrade)
         -- Apply the selected upgrade
         self.playerStats:applyUpgrade(upgrade)
@@ -824,7 +1241,7 @@ function GameScene:showUpgradeSelection()
         self:applyStatsToPlayer()
         
         print("Selected upgrade: " .. upgrade.name .. " (" .. upgrade.rarity .. ")")
-    end)
+    end, self.playerStats)
 end
 
 function GameScene:applyStatsToPlayer()
@@ -839,22 +1256,23 @@ function GameScene:applyStatsToPlayer()
     local attackSpeed = self.playerStats:get("attack_speed")
     self.fireRate = 0.4 / attackSpeed  -- Base 0.4s cooldown, modified by attack speed
 
-    -- Apply ability mods to player ability cooldowns
+    -- Apply ability mods to player ability cooldowns (base 15% reduction)
+    local baseCDMul = (Config.game_balance and Config.game_balance.player and Config.game_balance.player.base_cooldown_mul) or 0.85
     if self.player.abilities then
         -- Power Shot cooldown mods
-        local basePSCooldown = 6.0
+        local basePSCooldown = 6.0 * baseCDMul
         basePSCooldown = self.playerStats:getAbilityValue("power_shot", "cooldown_add", basePSCooldown)
         basePSCooldown = self.playerStats:getAbilityValue("power_shot", "cooldown_mul", basePSCooldown)
         self.player.abilities.power_shot.cooldown = math.max(1.0, basePSCooldown)
 
         -- Entangle cooldown mods
-        local baseEntCooldown = 8.0
+        local baseEntCooldown = 8.0 * baseCDMul
         baseEntCooldown = self.playerStats:getAbilityValue("entangle", "cooldown_add", baseEntCooldown)
         baseEntCooldown = self.playerStats:getAbilityValue("entangle", "cooldown_mul", baseEntCooldown)
         self.player.abilities.entangle.cooldown = math.max(1.0, baseEntCooldown)
 
         -- Roll cooldown from stats
-        local rollCD = self.playerStats:get("roll_cooldown")
+        local rollCD = self.playerStats:get("roll_cooldown") * baseCDMul
         self.player.abilities.dash.cooldown = math.max(0.3, rollCD)
     end
 end
@@ -867,10 +1285,100 @@ function GameScene:hitFreeze(duration)
 end
 
 ---------------------------------------------------------------------------
+-- HELPER: apply Frenzy lifesteal from outgoing damage
+---------------------------------------------------------------------------
+function GameScene:applyFrenzyLifesteal(damageDealt)
+    if not self.frenzyActive or not self.player then return end
+    if not damageDealt or damageDealt <= 0 then return end
+    local lifeSteal = (Config.Abilities and Config.Abilities.frenzy and Config.Abilities.frenzy.lifeSteal) or 0.10
+    if lifeSteal <= 0 then return end
+    local healAmount = damageDealt * lifeSteal
+    self.player.health = math.min(self.player.maxHealth, self.player.health + healAmount)
+end
+
+---------------------------------------------------------------------------
+-- HELPER: resolve player position against large terrain blockers
+---------------------------------------------------------------------------
+function GameScene:resolvePlayerBlockers()
+    if not self.player or not self.forestTilemap then return end
+    local blockers = self.forestTilemap:getLargeBlockers()
+    if #blockers == 0 then return end
+    local px, py = self.player.x, self.player.y
+    local pr = self.player.size or 20
+    for _, blk in ipairs(blockers) do
+        local dx = px - blk.x
+        local dy = py - blk.y
+        local dist = math.sqrt(dx * dx + dy * dy)
+        local minDist = pr + blk.radius
+        if dist < minDist and dist > 0 then
+            local nx = dx / dist
+            local ny = dy / dist
+            self.player.x = blk.x + nx * minDist
+            self.player.y = blk.y + ny * minDist
+            px, py = self.player.x, self.player.y
+        end
+    end
+end
+
+---------------------------------------------------------------------------
 -- HELPER: get all enemy lists for iteration
 ---------------------------------------------------------------------------
 function GameScene:getAllEnemyLists()
-    return { self.enemies, self.lungers, self.treents }
+    return {
+        self.enemies, self.lungers, self.treents,
+        self.slimes, self.bats, self.skeletons, self.imps, self.wolves,
+        self.smallTreents, self.wizards, self.healers, self.druidTreents,
+    }
+end
+
+---------------------------------------------------------------------------
+-- HELPER: flattened list of living enemies (for healer/druid target selection)
+---------------------------------------------------------------------------
+function GameScene:getFlattenedEnemies()
+    local flat = {}
+    for _, list in ipairs(self:getAllEnemyLists()) do
+        for _, e in ipairs(list) do
+            if e.isAlive then table.insert(flat, e) end
+        end
+    end
+    return flat
+end
+
+---------------------------------------------------------------------------
+-- HELPER: find best target for Arrow Volley - prefer clusters of 2-3+ enemies
+---------------------------------------------------------------------------
+function GameScene:findBestClusterTarget(px, py, maxRange, clusterRadius)
+    clusterRadius = clusterRadius or 80
+    local all = self:getFlattenedEnemies()
+    local bestTarget, bestScore, bestDist = nil, 0, maxRange
+    for _, e in ipairs(all) do
+        if not e.isAlive then goto continue end
+        local ex, ey = e:getPosition()
+        local dx = ex - px
+        local dy = ey - py
+        local d = math.sqrt(dx * dx + dy * dy)
+        if d > maxRange then goto continue end
+        local count = 0
+        for _, o in ipairs(all) do
+            if o.isAlive and o ~= e then
+                local ox, oy = o:getPosition()
+                local odx = ox - ex
+                local ody = oy - ey
+                if odx * odx + ody * ody <= clusterRadius * clusterRadius then
+                    count = count + 1
+                end
+            end
+        end
+        local clusterSize = count + 1
+        if clusterSize > bestScore or (clusterSize == bestScore and d < bestDist) then
+            bestScore = clusterSize
+            bestTarget = e
+            bestDist = d
+        end
+        ::continue::
+    end
+    if bestTarget and bestScore >= 2 then return bestTarget end
+    return self:findNearestEnemyTo(px, py, maxRange)
 end
 
 ---------------------------------------------------------------------------
@@ -907,10 +1415,12 @@ function GameScene:aoeDamage(cx, cy, radius, damage)
                 local dy = ey - cy
                 if math.sqrt(dx * dx + dy * dy) <= radius then
                     local died = e:takeDamage(damage, cx, cy, 80)
+                    self:applyFrenzyLifesteal(damage)
                     if self.damageNumbers then
                         self.damageNumbers:add(ex, ey - e:getSize(), damage, { isCrit = false })
                     end
                     if died then
+                        if self.enemySpawner then self.enemySpawner:onEnemyDeath() end
                         self.particles:createExplosion(ex, ey, {1, 0.5, 0.1})
                         self.screenShake:add(4, 0.15)
                         local xpValue = 10 + math.random(0, 5)
@@ -934,24 +1444,23 @@ function GameScene:chainDamage(startEnemy, jumps, jumpRange, damage)
         if not next then break end
         hit[next] = true
         local nx, ny = next:getPosition()
-        -- Lightning arc VFX between current and next target
-        self.particles:createLightningArc(cx, cy, nx, ny, {0.4, 0.6, 1.0})
+        -- Lightning arc VFX (bold blue chain lightning)
+        self.particles:createLightningArc(cx, cy, nx, ny, {0.55, 0.8, 1.0})
         if self.damageNumbers then
             self.damageNumbers:add(nx, ny - next:getSize(), damage, { isCrit = false })
         end
         local died = next:takeDamage(damage, cx, cy, 60)
+        self:applyFrenzyLifesteal(damage)
         if died then
-            self.particles:createExplosion(nx, ny, {0.3, 0.5, 1.0})
-            self.screenShake:add(3, 0.12)
+            if self.enemySpawner then self.enemySpawner:onEnemyDeath() end
+            self.particles:createExplosion(nx, ny, {0.35, 0.6, 1.0})
+            self.screenShake:add(4, 0.14)
             self.xpSystem:spawnOrb(nx, ny, 10 + math.random(0, 5))
         end
         current = next
     end
-    -- Flash + freeze for chain lightning
-    self:hitFreeze(0.03)
-    if _G.triggerScreenFlash then
-        _G.triggerScreenFlash({0.5, 0.7, 1.0, 0.25}, 0.08)
-    end
+    -- Freeze for chain lightning payoff (no screen flash)
+    self:hitFreeze(0.04)
 end
 
 ---------------------------------------------------------------------------
@@ -959,6 +1468,7 @@ end
 ---------------------------------------------------------------------------
 function GameScene:spawnArrowstorm(count, damageMul, speedMul)
     if not self.player then return end
+    if self.player.playAttackAnimation then self.player:playAttackAnimation() end
     local px, py = self.player:getPosition()
     local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult * damageMul
     local baseSpeed = 500 * speedMul
@@ -976,6 +1486,7 @@ function GameScene:spawnArrowstorm(count, damageMul, speedMul)
             lifetime = 1.5,
         })
         table.insert(self.arrows, arrow)
+        if _G.audio then _G.audio:playSFX("shoot_arrow") end
     end
     self.screenShake:add(5, 0.18)
     self.particles:createAoeRing(px, py, 60, {1, 0.9, 0.3})
@@ -987,15 +1498,56 @@ function GameScene:spawnArrowstorm(count, damageMul, speedMul)
 end
 
 ---------------------------------------------------------------------------
+-- HELPER: ice dissolve blast (when ice-attuned primary arrow expires)
+---------------------------------------------------------------------------
+function GameScene:iceDissolveBlast(x, y)
+    if not self.playerStats or self.playerStats.activePrimaryElement ~= "ice" then return end
+    local baseRadius = 70
+    local radiusAdd = self.playerStats:getElementMod("ice", "ice_blast_radius_add", 0)
+    local radius = baseRadius + radiusAdd
+    local baseDmg = (self.player and self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult * 1.6
+    self:aoeDamage(x, y, radius, baseDmg)
+    -- Freeze spread: apply chill/freeze to enemies in radius (bosses get chill only)
+    if self.playerStats:hasUpgrade("arch_r_freeze_spread") then
+        local duration = 1.5 + (self.playerStats:getElementMod("ice", "chill_duration_add", 0) or 0)
+        local slowMul = self.playerStats:getElementMod("ice", "slow_mul", 1.0) or 1.0
+        for _, list in ipairs(self:getAllEnemyLists()) do
+            for _, e in ipairs(list) do
+                if e.isAlive then
+                    local ex, ey = e:getPosition()
+                    local dx = ex - x
+                    local dy = ey - y
+                    if math.sqrt(dx * dx + dy * dy) <= radius then
+                        local status = (e.isBoss and "chill") or "freeze"
+                        StatusEffects.apply(e, status, 1, duration, slowMul ~= 1.0 and { slowMul = slowMul } or nil)
+                    end
+                end
+            end
+        end
+    end
+    self.particles:createIceBlast(x, y, radius)
+    self.screenShake:add(5, 0.12)
+    self:hitFreeze(0.04)
+    if _G.triggerScreenFlash then
+        _G.triggerScreenFlash({0.6, 0.9, 1.0, 0.25}, 0.08)
+    end
+end
+
+---------------------------------------------------------------------------
 -- HELPER: hemorrhage explosion (AOE on killing bleeding target)
 ---------------------------------------------------------------------------
 function GameScene:hemorrhageExplosion(target, damageMultOfMaxHP, radius)
     local tx, ty = target:getPosition()
     local damage = (target.maxHealth or 50) * damageMultOfMaxHP
     self:aoeDamage(tx, ty, radius, damage)
-    -- Hemorrhage VFX: expanding blood ring + explosion
+    -- Hemorrhage VFX: expanding blood ring + explosion + burst drips
     self.particles:createAoeRing(tx, ty, radius, {0.9, 0.1, 0.05})
     self.particles:createExplosion(tx, ty, {0.8, 0.1, 0.1})
+    for _ = 1, 6 do
+        local angle = love.math.random() * math.pi * 2
+        local dist = love.math.random() * radius * 0.5
+        self.particles:createBleedDrip(tx + math.cos(angle) * dist, ty + math.sin(angle) * dist, {0.9, 0.1, 0.05})
+    end
     self.screenShake:add(6, 0.2)
     self:hitFreeze(0.06)
     if _G.triggerScreenFlash then
@@ -1012,14 +1564,30 @@ function GameScene:executeAction(action)
 
     if apply.kind == "status_apply" then
         if action.target and action.target.isAlive then
-            StatusEffects.apply(action.target, apply.status, apply.stacks, apply.duration)
+            local status = apply.status
+            -- Bosses: no hard freeze, use chill (slow) only
+            if status == "freeze" and action.target.isBoss then
+                status = "chill"
+            end
+            local duration = apply.duration or 2.0
+            local options = nil
+            if status == "chill" or status == "freeze" then
+                duration = duration + (self.playerStats and self.playerStats:getElementMod("ice", "chill_duration_add", 0) or 0)
+                local slowMul = self.playerStats and self.playerStats:getElementMod("ice", "slow_mul", 1.0) or 1.0
+                if slowMul ~= 1.0 then options = { slowMul = slowMul } end
+            end
+            StatusEffects.apply(action.target, status, apply.stacks, duration, options)
         end
 
     elseif apply.kind == "chain_damage" then
         if action.target and action.target.isAlive then
             local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult
             local chainDmg = baseDmg * (apply.damage_mul or 0.35)
-            self:chainDamage(action.target, apply.jumps or 2, apply.range or 180, chainDmg)
+            local jumps = apply.jumps or 2
+            if self.playerStats and self.playerStats.activePrimaryElement == "lightning" then
+                jumps = jumps + (self.playerStats:getElementMod("lightning", "chain_jumps_add", 0) or 0)
+            end
+            self:chainDamage(action.target, jumps, apply.range or 180, chainDmg)
         end
 
     elseif apply.kind == "aoe_projectile_burst" then
@@ -1053,7 +1621,12 @@ function GameScene:executeAction(action)
 end
 
 function GameScene:draw()
-    -- Apply screen shake
+    -- Apply camera transform (centers viewport on player)
+    if self.camera then
+        self.camera:attach()
+    end
+    
+    -- Apply screen shake on top of camera
     local shakeX, shakeY = self.screenShake:getOffset()
     love.graphics.push()
     love.graphics.translate(shakeX, shakeY)
@@ -1063,6 +1636,11 @@ function GameScene:draw()
         self.forestTilemap:draw()
     else
         self.tilemap:draw()
+    end
+
+    -- Draw Arrow Volleys (falling arrows + impact zones)
+    for _, volley in ipairs(self.arrowVolleys) do
+        volley:draw()
     end
     
     -- Collect all drawable entities for Y-sorting
@@ -1079,6 +1657,25 @@ function GameScene:draw()
     if self.forestTilemap then
         for _, tree in ipairs(self.forestTilemap:getTreesForSorting()) do
             table.insert(drawables, {drawFunc = tree.draw, y = tree.y, type = "forest_tree"})
+        end
+    end
+    
+    -- Add forest tilemap small trees and rocks (Y-sorted with entities)
+    if self.forestTilemap then
+        if self.forestTilemap.getSmallTreesForSorting then
+            for _, st in ipairs(self.forestTilemap:getSmallTreesForSorting()) do
+                table.insert(drawables, {drawFunc = st.draw, y = st.y, type = "forest_small_tree"})
+            end
+        end
+        if self.forestTilemap.getRocksForSorting then
+            for _, rock in ipairs(self.forestTilemap:getRocksForSorting()) do
+                table.insert(drawables, {drawFunc = rock.draw, y = rock.y, type = "forest_rock"})
+            end
+        end
+        if self.forestTilemap.getLargeBlockersForSorting then
+            for _, blk in ipairs(self.forestTilemap:getLargeBlockersForSorting()) do
+                table.insert(drawables, {drawFunc = blk.draw, y = blk.y, type = "forest_large_blocker"})
+            end
         end
     end
     
@@ -1113,6 +1710,39 @@ function GameScene:draw()
         end
     end
     
+    for _, e in ipairs(self.slimes) do
+        if e.isAlive then table.insert(drawables, {entity = e, y = e.y, type = "slime"}) end
+    end
+    for _, e in ipairs(self.bats) do
+        if e.isAlive then table.insert(drawables, {entity = e, y = e.y, type = "bat"}) end
+    end
+    for _, e in ipairs(self.skeletons) do
+        if e.isAlive then table.insert(drawables, {entity = e, y = e.y, type = "skeleton"}) end
+    end
+    for _, e in ipairs(self.imps) do
+        if e.isAlive then table.insert(drawables, {entity = e, y = e.y, type = "imp"}) end
+    end
+    for _, e in ipairs(self.wolves) do
+        if e.isAlive then table.insert(drawables, {entity = e, y = e.y, type = "wolf"}) end
+    end
+    for _, e in ipairs(self.smallTreents) do
+        if e.isAlive then table.insert(drawables, {entity = e, y = e.y, type = "small_treent"}) end
+    end
+    for _, e in ipairs(self.wizards) do
+        if e.isAlive then table.insert(drawables, {entity = e, y = e.y, type = "wizard"}) end
+    end
+    for _, e in ipairs(self.healers) do
+        if e.isAlive then table.insert(drawables, {entity = e, y = e.y, type = "healer"}) end
+    end
+    for _, e in ipairs(self.druidTreents) do
+        if e.isAlive then table.insert(drawables, {entity = e, y = e.y, type = "druid_treent"}) end
+    end
+    
+    -- Add boss portal
+    if self.bossPortal then
+        table.insert(drawables, { drawFunc = function() self.bossPortal:draw() end, y = self.bossPortal.y, type = "portal" })
+    end
+
     -- Add player
     if self.player then
         table.insert(drawables, {entity = self.player, y = self.player.y, type = "player", isDashing = self.isDashing})
@@ -1135,13 +1765,47 @@ function GameScene:draw()
         elseif drawable.entity then
             drawable.entity:draw()
         end
-        
+
+        -- Marked status: gold outline for readability
+        if drawable.entity and drawable.entity.isAlive and StatusEffects.has(drawable.entity, "marked") then
+            local ex, ey = drawable.entity:getPosition()
+            local sz = (drawable.entity.getSize and drawable.entity:getSize()) or 16
+            local pulse = 0.7 + 0.3 * math.sin(love.timer.getTime() * 4)
+            love.graphics.setColor(1, 0.85, 0.2, pulse)
+            love.graphics.setLineWidth(2)
+            love.graphics.circle("line", ex, ey, sz + 4)
+            love.graphics.setLineWidth(1)
+        end
+
+        -- Freeze status: icy cyan ring/glow
+        if drawable.entity and drawable.entity.isAlive and StatusEffects.has(drawable.entity, "freeze") then
+            local ex, ey = drawable.entity:getPosition()
+            local sz = (drawable.entity.getSize and drawable.entity:getSize()) or 16
+            love.graphics.setColor(0.5, 0.85, 1.0, 0.9)
+            love.graphics.setLineWidth(2)
+            love.graphics.circle("line", ex, ey, sz + 4)
+            love.graphics.setLineWidth(1)
+        end
+
+        -- Chill/slow status: lighter blue aura tint
+        if drawable.entity and drawable.entity.isAlive and StatusEffects.has(drawable.entity, "chill") then
+            local ex, ey = drawable.entity:getPosition()
+            local sz = (drawable.entity.getSize and drawable.entity:getSize()) or 16
+            love.graphics.setColor(0.6, 0.9, 1.0, 0.5)
+            love.graphics.setLineWidth(1)
+            love.graphics.circle("line", ex, ey, sz + 2)
+            love.graphics.setLineWidth(1)
+        end
+
         love.graphics.setColor(1, 1, 1, 1)
     end
     
-    -- Draw arrows (always on top of entities)
+    -- Draw arrows and bark projectiles (always on top of entities)
     for _, arrow in ipairs(self.arrows) do
         arrow:draw()
+    end
+    for _, bark in ipairs(self.barkProjectiles) do
+        bark:draw()
     end
 
     -- Draw floating damage numbers in world space
@@ -1159,7 +1823,12 @@ function GameScene:draw()
     
     love.graphics.pop()
     
-    -- Draw HUD (not affected by screen shake)
+    -- Detach camera before drawing HUD (HUD is in screen space)
+    if self.camera then
+        self.camera:detach()
+    end
+    
+    -- Draw HUD (not affected by screen shake or camera)
     self:drawXPBar()
     
     -- Draw upgrade UI (on top of everything)
@@ -1168,12 +1837,20 @@ function GameScene:draw()
     end
 end
 
+local function drawTextWithShadow(text, x, y)
+    local r, g, b, a = love.graphics.getColor()
+    love.graphics.setColor(0, 0, 0, 0.65)
+    love.graphics.print(text, x + 1, y + 1)
+    love.graphics.setColor(r, g, b, a)
+    love.graphics.print(text, x, y)
+end
+
 function GameScene:drawXPBar()
     local screenWidth = love.graphics.getWidth()
     
     -- XP bar at top of screen
-    local barWidth = 300
-    local barHeight = 12
+    local barWidth = 500
+    local barHeight = 20
     local barX = (screenWidth - barWidth) / 2
     local barY = 10
     
@@ -1195,14 +1872,14 @@ function GameScene:drawXPBar()
     local font = love.graphics.getFont()
     local levelText = "Lv " .. self.xpSystem.level
     local textWidth = font:getWidth(levelText)
-    love.graphics.print(levelText, barX - textWidth - 10, barY - 1)
+    drawTextWithShadow(levelText, barX - textWidth - 10, barY - 1)
     
     -- Rarity charges indicator (if any)
     local charges = self.rarityCharge:getCharges()
     if charges > 0 then
         love.graphics.setColor(1, 0.8, 0.2, 1)
         local chargeText = "★" .. charges
-        love.graphics.print(chargeText, barX + barWidth + 10, barY - 1)
+        drawTextWithShadow(chargeText, barX + barWidth + 10, barY - 1)
     end
     
     love.graphics.setColor(1, 1, 1, 1)
@@ -1214,6 +1891,75 @@ function GameScene:keypressed(key)
         -- Always swallow gameplay inputs while the modal is open
         self.upgradeUI:keypressed(key)
         return true
+    end
+
+    -- Pause menu toggle
+    if key == "escape" then
+        if self.pauseSettingsVisible then
+            self.pauseSettingsVisible = false
+            return true
+        end
+        self.pauseMenuVisible = not self.pauseMenuVisible
+        if self.pauseMenuVisible then
+            self.pauseMenuIndex = 1
+        end
+        return true
+    end
+
+    -- Pause menu input
+    if self.pauseMenuVisible then
+        if self.pauseSettingsVisible then
+            local settings = _G.settings
+            local step = 0.05
+            if key == "up" then
+                self.pauseSettingsIndex = self.pauseSettingsIndex - 1
+                if self.pauseSettingsIndex < 1 then self.pauseSettingsIndex = 4 end
+                return true
+            elseif key == "down" then
+                self.pauseSettingsIndex = self.pauseSettingsIndex + 1
+                if self.pauseSettingsIndex > 4 then self.pauseSettingsIndex = 1 end
+                return true
+            elseif key == "left" or key == "right" then
+                local dir = (key == "right") and 1 or -1
+                if settings then
+                    local s = settings:get()
+                    if self.pauseSettingsIndex == 1 then
+                        settings:setMusicVolume((s.audio.musicVolume or 0.35) + step * dir)
+                    elseif self.pauseSettingsIndex == 2 then
+                        settings:setSFXVolume((s.audio.sfxVolume or 0.5) + step * dir)
+                    elseif self.pauseSettingsIndex == 3 then
+                        settings:setScreenShake((s.graphics.screenShake or 1.0) + step * dir)
+                    end
+                end
+                return true
+            elseif (key == "return" or key == "space") and self.pauseSettingsIndex == 4 then
+                self.pauseSettingsVisible = false
+                return true
+            end
+            return true
+        else
+            if key == "up" then
+                self.pauseMenuIndex = self.pauseMenuIndex - 1
+                if self.pauseMenuIndex < 1 then self.pauseMenuIndex = 3 end
+                return true
+            elseif key == "down" then
+                self.pauseMenuIndex = self.pauseMenuIndex + 1
+                if self.pauseMenuIndex > 3 then self.pauseMenuIndex = 1 end
+                return true
+            elseif key == "return" or key == "space" then
+                if self.pauseMenuIndex == 1 then
+                    self.pauseMenuVisible = false
+                elseif self.pauseMenuIndex == 2 then
+                    self.pauseSettingsVisible = true
+                    self.pauseSettingsIndex = 1
+                elseif self.pauseMenuIndex == 3 then
+                    self.pauseMenuVisible = false
+                    self.gameState:transitionTo(self.gameState.States.MENU)
+                end
+                return true
+            end
+            return true
+        end
     end
 
     -- Stats overlay (Tab)
@@ -1243,8 +1989,9 @@ function GameScene:keypressed(key)
         self.playerStats:addBuff("frenzy", frenzyDuration, {
             { stat = "move_speed", mul = frenzyMoveMul },
             { stat = "crit_chance", add = frenzyCritAdd },
-        }, { break_on_hit_taken = true })
+        })
         self.frenzyActive = true
+        if _G.audio then _G.audio:playSFX("hit_heavy") end
         self.screenShake:add(4, 0.15)
         -- Frenzy VFX
         if self.player then
@@ -1264,13 +2011,83 @@ function GameScene:keypressed(key)
 end
 
 function GameScene:drawOverlays()
+    if self.pauseMenuVisible then
+        self:drawPauseOverlay()
+    end
     if self.statsOverlay and self.statsOverlay:isVisible() then
         self.statsOverlay:draw(self.playerStats, self.xpSystem)
     end
 end
 
 function GameScene:hasOpenOverlay()
-    return (self.statsOverlay and self.statsOverlay:isVisible()) == true
+    return ((self.statsOverlay and self.statsOverlay:isVisible()) == true) or self.pauseMenuVisible
+end
+
+function GameScene:drawPauseSlider(label, value, x, y, width, isSelected)
+    local v = math.max(0, math.min(1, value or 0))
+    love.graphics.setColor(0.16, 0.16, 0.22, 0.95)
+    love.graphics.rectangle("fill", x, y, width, 14, 4, 4)
+    love.graphics.setColor(isSelected and 0.95 or 0.7, isSelected and 0.75 or 0.78, isSelected and 0.35 or 0.95, 1)
+    love.graphics.rectangle("fill", x + 2, y + 2, (width - 4) * v, 10, 3, 3)
+    love.graphics.setColor(0.95, 0.95, 0.95, 1)
+    local f = (_G.PixelFonts and _G.PixelFonts.uiTiny) or love.graphics.getFont()
+    love.graphics.setFont(f)
+    love.graphics.print(label, x - 190, y - 5)
+    love.graphics.print(string.format("%d%%", math.floor(v * 100)), x + width + 12, y - 5)
+end
+
+function GameScene:drawPauseOverlay()
+    local w, h = love.graphics.getWidth(), love.graphics.getHeight()
+    love.graphics.setColor(0, 0, 0, 0.65)
+    love.graphics.rectangle("fill", 0, 0, w, h)
+
+    local panelW, panelH = 520, 320
+    local panelX, panelY = (w - panelW) / 2, (h - panelH) / 2
+    love.graphics.setColor(0.08, 0.08, 0.12, 0.96)
+    love.graphics.rectangle("fill", panelX, panelY, panelW, panelH, 12, 12)
+    love.graphics.setColor(0.6, 0.6, 0.75, 1)
+    love.graphics.setLineWidth(2)
+    love.graphics.rectangle("line", panelX, panelY, panelW, panelH, 12, 12)
+    love.graphics.setLineWidth(1)
+
+    local titleFont = (_G.PixelFonts and _G.PixelFonts.uiBody) or love.graphics.getFont()
+    love.graphics.setFont(titleFont)
+    love.graphics.setColor(1, 0.9, 0.7, 1)
+    local title = self.pauseSettingsVisible and "PAUSE - SETTINGS" or "PAUSED"
+    love.graphics.print(title, panelX + panelW / 2 - titleFont:getWidth(title) / 2, panelY + 24)
+
+    if self.pauseSettingsVisible then
+        local settings = _G.settings and _G.settings:get() or nil
+        local music = settings and settings.audio and settings.audio.musicVolume or 0.35
+        local sfx = settings and settings.audio and settings.audio.sfxVolume or 0.5
+        local shake = settings and settings.graphics and settings.graphics.screenShake or 1.0
+        local sliderX = panelX + 220
+        local y0 = panelY + 96
+        local gap = 56
+
+        self:drawPauseSlider("Music Volume", music, sliderX, y0, 220, self.pauseSettingsIndex == 1)
+        self:drawPauseSlider("Sound Volume", sfx, sliderX, y0 + gap, 220, self.pauseSettingsIndex == 2)
+        self:drawPauseSlider("Screen Shake", shake, sliderX, y0 + gap * 2, 220, self.pauseSettingsIndex == 3)
+
+        local backY = y0 + gap * 3
+        local backSelected = self.pauseSettingsIndex == 4
+        love.graphics.setColor(backSelected and 0.95 or 0.45, backSelected and 0.75 or 0.45, backSelected and 0.35 or 0.5, 1)
+        local body = (_G.PixelFonts and _G.PixelFonts.uiTiny) or love.graphics.getFont()
+        love.graphics.setFont(body)
+        local backText = "BACK"
+        love.graphics.print(backText, panelX + panelW / 2 - body:getWidth(backText) / 2, backY)
+    else
+        local options = {"Resume", "Settings", "Quit to Menu"}
+        local body = (_G.PixelFonts and _G.PixelFonts.uiBody) or love.graphics.getFont()
+        love.graphics.setFont(body)
+        for i, text in ipairs(options) do
+            local selected = self.pauseMenuIndex == i
+            love.graphics.setColor(selected and 1 or 0.8, selected and 0.85 or 0.8, selected and 0.5 or 0.75, 1)
+            love.graphics.print(text, panelX + panelW / 2 - body:getWidth(text) / 2, panelY + 98 + (i - 1) * 56)
+        end
+    end
+
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 function GameScene:mousepressed(x, y, button)
@@ -1284,8 +2101,13 @@ function GameScene:mousepressed(x, y, button)
 end
 
 function GameScene:mousemoved(x, y)
-    self.mouseX, self.mouseY = x, y
-    -- Handle upgrade UI hover
+    -- Convert screen coords to world coords for aiming
+    if self.camera then
+        self.mouseX, self.mouseY = self.camera:toWorld(x, y)
+    else
+        self.mouseX, self.mouseY = x, y
+    end
+    -- Handle upgrade UI hover (screen space)
     if self.upgradeUI then
         self.upgradeUI:mousemoved(x, y)
     end
@@ -1293,13 +2115,15 @@ end
 
 function GameScene:startDash()
     if self.dashCooldown <= 0 and not self.isDashing then
+        local dashCD = (self.player and self.player.abilities and self.player.abilities.dash and self.player.abilities.dash.cooldown) or 1.0
         self.isDashing = true
         self.dashTime = self.dashDuration
-        self.dashCooldown = 1.0 -- 1 second cooldown
+        self.dashCooldown = dashCD
+        if _G.audio then _G.audio:playSFX("hit_light") end
         
         -- Sync with player ability cooldown for HUD
         if self.player and self.player.abilities and self.player.abilities.dash then
-            self.player.abilities.dash.currentCooldown = 1.0
+            self.player.abilities.dash.currentCooldown = dashCD
         end
         
         -- Get dash direction from current movement or facing

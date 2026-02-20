@@ -1,5 +1,6 @@
 -- Bat Entity (flying, erratic movement)
 local JuiceManager = require("systems.juice_manager")
+local StatusEffects = require("systems.status_effects")
 
 local Bat = {}
 Bat.__index = Bat
@@ -40,6 +41,7 @@ function Bat:new(x, y)
         -- Status effects
         rootedTime = 0,
         rootedDamageTakenMul = 1.0,
+        statuses = {},
     }
     setmetatable(bat, Bat)
     return bat
@@ -72,6 +74,15 @@ function Bat:update(dt, playerX, playerY)
             return
         end
 
+        if StatusEffects.isFrozen(self) then
+            self.x = self.x + (self.knockbackX * dt)
+            self.y = self.y + (self.knockbackY * dt)
+            return
+        end
+
+        local speedMul = StatusEffects.getSpeedMul(self)
+        local effectiveSpeed = self.speed * speedMul
+
         -- Update wobble
         self.wobbleTimer = self.wobbleTimer + dt
         self.wobbleAngle = self.wobbleAngle + (self.wobbleSpeed * dt)
@@ -90,8 +101,8 @@ function Bat:update(dt, playerX, playerY)
             local wobbleOffset = math.sin(self.wobbleAngle) * self.wobbleRadius
             
             -- Move towards player with wobble (with knockback applied)
-            self.x = self.x + (dx * self.speed * dt) + (perpX * wobbleOffset * dt) + (self.knockbackX * dt)
-            self.y = self.y + (dy * self.speed * dt) + (perpY * wobbleOffset * dt) + (self.knockbackY * dt)
+            self.x = self.x + (dx * effectiveSpeed * dt) + (perpX * wobbleOffset * dt) + (self.knockbackX * dt)
+            self.y = self.y + (dy * effectiveSpeed * dt) + (perpY * wobbleOffset * dt) + (self.knockbackY * dt)
         end
     end
 end
@@ -141,15 +152,15 @@ function Bat:draw()
         if isFlashing then
             love.graphics.setColor(1, 1, 1, 1)
         else
-            love.graphics.setColor(0.9, 0.8, 0.9, 1)
+            love.graphics.setColor(0.75, 0.5, 1, 1)  -- Purple tint
         end
         love.graphics.draw(img, self.x, self.y, 0, scale, scale, w/2, h/2)
         love.graphics.setColor(1, 1, 1, 1)
         return
     end
 
-    -- Fallback: brown triangle
-    local r, g, b = 0.6, 0.4, 0.2
+    -- Fallback: purple triangle
+    local r, g, b = 0.7, 0.45, 1
     if self.flashTime > 0 then r, g, b = 1, 1, 1 end
     love.graphics.setColor(r, g, b, 1)
     local s = self.size

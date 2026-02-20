@@ -61,7 +61,7 @@ function TreentOverlord:new(x, y)
         -- Bark Barrage (horizontal burst attack - used in both phases)
         barkBarrageTimer = 0,
         barkBarrageCooldown = cfg.barkBarrageCooldown,
-        barkBarrageCount = 5,  -- 5 shots per burst (horizontal line)
+        barkBarrageCount = cfg.barkBarrageCount or 6,  -- Shots per burst (from config)
         barkBarrageDelay = cfg.barkBarrageDelay,
         barkBarrageIndex = 0,  -- Current projectile being fired
         barkBarrageActive = false,
@@ -220,28 +220,19 @@ function TreentOverlord:updateBarkBarrage(dt, playerX, playerY, onBarkShoot)
         -- Fire projectiles in sequence (HORIZONTAL BURST toward player)
         self.barkBarrageInternalTimer = self.barkBarrageInternalTimer + dt
 
-        -- 5 shots per burst
-        local shotsPerBurst = 5
+        local shotsPerBurst = self.barkBarrageCount
         
         if self.barkBarrageInternalTimer >= self.barkBarrageDelay and self.barkBarrageIndex < shotsPerBurst then
             self.barkBarrageInternalTimer = 0
             self.barkBarrageIndex = self.barkBarrageIndex + 1
 
-            -- Fire one projectile in horizontal line toward player
+            -- Fire one projectile toward player's position at shot time (per-shot snapshot)
             if onBarkShoot then
-                -- Calculate horizontal direction (left or right based on player position)
-                local dx = playerX - self.x
-                local horizontalDir = dx >= 0 and 1 or -1
-                
-                -- Vertical spread: shots form a horizontal line with slight vertical offset
-                local verticalSpread = 40  -- Total spread in pixels
-                local offsetY = (self.barkBarrageIndex - 3) * (verticalSpread / 4)  -- -2, -1, 0, 1, 2 → spread
-                
-                -- Target is directly horizontal with vertical offset
-                local targetX = self.x + horizontalDir * 600
-                local targetY = self.y + offsetY
-                
-                -- Phase 2: faster bark speed (280 vs 220)
+                -- Aim at player position with small spread for readability
+                local spread = 25
+                local targetX = playerX + (math.random() - 0.5) * spread * 2
+                local targetY = playerY + (math.random() - 0.5) * spread * 2
+
                 local barkSpeed = (self.phase == 2) and 280 or 220
                 onBarkShoot(self.x, self.y, targetX, targetY, barkSpeed)
             end
@@ -389,8 +380,8 @@ function TreentOverlord:draw()
         love.graphics.setColor(0, 0, 0, 0.8)
         love.graphics.rectangle("fill", self.x - barWidth/2, barY, barWidth, barHeight)
         
-        -- Cast progress (green = vine attack!)
-        love.graphics.setColor(0.2, 0.8, 0.2, 0.9)
+        -- Cast progress (brown/amber = vine attack)
+        love.graphics.setColor(0.5, 0.4, 0.25, 0.9)
         love.graphics.rectangle("fill", self.x - barWidth/2, barY, barWidth * castPercent, barHeight)
         
         -- Border
@@ -400,7 +391,7 @@ function TreentOverlord:draw()
         love.graphics.setLineWidth(1)
         
         -- Text
-        love.graphics.setColor(0.3, 1, 0.3, 1)
+        love.graphics.setColor(0.9, 0.8, 0.6, 1)
         love.graphics.print("VINE ATTACK!", self.x - 40, barY - 15)
     end
     

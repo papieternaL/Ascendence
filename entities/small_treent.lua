@@ -1,6 +1,7 @@
 -- Small Treent Enemy - Bark Thrower (MCM)
 -- Teaches projectile dodging for boss Bark Barrage
 local JuiceManager = require("systems.juice_manager")
+local StatusEffects = require("systems.status_effects")
 
 local SmallTreent = {}
 SmallTreent.__index = SmallTreent
@@ -8,12 +9,20 @@ SmallTreent.__index = SmallTreent
 SmallTreent.image = nil
 
 function SmallTreent:new(x, y)
-    -- Load sprite
+    -- Load sprite (Tiny Dungeon green creature, then fallback)
     if not SmallTreent.image then
-        local success, result = pcall(love.graphics.newImage, "assets/2D assets/Monochrome RPG Tileset/Dot Matrix/Sprites/enemy2.png")
-        if success then
-            SmallTreent.image = result
-            SmallTreent.image:setFilter("nearest", "nearest")
+        local paths = {
+            "assets/2D assets/Tiny Dungeon/Tiles/tile_0076.png",
+            "assets/2D assets/Tiny Dungeon/Tiles/tile_0055.png",
+            "assets/2D assets/Monochrome RPG Tileset/Dot Matrix/Sprites/enemy2.png",
+        }
+        for _, p in ipairs(paths) do
+            local success, result = pcall(love.graphics.newImage, p)
+            if success and result then
+                SmallTreent.image = result
+                SmallTreent.image:setFilter("nearest", "nearest")
+                break
+            end
         end
     end
     
@@ -46,6 +55,7 @@ function SmallTreent:new(x, y)
         knockbackX = 0,
         knockbackY = 0,
         knockbackDecay = 8,
+        statuses = {},
     }
     setmetatable(treent, SmallTreent)
     return treent
@@ -84,7 +94,11 @@ function SmallTreent:update(dt, playerX, playerY, onShoot)
     end
 
     -- Erratic movement: move towards player with wobble
-    if distance > 0 then
+    if StatusEffects.isFrozen(self) then
+        self.x = self.x + self.knockbackX * dt
+        self.y = self.y + self.knockbackY * dt
+    elseif distance > 0 then
+        local effectiveSpeed = self.speed * StatusEffects.getSpeedMul(self)
         dx = dx / distance
         dy = dy / distance
         
@@ -94,8 +108,8 @@ function SmallTreent:update(dt, playerX, playerY, onShoot)
         local wobbleOffset = math.sin(self.wobbleAngle) * self.wobbleRadius
         
         -- Move with wobble and knockback
-        self.x = self.x + (dx * self.speed * dt) + (perpX * wobbleOffset * dt) + (self.knockbackX * dt)
-        self.y = self.y + (dy * self.speed * dt) + (perpY * wobbleOffset * dt) + (self.knockbackY * dt)
+        self.x = self.x + (dx * effectiveSpeed * dt) + (perpX * wobbleOffset * dt) + (self.knockbackX * dt)
+        self.y = self.y + (dy * effectiveSpeed * dt) + (perpY * wobbleOffset * dt) + (self.knockbackY * dt)
     end
 end
 
@@ -135,8 +149,8 @@ function SmallTreent:draw()
     -- Draw sprite
     local img = SmallTreent.image
     if img then
-        local scale = 1.0
         local imgW = img:getWidth()
+        local scale = (imgW <= 18) and 1.5 or 1.0  -- Tiny 16px sprites scale up
         local imgH = img:getHeight()
         
         -- Flash effect or normal color (check JuiceManager too)
