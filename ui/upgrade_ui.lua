@@ -188,15 +188,17 @@ function UpgradeUI:draw()
   local screenWidth = love.graphics.getWidth()
   local screenHeight = love.graphics.getHeight()
   
-  -- Use UI fonts (linear filter) for readability when available
-  local uiFont = _G.PixelFonts and (_G.PixelFonts.uiBody or _G.PixelFonts.body)
-  if uiFont then love.graphics.setFont(uiFont) end
+  -- Use smaller UI fonts so card text fits
+  local cardFont = _G.PixelFonts and _G.PixelFonts.uiSmall or love.graphics.getFont()
+  local titleFont = _G.PixelFonts and _G.PixelFonts.uiBody or cardFont
+  love.graphics.setFont(cardFont)
   
   -- Darken background
   love.graphics.setColor(0, 0, 0, 0.7)
   love.graphics.rectangle("fill", 0, 0, screenWidth, screenHeight)
   
   -- Title
+  love.graphics.setFont(titleFont)
   love.graphics.setColor(1, 0.9, 0.3, 1)
   local font = love.graphics.getFont()
   local title = "LEVEL UP! Choose an Upgrade"
@@ -221,6 +223,8 @@ function UpgradeUI:draw()
   end
   
   -- Instructions
+  local instrFont = _G.PixelFonts and _G.PixelFonts.uiTiny or love.graphics.getFont()
+  love.graphics.setFont(instrFont)
   love.graphics.setColor(0.6, 0.6, 0.6, 1)
   local instructions = "[A/D or Arrow Keys] Navigate   [Enter] Select   [Click] Select"
   local instrWidth = font:getWidth(instructions)
@@ -265,6 +269,11 @@ function UpgradeUI:drawCardFront(upgrade, width, height, isSelected)
   local rarity = upgrade.rarity or "common"
   local color = rarityColors[rarity] or rarityColors.common
   local glow = rarityGlow[rarity] or rarityGlow.common
+
+  -- Font selection for card content
+  local nameFont = _G.PixelFonts and _G.PixelFonts.uiSmall or love.graphics.getFont()
+  local descFont = _G.PixelFonts and _G.PixelFonts.uiTiny or love.graphics.getFont()
+  local tagFont  = _G.PixelFonts and _G.PixelFonts.uiSmallText or descFont
   
   -- Glow effect for selected/hovered
   if isSelected then
@@ -289,39 +298,43 @@ function UpgradeUI:drawCardFront(upgrade, width, height, isSelected)
   
   -- Rarity banner at top
   love.graphics.setColor(color[1], color[2], color[3], 0.3)
-  love.graphics.rectangle("fill", 0, 0, width, 30, 8, 8)
-  love.graphics.rectangle("fill", 0, 15, width, 15)
+  love.graphics.rectangle("fill", 0, 0, width, 26, 8, 8)
+  love.graphics.rectangle("fill", 0, 13, width, 13)
   
   -- Rarity text
+  love.graphics.setFont(descFont)
   love.graphics.setColor(color[1], color[2], color[3], 1)
   local rarityText = string.upper(rarity)
   local font = love.graphics.getFont()
   local rarityWidth = font:getWidth(rarityText)
-  love.graphics.print(rarityText, width / 2 - rarityWidth / 2, 8)
+  love.graphics.print(rarityText, width / 2 - rarityWidth / 2, 6)
   
-  -- Upgrade name (UTF-8-safe truncate if too long)
+  -- Upgrade name
+  love.graphics.setFont(nameFont)
   love.graphics.setColor(1, 1, 1, 1)
-  local name = truncateToWidth(upgrade.name or "Unknown", width - 20, font, "...")
+  font = love.graphics.getFont()
+  local name = truncateToWidth(upgrade.name or "Unknown", width - 16, font, "...")
   local nameWidth = font:getWidth(name)
-  love.graphics.print(name, width / 2 - nameWidth / 2, 45)
+  love.graphics.print(name, width / 2 - nameWidth / 2, 34)
   
   -- Separator line
   love.graphics.setColor(color[1], color[2], color[3], 0.5)
-  love.graphics.line(20, 70, width - 20, 70)
+  love.graphics.line(15, 56, width - 15, 56)
   
-  -- Effect description
+  -- Effect description (small font)
+  love.graphics.setFont(descFont)
+  font = love.graphics.getFont()
   love.graphics.setColor(0.8, 0.8, 0.8, 1)
   local description = self:getUpgradeDescription(upgrade)
   
-  -- Word wrap the description; use font-based line height and clip before tags
-  local maxWidth = width - 20
-  local lineHeight = font:getHeight() + 2
-  local tagY = height - 35
+  local maxWidth = width - 16
+  local lineHeight = font:getHeight() + 1
+  local tagY = height - 28
   local lines = self:wrapText(description, maxWidth)
-  local lineY = 85
+  local lineY = 64
   for _, line in ipairs(lines) do
     if lineY + lineHeight > tagY then break end
-    love.graphics.print(line, 10, lineY)
+    love.graphics.print(line, 8, lineY)
     lineY = lineY + lineHeight
   end
   
@@ -333,20 +346,22 @@ function UpgradeUI:drawCardFront(upgrade, width, height, isSelected)
       local previewLines = self:wrapText(preview, maxWidth)
       for _, line in ipairs(previewLines) do
         if lineY + lineHeight > tagY then break end
-        love.graphics.print(line, 10, lineY)
+        love.graphics.print(line, 8, lineY)
         lineY = lineY + lineHeight
       end
     end
   end
   
-  -- Tags at bottom (UTF-8-safe truncate with ellipsis if too wide)
+  -- Tags at bottom
   if upgrade.tags and #upgrade.tags > 0 then
+    love.graphics.setFont(tagFont)
+    font = love.graphics.getFont()
     love.graphics.setColor(0.5, 0.5, 0.5, 0.8)
-    local tagText = table.concat(upgrade.tags, " • ")
-    tagText = truncateToWidth(tagText, width - 20, font, "...")
+    local tagText = table.concat(upgrade.tags, " + ")
+    tagText = truncateToWidth(tagText, width - 16, font, "...")
     if tagText ~= "" then
       local tagWidth = font:getWidth(tagText)
-      love.graphics.print(tagText, width / 2 - tagWidth / 2, height - 25)
+      love.graphics.print(tagText, width / 2 - tagWidth / 2, height - 20)
     end
   end
 end

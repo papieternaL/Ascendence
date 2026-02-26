@@ -37,10 +37,10 @@ function Menu:init()
         f:setFilter("linear", "linear")
         return f
     end
-    self.titleFont  = loadFont(fontBold, 64)
-    self.headerFont = loadFont(fontBold, 40)
-    self.bodyFont   = loadFont(fontNarrow, 28)
-    self.smallFont  = loadFont(fontNarrow, 22)
+    self.titleFont  = loadFont(fontBold, 48)
+    self.headerFont = loadFont(fontBold, 30)
+    self.bodyFont   = loadFont(fontNarrow, 18)
+    self.smallFont  = loadFont(fontNarrow, 14)
     
     -- Initialize floating particles
     for i = 1, 30 do
