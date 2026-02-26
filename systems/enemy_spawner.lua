@@ -32,12 +32,8 @@ function EnemySpawner:new(game_scene)
       bat = 6,
       skeleton = 5,
       wolf = 4,
-      lunger = 4,
       small_treent = 1.5,
       wizard = 1.0,
-      healer = 1.5,
-      druid_treent = 0.8,
-      treent = 0.5
     },
     
     map_width = 2000,
@@ -65,14 +61,6 @@ end
 function EnemySpawner:update(dt)
   if not self.active or self.paused then return end
   
-  -- #region agent log
-  local logfile = io.open("c:\\Users\\steven\\Desktop\\Cursor\\Shooter\\.cursor\\debug.log", "a")
-  if logfile then
-    logfile:write(string.format('{"sessionId":"debug-session","runId":"spawn-debug","hypothesisId":"H1","location":"enemy_spawner.lua:update","message":"Spawner update tick","data":{"current_enemy_count":%d,"max_enemies":%d,"min_enemies":%d,"spawn_timer":%.2f},"timestamp":%d}\n', self.current_enemy_count, self.max_enemies, self.min_enemies, self.spawn_timer, os.time() * 1000))
-    logfile:close()
-  end
-  -- #endregion
-  
   self.time_alive = self.time_alive + dt
   self.difficulty_multiplier = 1.0 + (self.time_alive * self.difficulty_scale_rate)
   
@@ -88,25 +76,11 @@ function EnemySpawner:update(dt)
   if self.spawn_timer >= scaled_interval then
     self.spawn_timer = 0
     if self.current_enemy_count < effective_max then
-      -- #region agent log
-      local logfile = io.open("c:\\Users\\steven\\Desktop\\Cursor\\Shooter\\.cursor\\debug.log", "a")
-      if logfile then
-        logfile:write(string.format('{"sessionId":"debug-session","runId":"spawn-debug","hypothesisId":"H1","location":"enemy_spawner.lua:spawnBatch","message":"Attempting spawn batch","data":{"current_enemy_count":%d,"max_enemies":%d},"timestamp":%d}\n', self.current_enemy_count, self.max_enemies, os.time() * 1000))
-        logfile:close()
-      end
-      -- #endregion
       self:spawnBatch(effective_max)
     end
   end
   
   if self.current_enemy_count < effective_min then
-    -- #region agent log
-    local logfile = io.open("c:\\Users\\steven\\Desktop\\Cursor\\Shooter\\.cursor\\debug.log", "a")
-    if logfile then
-      logfile:write(string.format('{"sessionId":"debug-session","runId":"spawn-debug","hypothesisId":"H2","location":"enemy_spawner.lua:minEnemies","message":"Below min enemies, forcing spawn","data":{"current_enemy_count":%d,"effective_min":%d},"timestamp":%d}\n', self.current_enemy_count, math.floor(effective_min), os.time() * 1000))
-      logfile:close()
-    end
-    -- #endregion
     self:spawnBatch(effective_max)
   end
 end
@@ -119,14 +93,6 @@ function EnemySpawner:spawnBatch(max_enemies_override)
   local max_enemies_cap = max_enemies_override or self.max_enemies
   local batch_size = math.min(scaled_batch_size, max_enemies_cap - self.current_enemy_count)
   if batch_size <= 0 then return end
-  
-  -- #region agent log
-  local logfile = io.open("c:\\Users\\steven\\Desktop\\Cursor\\Shooter\\.cursor\\debug.log", "a")
-  if logfile then
-    logfile:write(string.format('{"sessionId":"debug-session","runId":"spawn-debug","hypothesisId":"H1","location":"enemy_spawner.lua:spawnBatch","message":"Spawning batch","data":{"batch_size":%d,"base_batch_size":%d,"current_count":%d},"timestamp":%d}\n', batch_size, base_batch_size, self.current_enemy_count, os.time() * 1000))
-    logfile:close()
-  end
-  -- #endregion
   
   for i = 1, batch_size do
     local enemy_type = self:selectEnemyType()
@@ -141,11 +107,8 @@ function EnemySpawner:selectEnemyType()
   for enemy_type, base_weight in pairs(self.enemy_weights) do
     local weight = base_weight
     
-    if enemy_type == "lunger" or enemy_type == "small_treent" or enemy_type == "wizard" then
+    if enemy_type == "small_treent" or enemy_type == "wizard" then
       weight = weight * (1.0 + self.difficulty_multiplier * 0.3)
-    end
-    if enemy_type == "treent" then
-      weight = weight * (1.0 + self.difficulty_multiplier * 0.5)
     end
     
     adjusted_weights[enemy_type] = weight

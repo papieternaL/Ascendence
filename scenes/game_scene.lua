@@ -241,16 +241,7 @@ function GameScene:load()
 end
 
 function GameScene:spawnEnemies()
-    local worldW = Config.World and Config.World.width or love.graphics.getWidth()
-    local worldH = Config.World and Config.World.height or love.graphics.getHeight()
-    local centerX, centerY = worldW / 2, worldH / 2
-    local floor = self.gameState.currentFloor
-    
-    -- More enemies on higher floors (increased lunger pressure)
-    local density = (Config.enemy_spawner and Config.enemy_spawner.density_multiplier) or 1.0
-    local numLungers = math.max(1, math.floor((2 + math.floor(floor / 2)) * density))
-    local numTreents = math.floor((math.floor(floor / 3)) * density)
-    
+    -- Clear all enemy lists
     self.enemies = {}
     self.lungers = {}
     self.treents = {}
@@ -263,36 +254,9 @@ function GameScene:spawnEnemies()
     self.wizards = {}
     self.healers = {}
     self.druidTreents = {}
-    
-    -- Spawn lungers
-    for i = 1, numLungers do
-        local angle = math.random() * math.pi * 2
-        local distance = math.random(300, 500)
-        local x = centerX + math.cos(angle) * distance
-        local y = centerY + math.sin(angle) * distance
-        
-        local lunger = Lunger:new(x, y)
-        lunger.health = lunger.health * self:getEnemyHpMultiplier()
-        lunger.maxHealth = lunger.health
-        lunger.speed = (lunger.speed or 30) * 1.12
-        lunger.lungeSpeed = (lunger.lungeSpeed or 500) * 1.12
-        table.insert(self.lungers, lunger)
-    end
 
-    -- Spawn treents (tanky elites)
-    for i = 1, numTreents do
-        local angle = math.random() * math.pi * 2
-        local distance = math.random(350, 550)
-        local x = centerX + math.cos(angle) * distance
-        local y = centerY + math.sin(angle) * distance
-
-        local treent = Treent:new(x, y)
-        treent.health = treent.health * self:getEnemyHpMultiplier()
-        treent.maxHealth = treent.health
-        treent.damage = (treent.damage or 18) * self.difficultyMult.enemyDamageMult
-        treent.speed = (treent.speed or 28) * 1.12
-        table.insert(self.treents, treent)
-    end
+    -- Initial enemies are now handled entirely by the EnemySpawner
+    -- (no pre-placed lungers/treents)
     if self.enemySpawner then
         self.enemySpawner:syncCountFromScene()
     end
