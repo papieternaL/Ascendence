@@ -281,87 +281,108 @@ function isPointInQuitButton(px, py)
     return px >= btnX and px <= btnX + btnW and py >= btnY and py <= btnY + btnH
 end
 
+-- Helper: draw a diamond (rotated square) polygon
+local function drawDiamond(mode, cx, cy, halfW, halfH)
+    love.graphics.polygon(mode, cx, cy - halfH, cx + halfW, cy, cx, cy + halfH, cx - halfW, cy)
+end
+
 function drawBottomHUD(player)
     local w = love.graphics.getWidth()
     local h = love.graphics.getHeight()
+    local t = love.timer.getTime()
 
-    -- U-shaped HUD background
-    local hudWidth = 600
-    local hudHeight = 130
-    local hudX = (w - hudWidth) / 2
-    local hudY = h - hudHeight - 10
+    -- Sleek dark panel
+    local panelW = 560
+    local panelH = 110
+    local panelX = (w - panelW) / 2
+    local panelY = h - panelH - 8
 
-    -- Draw curved background shape
-    love.graphics.setColor(0, 0, 0, 0.7)
-    -- Main rectangle
-    love.graphics.rectangle("fill", hudX + 30, hudY + 20, hudWidth - 60, hudHeight - 20, 8, 8)
-    -- Left curve
-    love.graphics.arc("fill", hudX + 38, hudY + 28, 30, math.pi, math.pi * 1.5)
-    love.graphics.rectangle("fill", hudX + 8, hudY + 28, 30, hudHeight - 28)
-    -- Right curve
-    love.graphics.arc("fill", hudX + hudWidth - 38, hudY + 28, 30, math.pi * 1.5, math.pi * 2)
-    love.graphics.rectangle("fill", hudX + hudWidth - 38, hudY + 28, 30, hudHeight - 28)
-
-    -- Health bar (at the top of the U)
-    local healthBarWidth = hudWidth - 80
-    local healthBarHeight = 24
-    local healthBarX = hudX + 40
-    local healthBarY = hudY + 25
-
-    -- Health bar background
-    love.graphics.setColor(0.2, 0.05, 0.05, 1)
-    love.graphics.rectangle("fill", healthBarX, healthBarY, healthBarWidth, healthBarHeight, 4, 4)
-
-    -- Health bar fill
-    local healthPercent = player.health / player.maxHealth
-    local healthColor = {0.2, 0.8, 0.2}
-    if healthPercent < 0.3 then
-        healthColor = {0.9, 0.2, 0.2}
-    elseif healthPercent < 0.6 then
-        healthColor = {0.9, 0.7, 0.2}
-    end
-    love.graphics.setColor(healthColor[1], healthColor[2], healthColor[3], 1)
-    love.graphics.rectangle("fill", healthBarX + 2, healthBarY + 2, (healthBarWidth - 4) * healthPercent, healthBarHeight - 4, 3, 3)
-
-    -- Health bar shine
-    love.graphics.setColor(1, 1, 1, 0.2)
-    love.graphics.rectangle("fill", healthBarX + 2, healthBarY + 2, (healthBarWidth - 4) * healthPercent, (healthBarHeight - 4) / 2, 3, 3)
-
-    -- Health bar border
-    love.graphics.setColor(0.4, 0.4, 0.4, 1)
-    love.graphics.setLineWidth(2)
-    love.graphics.rectangle("line", healthBarX, healthBarY, healthBarWidth, healthBarHeight, 4, 4)
+    -- Panel background gradient (dark, semi-transparent)
+    love.graphics.setColor(0.04, 0.04, 0.08, 0.85)
+    love.graphics.rectangle("fill", panelX, panelY, panelW, panelH, 10, 10)
+    -- Panel top accent line (warm gold, Hades-style)
+    love.graphics.setColor(0.75, 0.55, 0.25, 0.6)
+    love.graphics.setLineWidth(1)
+    love.graphics.line(panelX + 20, panelY, panelX + panelW - 20, panelY)
+    -- Panel border
+    love.graphics.setColor(0.35, 0.28, 0.18, 0.5)
+    love.graphics.setLineWidth(1.5)
+    love.graphics.rectangle("line", panelX, panelY, panelW, panelH, 10, 10)
     love.graphics.setLineWidth(1)
 
-    -- Health text (using pre-loaded font)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.setFont(hudFonts.small)
+    -- Health bar (Hades/CotDG style: red fill, metallic frame)
+    local healthBarWidth = panelW - 60
+    local healthBarHeight = 18
+    local healthBarX = panelX + 30
+    local healthBarY = panelY + 14
+
+    local healthPercent = math.max(0, player.health / player.maxHealth)
+
+    -- Bar track (dark)
+    love.graphics.setColor(0.12, 0.04, 0.04, 1)
+    love.graphics.rectangle("fill", healthBarX, healthBarY, healthBarWidth, healthBarHeight, 3, 3)
+
+    -- Bar fill (deep red → bright red gradient feel)
+    local fillW = (healthBarWidth - 2) * healthPercent
+    if fillW > 0 then
+        love.graphics.setColor(0.7, 0.12, 0.12, 1)
+        love.graphics.rectangle("fill", healthBarX + 1, healthBarY + 1, fillW, healthBarHeight - 2, 2, 2)
+        -- Brighter top-half highlight
+        love.graphics.setColor(0.9, 0.22, 0.18, 0.7)
+        love.graphics.rectangle("fill", healthBarX + 1, healthBarY + 1, fillW, (healthBarHeight - 2) * 0.45, 2, 2)
+        -- Critical: pulse orange glow when below 30%
+        if healthPercent < 0.3 then
+            local pulse = 0.3 + 0.25 * math.sin(t * 6)
+            love.graphics.setColor(1, 0.4, 0.1, pulse)
+            love.graphics.rectangle("fill", healthBarX + 1, healthBarY + 1, fillW, healthBarHeight - 2, 2, 2)
+        end
+    end
+
+    -- Bar frame (metallic silver-gold)
+    love.graphics.setColor(0.55, 0.48, 0.35, 0.9)
+    love.graphics.setLineWidth(1.5)
+    love.graphics.rectangle("line", healthBarX, healthBarY, healthBarWidth, healthBarHeight, 3, 3)
+    love.graphics.setLineWidth(1)
+
+    -- Health text
+    love.graphics.setColor(1, 1, 1, 0.95)
+    love.graphics.setFont(hudFonts.tiny)
     local healthText = math.floor(player.health) .. "/" .. player.maxHealth
     local font = love.graphics.getFont()
     local textWidth = font:getWidth(healthText)
-    drawTextWithShadow(healthText, healthBarX + healthBarWidth/2 - textWidth/2, healthBarY + 1)
+    drawTextWithShadow(healthText, healthBarX + healthBarWidth / 2 - textWidth / 2, healthBarY + 1)
 
-    -- Draw abilities in a row below health bar
-    local abilitySize = 64
-    local abilitySpacing = 16
+    -- Ability diamonds (Hades-inspired rotated squares)
+    local diamondR = 28
+    local diamondSpacing = 76
     local numAbilities = #player.abilityOrder
-    local abilitiesWidth = numAbilities * abilitySize + (numAbilities - 1) * abilitySpacing
-    local abilitiesX = (w - abilitiesWidth) / 2
-    local abilitiesY = healthBarY + healthBarHeight + 10
+    local abilitiesWidth = (numAbilities - 1) * diamondSpacing
+    local abilitiesStartX = w / 2 - abilitiesWidth / 2
+    local abilitiesCY = healthBarY + healthBarHeight + 10 + diamondR + 2
 
     for i, abilityId in ipairs(player.abilityOrder) do
         local ability = player.abilities[abilityId]
         if ability then
-            local x = abilitiesX + (i - 1) * (abilitySize + abilitySpacing)
-            drawAbilityIcon(ability, x, abilitiesY, abilitySize)
+            local cx = abilitiesStartX + (i - 1) * diamondSpacing
+            drawAbilityDiamond(ability, cx, abilitiesCY, diamondR)
         end
     end
 end
 
-function drawAbilityIcon(ability, x, y, size)
+-- Ability color accents per key (matching element vibes)
+local abilityAccents = {
+    Q = {0.3, 0.75, 1.0},
+    SPACE = {0.9, 0.85, 0.4},
+    E = {0.85, 0.3, 0.3},
+    R = {1.0, 0.55, 0.15},
+}
+
+function drawAbilityDiamond(ability, cx, cy, r)
     local hasCharge = (ability.chargeMax ~= nil)
     local isReady = ability.currentCooldown <= 0
     local cooldownPercent = 0
+    local t = love.timer.getTime()
+
     if hasCharge then
         local c = ability.charge or 0
         local m = ability.chargeMax or 1
@@ -371,75 +392,77 @@ function drawAbilityIcon(ability, x, y, size)
         cooldownPercent = ability.cooldown > 0 and (ability.currentCooldown / ability.cooldown) or 0
     end
 
-    -- Ability background
-    if isReady then
-        love.graphics.setColor(0.2, 0.25, 0.35, 1)
-    else
-        love.graphics.setColor(0.1, 0.1, 0.15, 1)
-    end
-    love.graphics.rectangle("fill", x, y, size, size, 6, 6)
+    local accent = abilityAccents[ability.key] or {0.5, 0.7, 1.0}
 
-    -- Cooldown overlay (sweeping clock effect)
+    -- Outer glow when ready (pulsing)
+    if isReady then
+        local pulse = 0.25 + 0.15 * math.sin(t * 3)
+        love.graphics.setColor(accent[1], accent[2], accent[3], pulse)
+        drawDiamond("fill", cx, cy, r + 6, r + 6)
+    end
+
+    -- Diamond background
+    if isReady then
+        love.graphics.setColor(0.1, 0.12, 0.18, 0.95)
+    else
+        love.graphics.setColor(0.06, 0.06, 0.09, 0.95)
+    end
+    drawDiamond("fill", cx, cy, r, r)
+
+    -- Cooldown fill (dark overlay sweeping from bottom)
     if not isReady then
-        love.graphics.setColor(0, 0, 0, 0.6)
-        local segments = 32
-        local angleStart = -math.pi / 2
-        local angleEnd = angleStart + (2 * math.pi * cooldownPercent)
-        local centerX = x + size / 2
-        local centerY = y + size / 2
-        local radius = size / 2 - 2
-        local vertices = {centerX, centerY}
-        for i = 0, segments do
-            local angle = angleStart + (angleEnd - angleStart) * (i / segments)
-            table.insert(vertices, centerX + math.cos(angle) * radius)
-            table.insert(vertices, centerY + math.sin(angle) * radius)
-        end
-        if #vertices >= 6 then
-            love.graphics.polygon("fill", vertices)
-        end
+        local fillH = r * 2 * cooldownPercent
+        love.graphics.setColor(0, 0, 0, 0.55)
+        love.graphics.stencil(function()
+            drawDiamond("fill", cx, cy, r - 1, r - 1)
+        end, "replace", 1)
+        love.graphics.setStencilTest("greater", 0)
+        love.graphics.rectangle("fill", cx - r, cy - r, r * 2, fillH)
+        love.graphics.setStencilTest()
     end
 
-    -- Ability icon (text symbol)
-    love.graphics.setColor(1, 1, 1, isReady and 1 or 0.4)
-    love.graphics.setFont(hudFonts.header)
+    -- Ability icon symbol
+    love.graphics.setColor(1, 1, 1, isReady and 1 or 0.35)
+    love.graphics.setFont(hudFonts.body)
     local font = love.graphics.getFont()
-    local iconWidth = font:getWidth(ability.icon)
-    drawTextWithShadow(ability.icon, x + size/2 - iconWidth/2, y + 6)
+    local iconW = font:getWidth(ability.icon)
+    local iconH = font:getHeight()
+    drawTextWithShadow(ability.icon, cx - iconW / 2, cy - iconH / 2 - 3)
 
-    -- Keybind
-    love.graphics.setColor(1, 1, 1, 0.8)
-    love.graphics.setFont(hudFonts.tiny)
-    font = love.graphics.getFont()
-    local keyWidth = font:getWidth(ability.key)
-    drawTextWithShadow(ability.key, x + size/2 - keyWidth/2, y + size - 14)
-
-    -- Border
+    -- Diamond border
     if isReady then
-        love.graphics.setColor(0.5, 0.7, 1, 1)
+        love.graphics.setColor(accent[1], accent[2], accent[3], 0.9)
     else
-        love.graphics.setColor(0.3, 0.3, 0.4, 1)
+        love.graphics.setColor(0.25, 0.22, 0.2, 0.7)
     end
     love.graphics.setLineWidth(2)
-    love.graphics.rectangle("line", x, y, size, size, 6, 6)
+    drawDiamond("line", cx, cy, r, r)
     love.graphics.setLineWidth(1)
 
-    -- Cooldown timer text
+    -- Keybind label below diamond
+    love.graphics.setColor(0.85, 0.78, 0.6, isReady and 0.9 or 0.45)
+    love.graphics.setFont(hudFonts.tiny)
+    font = love.graphics.getFont()
+    local keyW = font:getWidth(ability.key)
+    drawTextWithShadow(ability.key, cx - keyW / 2, cy + r + 4)
+
+    -- Cooldown / charge text inside diamond
     if hasCharge then
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.setFont(hudFonts.small)
+        love.graphics.setColor(1, 0.9, 0.5, 1)
+        love.graphics.setFont(hudFonts.tiny)
         local c = ability.charge or 0
         local m = ability.chargeMax or 1
         local txt = string.format("%d%%", math.floor((c / m) * 100))
         font = love.graphics.getFont()
         local tw = font:getWidth(txt)
-        drawTextWithShadow(txt, x + size/2 - tw/2, y + size/2 - 6)
+        drawTextWithShadow(txt, cx - tw / 2, cy + 4)
     elseif not isReady then
-        love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.setFont(hudFonts.body)
+        love.graphics.setColor(1, 1, 1, 0.9)
+        love.graphics.setFont(hudFonts.small)
         local cdText = string.format("%.1f", ability.currentCooldown)
         font = love.graphics.getFont()
-        local cdWidth = font:getWidth(cdText)
-        drawTextWithShadow(cdText, x + size/2 - cdWidth/2, y + size/2 - 7)
+        local cdW = font:getWidth(cdText)
+        drawTextWithShadow(cdText, cx - cdW / 2, cy - font:getHeight() / 2 + 2)
     end
 
     love.graphics.setColor(1, 1, 1, 1)

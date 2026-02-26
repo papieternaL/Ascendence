@@ -1893,41 +1893,64 @@ end
 
 function GameScene:drawXPBar()
     local screenWidth = love.graphics.getWidth()
-    
-    -- XP bar at top of screen
-    local barWidth = 500
-    local barHeight = 20
+    local t = love.timer.getTime()
+
+    local barWidth = 420
+    local barHeight = 10
     local barX = (screenWidth - barWidth) / 2
-    local barY = 10
-    
-    -- Background
-    love.graphics.setColor(0.1, 0.1, 0.15, 0.8)
-    love.graphics.rectangle("fill", barX - 2, barY - 2, barWidth + 4, barHeight + 4, 4, 4)
-    
-    -- XP progress
+    local barY = 14
     local progress = self.xpSystem:getProgress()
-    love.graphics.setColor(0.3, 0.7, 1, 1)
-    love.graphics.rectangle("fill", barX, barY, barWidth * progress, barHeight, 2, 2)
-    
-    -- Border
-    love.graphics.setColor(0.5, 0.7, 1, 0.8)
-    love.graphics.rectangle("line", barX, barY, barWidth, barHeight, 2, 2)
-    
-    -- Level indicator
-    love.graphics.setColor(1, 1, 1, 1)
-    local font = love.graphics.getFont()
+
+    -- Subtle backing panel
+    love.graphics.setColor(0.04, 0.04, 0.08, 0.75)
+    love.graphics.rectangle("fill", barX - 4, barY - 4, barWidth + 8, barHeight + 8, 6, 6)
+
+    -- Bar track
+    love.graphics.setColor(0.1, 0.08, 0.14, 1)
+    love.graphics.rectangle("fill", barX, barY, barWidth, barHeight, 3, 3)
+
+    -- XP fill (cyan-teal gradient feel, space-shooter inspired)
+    local fillW = barWidth * progress
+    if fillW > 0 then
+        love.graphics.setColor(0.1, 0.55, 0.85, 1)
+        love.graphics.rectangle("fill", barX, barY, fillW, barHeight, 3, 3)
+        -- Bright top highlight
+        love.graphics.setColor(0.25, 0.75, 1.0, 0.6)
+        love.graphics.rectangle("fill", barX, barY, fillW, barHeight * 0.4, 3, 3)
+        -- Leading-edge glow
+        love.graphics.setColor(0.5, 0.9, 1.0, 0.5 + 0.2 * math.sin(t * 4))
+        love.graphics.rectangle("fill", barX + fillW - 4, barY, 4, barHeight, 2, 2)
+    end
+
+    -- Frame (thin metallic)
+    love.graphics.setColor(0.4, 0.5, 0.6, 0.6)
+    love.graphics.setLineWidth(1)
+    love.graphics.rectangle("line", barX, barY, barWidth, barHeight, 3, 3)
+
+    -- Level badge (left of bar)
+    local badgeFont = _G.PixelFonts and _G.PixelFonts.uiTiny or love.graphics.getFont()
+    love.graphics.setFont(badgeFont)
     local levelText = "Lv " .. self.xpSystem.level
-    local textWidth = font:getWidth(levelText)
-    drawTextWithShadow(levelText, barX - textWidth - 10, barY - 1)
-    
-    -- Rarity charges indicator (if any)
+    local tw = badgeFont:getWidth(levelText)
+    -- Badge background
+    love.graphics.setColor(0.04, 0.04, 0.08, 0.85)
+    love.graphics.rectangle("fill", barX - tw - 20, barY - 2, tw + 14, barHeight + 4, 4, 4)
+    love.graphics.setColor(0.4, 0.5, 0.6, 0.5)
+    love.graphics.rectangle("line", barX - tw - 20, barY - 2, tw + 14, barHeight + 4, 4, 4)
+    -- Level text
+    love.graphics.setColor(0.85, 0.9, 1.0, 1)
+    love.graphics.print(levelText, barX - tw - 13, barY - 1)
+
+    -- Rarity charges (right of bar)
     local charges = self.rarityCharge:getCharges()
     if charges > 0 then
         love.graphics.setColor(1, 0.8, 0.2, 1)
+        local chargeFont = _G.PixelFonts and _G.PixelFonts.uiTiny or love.graphics.getFont()
+        love.graphics.setFont(chargeFont)
         local chargeText = "★" .. charges
-        drawTextWithShadow(chargeText, barX + barWidth + 10, barY - 1)
+        love.graphics.print(chargeText, barX + barWidth + 10, barY - 1)
     end
-    
+
     love.graphics.setColor(1, 1, 1, 1)
 end
 
