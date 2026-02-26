@@ -52,7 +52,7 @@ Config.boss_progression = {
 }
 
 Config.enemy_spawner = {
-  base_spawn_interval = 2.25,
+  base_spawn_interval = 2.0,
   max_enemies = 80,
   min_enemies = 18,
   min_enemies_start = 10,      -- target count early in run; more manageable start
