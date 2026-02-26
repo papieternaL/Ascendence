@@ -843,8 +843,18 @@ function Menu:mousemoved(x, y)
     local state = self.gameState:getState()
     local States = self.gameState.States
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
-    
-    if state == States.CHARACTER_SELECT then
+
+    if state == States.GAME_OVER then
+        if self:isPointInButton(x, y, w/2, h * 0.6, 180, 50) then
+            self.selectedIndex = 1
+        elseif self:isPointInButton(x, y, w/2, h * 0.7, 180, 50) then
+            self.selectedIndex = 2
+        end
+    elseif state == States.VICTORY then
+        if self:isPointInButton(x, y, w/2, h * 0.6, 180, 50) then
+            self.selectedIndex = 1
+        end
+    elseif state == States.CHARACTER_SELECT then
         local classes = {"ARCHER", "WIZARD", "KNIGHT"}
         local cardWidth = 180
         local cardHeight = 280

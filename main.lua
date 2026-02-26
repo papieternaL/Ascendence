@@ -27,6 +27,7 @@ local gameScene
 local bossArenaScene
 local audio
 local settings
+local prevState = nil
 
 -- Pre-loaded fonts for HUD (avoid creating every frame)
 local hudFonts = {}
@@ -131,6 +132,13 @@ function love.update(dt)
 
     local state = gameState:getState()
     local States = gameState.States
+
+    -- Reset game scene when re-entering PLAYING from Game Over / Victory / Boss
+    if state == States.PLAYING and prevState ~= nil and prevState ~= States.PLAYING then
+        gameScene = nil
+        bossArenaScene = nil
+    end
+    prevState = state
 
     if state == States.PLAYING then
         -- Initialize game scene if needed
