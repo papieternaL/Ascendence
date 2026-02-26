@@ -217,12 +217,18 @@ function UpgradeRoll.rollOptions(args)
       end
     end
 
-    -- roll rarity
+    -- roll rarity (respect minRarity floor if specified)
     local rarity = weightedChoice(rng, {
       { key="common", w=rarityWeights.common },
       { key="rare",   w=rarityWeights.rare },
       { key="epic",   w=rarityWeights.epic },
     })
+    local minRarity = args.minRarity
+    if minRarity == "rare" and rarity == "common" then
+      rarity = rng() < 0.6 and "rare" or "epic"
+    elseif minRarity == "epic" then
+      rarity = "epic"
+    end
 
     -- choose from pool; fallback if empty
     local poolSource = useAbility and poolsAbility or poolsMain

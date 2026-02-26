@@ -34,6 +34,7 @@ local ProcEngine = require("systems.proc_engine")
 local ObstacleNav = require("systems.obstacle_navigation")
 local Config = require("data.config")
 local BossPortal = require("entities.boss_portal")
+local Core = require("entities.core")
 
 -- Load upgrade data
 local ArcherUpgrades = require("data.upgrades_archer")
@@ -112,6 +113,25 @@ function GameScene:new(gameState)
         arrowVolleys = {},
         bossPortal = nil,
         bossPortalSpawned = false,
+
+        -- Major progression bar (fills from kills + cores → boss portal)
+        majorProgress = 0,
+        majorProgressMax = 100,
+
+        -- Cores objective
+        cores = {},
+        coresTotal = 20,
+        coresDestroyed = 0,
+        coreObjectiveTimer = 0,
+        coreObjectiveTimeLimit = 180, -- 3 minutes
+        coreObjectiveComplete = false,
+        coreObjectiveRewardGiven = false,
+        coreObjectiveStarted = true,
+
+        -- Progress per event
+        majorProgressPerKill = 0.35,
+        majorProgressPerCore = 3.0,
+        majorProgressPerCoreBonus = 5.0, -- bonus if objective completed in time
     }
     setmetatable(scene, GameScene)
     return scene
@@ -214,6 +234,9 @@ function GameScene:load()
     
     -- Apply stats (including 15% cooldown reduction) at run start
     self:applyStatsToPlayer()
+
+    -- Spawn cores around the map for the objective
+    self:spawnCores()
 end
 
 function GameScene:spawnEnemies()
@@ -271,6 +294,45 @@ function GameScene:spawnEnemies()
     end
     if self.enemySpawner then
         self.enemySpawner:syncCountFromScene()
+    end
+end
+
+function GameScene:spawnCores()
+    self.cores = {}
+    self.coresDestroyed = 0
+    self.coreObjectiveTimer = 0
+    self.coreObjectiveComplete = false
+    self.coreObjectiveRewardGiven = false
+    local worldW = Config.World and Config.World.width or 2400
+    local worldH = Config.World and Config.World.height or 1600
+    local margin = 120
+    local blockers = self.forestTilemap and self.forestTilemap:getLargeBlockers() or {}
+
+    for i = 1, self.coresTotal do
+        local placed = false
+        for attempt = 1, 30 do
+            local cx = margin + math.random() * (worldW - margin * 2)
+            local cy = margin + math.random() * (worldH - margin * 2)
+            local blocked = false
+            for _, blk in ipairs(blockers) do
+                local dx = cx - blk.x
+                local dy = cy - blk.y
+                if math.sqrt(dx * dx + dy * dy) < (blk.radius or 30) + 30 then
+                    blocked = true
+                    break
+                end
+            end
+            if not blocked then
+                table.insert(self.cores, Core:new(cx, cy, { health = 60, majorProgress = self.majorProgressPerCore }))
+                placed = true
+                break
+            end
+        end
+        if not placed then
+            local cx = margin + math.random() * (worldW - margin * 2)
+            local cy = margin + math.random() * (worldH - margin * 2)
+            table.insert(self.cores, Core:new(cx, cy, { health = 60, majorProgress = self.majorProgressPerCore }))
+        end
     end
 end
 
@@ -426,9 +488,20 @@ function GameScene:update(dt)
         self.xpSystem:update(dt, self.player.x, self.player.y, pickupRadius)
     end
 
-    -- Spawn boss portal when player reaches required level
-    local levelRequired = Config.boss_progression and Config.boss_progression.level_required or 10
-    if self.xpSystem and self.xpSystem.level >= levelRequired and not self.bossPortalSpawned and self.player then
+    -- Update core objective timer
+    if self.coreObjectiveStarted and not self.coreObjectiveComplete then
+        self.coreObjectiveTimer = self.coreObjectiveTimer + dt
+    end
+
+    -- Update cores
+    for _, core in ipairs(self.cores) do
+        if core.isAlive then
+            core:update(dt)
+        end
+    end
+
+    -- Major progression bar → boss portal at 100%
+    if self.majorProgress >= self.majorProgressMax and not self.bossPortalSpawned and self.player then
         self.bossPortal = BossPortal:new(self.player.x + 150, self.player.y)
         self.bossPortalSpawned = true
         if _G.audio then _G.audio:playSFX("portal_open") end
@@ -514,6 +587,7 @@ function GameScene:update(dt)
                             self.particles:createExplosion(ex, ey, {0.8, 0.1, 0.1})
                             self.screenShake:add(3, 0.12)
                             self.xpSystem:spawnOrb(ex, ey, 8 + math.random(0, 5))
+                            self:addMajorProgress(self.majorProgressPerKill)
                             -- Check hemorrhage proc on bleed-kill
                             local killActions = self.procEngine:onKill(self.playerStats, { isCrit = false, target = tick.entity })
                             for _, action in ipairs(killActions) do
@@ -809,6 +883,7 @@ function GameScene:update(dt)
 
                                 local xpValue = group.xpBase + math.random(0, group.xpRand)
                                 self.xpSystem:spawnOrb(ex2, ey2, xpValue)
+                                self:addMajorProgress(self.majorProgressPerKill)
 
                                 if enemy.isMCM or group.isMCM then
                                     self.rarityCharge:add(love.timer.getTime(), group.mcmCharge or 1)
@@ -900,6 +975,56 @@ function GameScene:update(dt)
             end
             if volley:isFinished() then
                 table.remove(self.arrowVolleys, i)
+            end
+        end
+
+        -- Core collision with arrows (check remaining arrows against living cores)
+        for i = #self.arrows, 1, -1 do
+            local arrow = self.arrows[i]
+            if arrow then
+                local ax, ay = arrow:getPosition()
+                for _, core in ipairs(self.cores) do
+                    if core.isAlive then
+                        local cx, cy = core:getPosition()
+                        local dx = ax - cx
+                        local dy = ay - cy
+                        local sumR = core:getSize() + arrow:getSize()
+                        if dx * dx + dy * dy < sumR * sumR and arrow:canHit(core) then
+                            arrow:markHit(core)
+                            local dmg = arrow.damage or 10
+                            local died = core:takeDamage(dmg)
+                            self.particles:createHitSpark(cx, cy, {0.4, 0.7, 1.0})
+                            if self.damageNumbers then
+                                self.damageNumbers:add(cx, cy - core:getSize(), dmg, { isCrit = false, color = {0.4, 0.8, 1.0} })
+                            end
+                            if died then
+                                self.coresDestroyed = self.coresDestroyed + 1
+                                self:addMajorProgress(core.majorProgress)
+                                self.particles:createExplosion(cx, cy, {0.3, 0.6, 1.0})
+                                self.screenShake:add(5, 0.18)
+                                self:hitFreeze(0.05)
+                                self.xpSystem:spawnOrb(cx, cy, 20 + math.random(0, 10))
+                                if _G.triggerScreenFlash then
+                                    _G.triggerScreenFlash({0.4, 0.7, 1.0, 0.3}, 0.1)
+                                end
+                                -- Check if core objective complete
+                                if self.coresDestroyed >= self.coresTotal and not self.coreObjectiveComplete then
+                                    self.coreObjectiveComplete = true
+                                    local withinTime = self.coreObjectiveTimer <= self.coreObjectiveTimeLimit
+                                    if withinTime and not self.coreObjectiveRewardGiven then
+                                        self.coreObjectiveRewardGiven = true
+                                        self:grantCoreObjectiveReward()
+                                    end
+                                    self:addMajorProgress(self.majorProgressPerCoreBonus)
+                                end
+                            end
+                            if not arrow:consumePierce() then
+                                table.remove(self.arrows, i)
+                                break
+                            end
+                        end
+                    end
+                end
             end
         end
 
@@ -1256,6 +1381,34 @@ function GameScene:applyStatsToPlayer()
         local rollCD = self.playerStats:get("roll_cooldown") * baseCDMul
         self.player.abilities.dash.cooldown = math.max(0.3, rollCD)
     end
+end
+
+---------------------------------------------------------------------------
+-- HELPER: grant core objective reward (rare/epic upgrade card)
+---------------------------------------------------------------------------
+function GameScene:grantCoreObjectiveReward()
+    local result = UpgradeRoll.rollOptions({
+        rng = function() return love.math.random() end,
+        now = love.timer.getTime(),
+        player = self.player,
+        classUpgrades = ArcherUpgrades.list,
+        abilityPaths = AbilityPaths,
+        rarityCharge = self.rarityCharge,
+        count = 3,
+        minRarity = "rare",
+    })
+    self.upgradeUI:show(result.options, function(upgrade)
+        self.playerStats:applyUpgrade(upgrade)
+        self:applyStatsToPlayer()
+        print("Core Reward: " .. upgrade.name .. " (" .. upgrade.rarity .. ")")
+    end, self.playerStats)
+end
+
+---------------------------------------------------------------------------
+-- HELPER: add progress to the major boss progression bar
+---------------------------------------------------------------------------
+function GameScene:addMajorProgress(amount)
+    self.majorProgress = math.min(self.majorProgressMax, self.majorProgress + (amount or 0))
 end
 
 ---------------------------------------------------------------------------
@@ -1708,6 +1861,13 @@ function GameScene:draw()
             table.insert(drawables, {drawFunc = tree.draw, y = tree.y, type = "forest_tree"})
         end
     end
+
+    -- Add cores
+    for _, core in ipairs(self.cores) do
+        if core.isAlive then
+            table.insert(drawables, {entity = core, y = core.y, type = "core"})
+        end
+    end
     
     -- Add forest tilemap small trees and rocks (Y-sorted with entities)
     if self.forestTilemap then
@@ -1879,6 +2039,8 @@ function GameScene:draw()
     
     -- Draw HUD (not affected by screen shake or camera)
     self:drawXPBar()
+    self:drawMajorProgressBar()
+    self:drawObjectiveHUD()
     
     -- Draw upgrade UI (on top of everything)
     if self.upgradeUI then
@@ -1953,6 +2115,110 @@ function GameScene:drawXPBar()
         local chargeText = "★" .. charges
         love.graphics.print(chargeText, barX + barWidth + 10, barY - 1)
     end
+
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+function GameScene:drawMajorProgressBar()
+    local screenWidth = love.graphics.getWidth()
+    local t = love.timer.getTime()
+
+    local barWidth = 500
+    local barHeight = 14
+    local barX = (screenWidth - barWidth) / 2
+    local barY = 34
+    local progress = math.min(1, self.majorProgress / self.majorProgressMax)
+
+    -- Panel
+    love.graphics.setColor(0.04, 0.04, 0.08, 0.75)
+    love.graphics.rectangle("fill", barX - 4, barY - 3, barWidth + 8, barHeight + 6, 5, 5)
+
+    -- Track
+    love.graphics.setColor(0.08, 0.06, 0.12, 1)
+    love.graphics.rectangle("fill", barX, barY, barWidth, barHeight, 3, 3)
+
+    -- Fill (warm gold/amber — Spell Brigade inspired)
+    local fillW = barWidth * progress
+    if fillW > 0 then
+        love.graphics.setColor(0.85, 0.55, 0.12, 1)
+        love.graphics.rectangle("fill", barX, barY, fillW, barHeight, 3, 3)
+        love.graphics.setColor(1.0, 0.75, 0.2, 0.6)
+        love.graphics.rectangle("fill", barX, barY, fillW, barHeight * 0.4, 3, 3)
+        -- Leading glow
+        love.graphics.setColor(1, 0.85, 0.3, 0.5 + 0.25 * math.sin(t * 4))
+        love.graphics.rectangle("fill", barX + fillW - 4, barY, 4, barHeight, 2, 2)
+    end
+
+    -- Frame
+    love.graphics.setColor(0.55, 0.4, 0.2, 0.7)
+    love.graphics.setLineWidth(1)
+    love.graphics.rectangle("line", barX, barY, barWidth, barHeight, 3, 3)
+
+    -- Label
+    local labelFont = _G.PixelFonts and _G.PixelFonts.uiTiny or love.graphics.getFont()
+    love.graphics.setFont(labelFont)
+
+    -- "BOSS" marker at right end
+    love.graphics.setColor(0.9, 0.3, 0.2, 0.9)
+    local bossLabel = "BOSS"
+    local bw = labelFont:getWidth(bossLabel)
+    love.graphics.print(bossLabel, barX + barWidth + 8, barY)
+
+    -- Progress percent on left
+    love.graphics.setColor(0.9, 0.8, 0.5, 0.9)
+    local pct = string.format("%d%%", math.floor(progress * 100))
+    love.graphics.print(pct, barX - labelFont:getWidth(pct) - 8, barY)
+
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+function GameScene:drawObjectiveHUD()
+    local screenWidth = love.graphics.getWidth()
+    local t = love.timer.getTime()
+
+    local font = _G.PixelFonts and _G.PixelFonts.uiSmall or love.graphics.getFont()
+    local tinyFont = _G.PixelFonts and _G.PixelFonts.uiTiny or font
+    love.graphics.setFont(font)
+
+    -- Position: top-right area
+    local panelW = 220
+    local panelH = 52
+    local panelX = screenWidth - panelW - 20
+    local panelY = 56
+
+    -- Panel background
+    love.graphics.setColor(0.04, 0.04, 0.08, 0.8)
+    love.graphics.rectangle("fill", panelX, panelY, panelW, panelH, 6, 6)
+    love.graphics.setColor(0.35, 0.5, 0.7, 0.5)
+    love.graphics.setLineWidth(1)
+    love.graphics.rectangle("line", panelX, panelY, panelW, panelH, 6, 6)
+
+    -- Objective title + count
+    local coreText = string.format("CORES: %d/%d", self.coresDestroyed, self.coresTotal)
+    if self.coreObjectiveComplete then
+        love.graphics.setColor(0.3, 1, 0.4, 1)
+        coreText = "CORES COMPLETE!"
+    else
+        love.graphics.setColor(0.4, 0.8, 1.0, 1)
+    end
+    love.graphics.print(coreText, panelX + 10, panelY + 6)
+
+    -- Timer
+    love.graphics.setFont(tinyFont)
+    local remaining = math.max(0, self.coreObjectiveTimeLimit - self.coreObjectiveTimer)
+    local mins = math.floor(remaining / 60)
+    local secs = math.floor(remaining % 60)
+    local timerText = string.format("TIME: %d:%02d", mins, secs)
+    if self.coreObjectiveComplete then
+        timerText = "BONUS CLAIMED!"
+        love.graphics.setColor(1, 0.85, 0.3, 1)
+    elseif remaining <= 30 then
+        local blink = 0.5 + 0.5 * math.sin(t * 6)
+        love.graphics.setColor(1, 0.3, 0.2, blink)
+    else
+        love.graphics.setColor(0.7, 0.7, 0.65, 0.9)
+    end
+    love.graphics.print(timerText, panelX + 10, panelY + 28)
 
     love.graphics.setColor(1, 1, 1, 1)
 end
