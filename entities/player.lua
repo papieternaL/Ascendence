@@ -55,11 +55,11 @@ function Player:new(x, y)
         bowRecoilDuration = 0.08,
         -- Abilities with cooldowns
         abilities = {
-            power_shot = {
-                name = "Power Shot",
+            multi_shot = {
+                name = "Multi Shot",
                 key = "Q",
-                icon = "⚡",
-                cooldown = 6.0,
+                icon = "➶",
+                cooldown = 2.5,
                 currentCooldown = 0,
                 unlocked = true,
             },
@@ -89,7 +89,7 @@ function Player:new(x, y)
             },
         },
         -- Ability order for display
-        abilityOrder = { "power_shot", "dash", "entangle", "frenzy" },
+        abilityOrder = { "multi_shot", "dash", "entangle", "frenzy" },
         
         animator = nil, -- Disabled: archer strip sprite; kept for future re-enable
         isDashing = false,

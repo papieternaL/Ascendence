@@ -183,7 +183,7 @@ function UpgradeRoll.rollOptions(args)
     -- Adjust these checks to your actual ability systems.
     local eligible = {}
     if player and player.abilities then
-      if player.abilities.power_shot then eligible[#eligible+1] = "power_shot" end
+      if player.abilities.multi_shot then eligible[#eligible+1] = "multi_shot" end
       if player.abilities.arrow_volley then eligible[#eligible+1] = "arrow_volley" end
       if player.abilities.frenzy then eligible[#eligible+1] = "frenzy" end
     end

@@ -103,7 +103,7 @@ function AbilityHUD:draw(player, xpSystem)
 
     -- Count unlocked abilities
     local unlockedAbilities = {}
-    local abilityOrder = player.abilityOrder or {"power_shot", "dash", "arrow_volley", "frenzy"}
+    local abilityOrder = player.abilityOrder or {"multi_shot", "dash", "entangle", "frenzy"}
     for _, aid in ipairs(abilityOrder) do
         if player.abilities[aid] and player.abilities[aid].unlocked then
             table.insert(unlockedAbilities, aid)
@@ -145,7 +145,7 @@ function AbilityHUD:draw(player, xpSystem)
             
             -- Ability color
             local color = {0.5, 0.5, 0.6}
-            if abilityId == "power_shot" then
+            if abilityId == "multi_shot" then
                 color = {1, 0.9, 0.3}  -- Golden
             elseif abilityId == "dash" then
                 color = {0.4, 0.7, 1}  -- Blue

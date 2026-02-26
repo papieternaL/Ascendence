@@ -89,11 +89,12 @@ Config.enemy_hp_scaling = {
 
 -- Ability Specifics (kept for compatibility)
 Config.Abilities = {
-  powerShot = {
-    damageMult = 3.0,
-    cooldown = 6.0,
-    speed = 760,
-    knockback = 260,
+  multiShot = {
+    cooldown = 2.5,
+    arrowCount = 3,
+    coneSpreadDeg = 15,
+    speed = 500,
+    knockback = 100,
   },
   arrowVolley = {
     cooldown = 8.0,
@@ -119,17 +120,21 @@ Config.TreentOverlord = {
   damage = 40,
   size = 48,
   
-  -- Phase 1 (more frequent, shorter lunges)
-  lungeCooldown = 1.1,           -- Was 1.5, now ~25% faster
-  lungeChargeDuration = 0.6,     -- Was 0.8, quicker telegraph
-  lungeDuration = 0.28,          -- Was 0.4, ~30% shorter travel
-  lungeSpeed = 900,              -- Keep same speed
-  
-  barkBarrageCooldown = 1.8,     -- ~10% faster than 2.0 for more volley pressure
-  barkBarrageCount = 6,          -- Shots per burst (5 + 1 for two attacks at once feel)
-  barkBarrageDelay = 0.06,       -- Was 0.08
-  
-  -- Phase 2 (sped up)
+  -- Phase 1
+  lungeCooldown = 1.1,
+  lungeChargeDuration = 0.6,
+  lungeDuration = 0.28,
+  lungeSpeed = 900,
+
+  barkBarrageCooldown = 1.8,
+  barkBarrageCount = 6,
+  barkBarrageDelay = 0.06,
+
+  -- Phase 2: faster pace (multipliers applied when phase == 2)
+  phase2LungeCooldownMul = 0.75,      -- 25% faster lunges
+  phase2BarkBarrageCooldownMul = 0.80, -- 20% faster bark barrage
+
+  -- Phase 2 (vine attack)
   encompassRootDuration = 6.0,   -- Was 8.0
   earthquakeCooldown = 7.0,      -- Was 10.0
   earthquakeDuration = 2.5,      -- Was 3.0
@@ -149,6 +154,15 @@ Config.TreentOverlord = {
   trunkPhase1Damage = 40,
   trunkPhase2Interval = 1.5,
   trunkPhase2Damage = 60,
+
+  -- Bark Volley AOE (circular zone near player, telegraph then damage)
+  barkVolleyCooldown = 3.5,
+  barkVolleyRadius = 55,
+  barkVolleyDamage = 25,
+  barkVolleyTelegraphDuration = 0.9,
+  barkVolleyImpactDuration = 0.25,
+  barkVolleyPlacementRadius = 120,  -- max distance from player for center
+  barkVolleyPhase2CooldownMul = 0.75,  -- 25% faster in phase 2
 }
 
 -- UI Constants

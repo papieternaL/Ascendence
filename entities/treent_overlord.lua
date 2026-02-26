@@ -40,10 +40,9 @@ function TreentOverlord:new(x, y)
         phase = 1,
         phaseTransitionTriggered = false,
 
-        -- Typing test HP thresholds (50%, 25%, 5%)
+        -- Typing test HP thresholds (50%, 25% only - Vine Attack sequence)
         typingTest50Triggered = false,
         typingTest25Triggered = false,
-        typingTest5Triggered = false,
 
         -- Phase 1: Lunge
         lungeState = "idle", -- idle, charging, lunging, cooldown
@@ -160,10 +159,16 @@ function TreentOverlord:update(dt, playerX, playerY, onBarkShoot, onPhaseTransit
 end
 
 function TreentOverlord:updatePhase1(dt, playerX, playerY, onBarkShoot)
+    local cfg = Config.TreentOverlord or {}
+    local lungeCD = self.lungeCooldown
+    if self.phase == 2 then
+        lungeCD = lungeCD * (cfg.phase2LungeCooldownMul or 0.75)
+    end
+
     -- Lunge attack
     if self.lungeState == "idle" then
         self.lungeTimer = self.lungeTimer + dt
-        if self.lungeTimer >= self.lungeCooldown then
+        if self.lungeTimer >= lungeCD then
             -- Start charging lunge
             self.lungeState = "charging"
             self.lungeTimer = 0
@@ -203,10 +208,16 @@ end
 -- Shared bark barrage logic (called by both phase 1 and phase 2)
 function TreentOverlord:updateBarkBarrage(dt, playerX, playerY, onBarkShoot)
     if self.lungeState ~= "idle" then return end
-    
+
+    local cfg = Config.TreentOverlord or {}
+    local barkCD = self.barkBarrageCooldown
+    if self.phase == 2 then
+        barkCD = barkCD * (cfg.phase2BarkBarrageCooldownMul or 0.80)
+    end
+
     if not self.barkBarrageActive then
         self.barkBarrageTimer = self.barkBarrageTimer + dt
-        if self.barkBarrageTimer >= self.barkBarrageCooldown then
+        if self.barkBarrageTimer >= barkCD then
             -- Start barrage
             self.barkBarrageActive = true
             self.barkBarrageIndex = 0
@@ -257,14 +268,14 @@ end
 function TreentOverlord:updatePhase2(dt, playerX, playerY, onEncompassRoot, onVineLanes, onBarkShoot, onTypingTest)
     local healthPercent = self.health / self.maxHealth
 
-    -- Check for typing test triggers at 50% (phase start), 25%, and 5%
+    -- Vine Attack sequence at 50% and 25% only
     if healthPercent <= 0.50 and not self.typingTest50Triggered then
         self.typingTest50Triggered = true
         self.isInvulnerable = true
         if onTypingTest then
             onTypingTest("start")
         end
-        return  -- Stop all other mechanics during typing test
+        return
     end
 
     if healthPercent <= 0.25 and not self.typingTest25Triggered then
@@ -273,16 +284,7 @@ function TreentOverlord:updatePhase2(dt, playerX, playerY, onEncompassRoot, onVi
         if onTypingTest then
             onTypingTest("start")
         end
-        return  -- Stop all other mechanics during typing test
-    end
-
-    if healthPercent <= 0.05 and not self.typingTest5Triggered then
-        self.typingTest5Triggered = true
-        self.isInvulnerable = true
-        if onTypingTest then
-            onTypingTest("start")
-        end
-        return  -- Stop all other mechanics during typing test
+        return
     end
 
     -- Territory Control: Vine Lanes attack with cast time (ALWAYS UPDATE, even when invulnerable)

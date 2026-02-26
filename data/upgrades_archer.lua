@@ -213,16 +213,6 @@ U.list = {
     }
   },
 
-  -- NEW: Power Shot support with tradeoff
-  {
-    id="arch_r_tactical_draw", name="Tactical Draw", rarity="rare",
-    description="Power Shot: -1.5s cooldown but deals 10% less damage",
-    tags={ "power_shot", "cooldown" },
-    effects={
-      { kind="ability_mod", ability="power_shot", mod="cooldown_add", value=-1.5 },
-      { kind="ability_mod", ability="power_shot", mod="damage_mul", value=0.90 }
-    }
-  },
   -- Element enhancement upgrades (require matching attunement; switching resets)
   {
     id="arch_r_fire_intensity", name="Fire Intensity", rarity="rare",
@@ -299,7 +289,7 @@ U.list = {
     tags={ "mobility", "pierce" },
     effects={
       { kind="proc", trigger="after_roll", apply={ kind="buff", name="ghost_quiver", duration=1.25,
-        rules={ primary_only=true, excludes_abilities={ "power_shot" } },
+        rules={ primary_only=true, excludes_abilities={ "multi_shot" } },
         stats={ { stat="primary_ghosting", add=1 } } -- your projectile system reads this
       } }
     }

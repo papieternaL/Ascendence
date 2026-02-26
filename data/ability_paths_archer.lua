@@ -6,23 +6,16 @@ local P = {}
 
 P.meta = { version = 1, class = "archer" }
 
-P.power_shot = {
+P.multi_shot = {
   {
-    id="ps_c_scope_line", name="Scope Line", rarity="common",
-    description="Power Shot travels 20% farther",
-    effects={ { kind="ability_mod", ability="power_shot", mod="range_mul", value=1.20 } }
+    id="ms_c_wide_spread", name="Wide Spread", rarity="common",
+    description="Multi Shot cone spread increased by 5°",
+    effects={ { kind="ability_mod", ability="multi_shot", mod="cone_spread_add", value=5 } }
   },
   {
-    id="ps_c_broadhead", name="Broadhead", rarity="common",
-    description="Power Shot deals 15% more damage",
-    effects={ { kind="ability_mod", ability="power_shot", mod="damage_mul", value=1.15 } }
-  },
-  {
-    id="ps_r_double_tap", name="Double Tap", rarity="rare",
-    description="Power Shot fires a second arrow shortly after the first, dealing 55% damage",
-    effects={
-      { kind="ability_mod", ability="power_shot", mod="fires_twice", value=1, delay=0.08, second_shot_damage_mul=0.55 }
-    }
+    id="ms_c_heavy_tips", name="Heavy Tips", rarity="common",
+    description="Multi Shot deals 15% more damage",
+    effects={ { kind="ability_mod", ability="multi_shot", mod="damage_mul", value=1.15 } }
   },
 }
 

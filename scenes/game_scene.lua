@@ -181,7 +181,7 @@ function GameScene:load()
     
     -- Set ability unlock states for archer (abilities are already defined in player)
     if self.player and self.player.abilities then
-        self.player.abilities.power_shot.unlocked = true
+        self.player.abilities.multi_shot.unlocked = true
         self.player.abilities.entangle.unlocked = true
         self.player.abilities.frenzy.unlocked = true
         self.player.abilities.dash.unlocked = true
@@ -629,39 +629,6 @@ function GameScene:update(dt)
             end
         end
 
-        -- AUTO-CAST abilities (no aiming required)
-        -- Power Shot: fires at nearest enemy when ready
-        if nearestEnemy and self.player and self.player:isAbilityReady("power_shot") and not self.isDashing then
-            local ex, ey = nearestEnemy:getPosition()
-            self.player:aimAt(ex, ey)
-            self.player:useAbility("power_shot")
-            local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
-            local baseDmgMul = 3.0
-            if self.playerStats then
-                baseDmgMul = self.playerStats:getAbilityValue("power_shot", "damage_mul", baseDmgMul)
-            end
-            local base = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult * baseDmgMul
-            local psRange = 1.0
-            if self.playerStats then
-                psRange = self.playerStats:getAbilityValue("power_shot", "range_mul", psRange)
-            end
-            local ps = Arrow:new(sx, sy, ex, ey, {
-                damage = base,
-                speed = 760,
-                size = 12,
-                lifetime = 1.8 * psRange,
-                pierce = 999,
-                alwaysCrit = true,
-                kind = "power_shot",
-                knockback = 260,
-            })
-            table.insert(self.arrows, ps)
-            if _G.audio then _G.audio:playSFX("shoot_arrow") end
-            if self.player.playAttackAnimation then self.player:playAttackAnimation() end
-            self.screenShake:add(3, 0.12)
-            if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
-        end
-
         -- Entangle (Arrow Volley): ground circle AOE at nearest enemy (2s falling-arrows field)
         if self.player and self.player:isAbilityReady("entangle") and not self.isDashing then
             local px, py = playerX, playerY
@@ -789,7 +756,7 @@ function GameScene:update(dt)
                             -- Throttle VFX/SFX for piercing arrows (Power Shot) to reduce lag on multi-hit
                             local hitCount = (arrow.cosmeticHitCount or 0) + 1
                             arrow.cosmeticHitCount = hitCount
-                            local doCosmetic = hitCount <= 4 or (arrow.kind ~= "power_shot" and arrow.kind ~= "arrowstorm")
+                            local doCosmetic = hitCount <= 4 or (arrow.kind ~= "multi_shot" and arrow.kind ~= "arrowstorm")
                             if doCosmetic then
                                 self.particles:createHitSpark(ex2, ey2, isCrit and {1, 1, 0.2} or {1, 1, 0.6})
                                 if _G.audio then
@@ -1259,11 +1226,13 @@ function GameScene:applyStatsToPlayer()
     -- Apply ability mods to player ability cooldowns (base 15% reduction)
     local baseCDMul = (Config.game_balance and Config.game_balance.player and Config.game_balance.player.base_cooldown_mul) or 0.85
     if self.player.abilities then
-        -- Power Shot cooldown mods
-        local basePSCooldown = 6.0 * baseCDMul
-        basePSCooldown = self.playerStats:getAbilityValue("power_shot", "cooldown_add", basePSCooldown)
-        basePSCooldown = self.playerStats:getAbilityValue("power_shot", "cooldown_mul", basePSCooldown)
-        self.player.abilities.power_shot.cooldown = math.max(1.0, basePSCooldown)
+        -- Multi Shot cooldown mods
+        local baseMSCooldown = 2.5 * baseCDMul
+        if self.player.abilities.multi_shot then
+            baseMSCooldown = self.playerStats:getAbilityValue("multi_shot", "cooldown_add", baseMSCooldown)
+            baseMSCooldown = self.playerStats:getAbilityValue("multi_shot", "cooldown_mul", baseMSCooldown)
+            self.player.abilities.multi_shot.cooldown = math.max(0.5, baseMSCooldown)
+        end
 
         -- Entangle cooldown mods
         local baseEntCooldown = 8.0 * baseCDMul
@@ -1275,6 +1244,73 @@ function GameScene:applyStatsToPlayer()
         local rollCD = self.playerStats:get("roll_cooldown") * baseCDMul
         self.player.abilities.dash.cooldown = math.max(0.3, rollCD)
     end
+end
+
+---------------------------------------------------------------------------
+-- HELPER: fire Multi Shot (3-arrow cone toward mouse)
+---------------------------------------------------------------------------
+function GameScene:fireMultiShot()
+    if not self.player or not self.player:isAbilityReady("multi_shot") or self.isDashing then return end
+    local cfg = Config.Abilities and Config.Abilities.multiShot or {}
+    local arrowCount = cfg.arrowCount or 3
+    local baseConeDeg = cfg.coneSpreadDeg or 15
+    if self.playerStats then
+        baseConeDeg = self.playerStats:getAbilityValue("multi_shot", "cone_spread_add", baseConeDeg)
+    end
+    local coneSpreadDeg = baseConeDeg * (math.pi / 180)
+    local speed = cfg.speed or 500
+    local knockback = cfg.knockback or 100
+
+    local px, py = self.player:getPosition()
+    local mx, my = self.mouseX or px, self.mouseY or py
+    local dx = mx - px
+    local dy = my - py
+    local dist = math.sqrt(dx * dx + dy * dy)
+    if dist < 1 then dist, dx, dy = 1, 1, 0 end
+    local baseAngle = math.atan2(dy, dx)
+
+    local sx, sy = self.player.getBowTip and self.player:getBowTip() or px, py
+    local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult
+    if self.playerStats then
+        baseDmg = baseDmg * (self.playerStats:getAbilityValue("multi_shot", "damage_mul", 1.0) or 1.0)
+    end
+
+    self.player:aimAt(mx, my)
+    self.player:useAbility("multi_shot")
+
+    local offsets = {}
+    if arrowCount == 1 then
+        offsets = { 0 }
+    elseif arrowCount == 2 then
+        offsets = { -coneSpreadDeg / 2, coneSpreadDeg / 2 }
+    else
+        local step = coneSpreadDeg / math.max(1, arrowCount - 1)
+        for i = 0, arrowCount - 1 do
+            offsets[i + 1] = -coneSpreadDeg / 2 + step * i
+        end
+    end
+
+    for _, off in ipairs(offsets) do
+        local a = baseAngle + off
+        local tdist = 400
+        local tx = sx + math.cos(a) * tdist
+        local ty = sy + math.sin(a) * tdist
+        local arr = Arrow:new(sx, sy, tx, ty, {
+            damage = baseDmg,
+            speed = speed,
+            size = 10,
+            lifetime = 1.5,
+            pierce = 0,
+            kind = "multi_shot",
+            knockback = knockback,
+        })
+        table.insert(self.arrows, arr)
+    end
+
+    if _G.audio then _G.audio:playSFX("shoot_arrow") end
+    if self.player.playAttackAnimation then self.player:playAttackAnimation() end
+    self.screenShake:add(2, 0.08)
+    if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
 end
 
 ---------------------------------------------------------------------------
@@ -2005,6 +2041,12 @@ function GameScene:keypressed(key)
         return true
     end
     
+    -- Manual Multi Shot (Q)
+    if key == "q" and self.player and not self:hasOpenOverlay() then
+        self:fireMultiShot()
+        return true
+    end
+
     if key == "space" then
         self:startDash()
     end

@@ -9,7 +9,7 @@ Arrow.image = nil
 --   damage, speed, size, lifetime
 --   pierce (number of additional targets allowed after the first)
 --   alwaysCrit (bool)
---   kind ("primary" | "power_shot" | etc)
+--   kind ("primary" | "multi_shot" | etc)
 --   knockback (number) - optional knockback force hint for enemies
 function Arrow:new(x, y, targetX, targetY, opts)
     -- Load image if not loaded (Tiny Town tile_0119)
@@ -90,7 +90,7 @@ function Arrow:draw()
     -- Tint/scale by arrow kind
     local r, g, b = 1, 1, 1
     local scale = 1
-    if self.kind == "power_shot" then
+    if self.kind == "multi_shot" then
         r, g, b = 1, 0.9, 0.25
         scale = 1.25
     elseif self.kind == "arrowstorm" then

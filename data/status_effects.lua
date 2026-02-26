@@ -99,7 +99,7 @@ local StatusEffects = {
     display_name = "Ghost Quiver",
     rules = {
       primary_only = true,
-      excludes_abilities = {"power_shot"}
+      excludes_abilities = {"multi_shot"}
     }
   },
   

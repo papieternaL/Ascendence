@@ -85,7 +85,7 @@ end
 -- Helper: Group upgrades by ability
 local function groupAbilityUpgrades(upgrades)
   local abilityUpgrades = {
-    power_shot = {},
+    multi_shot = {},
     arrow_volley = {},
     frenzy = {},
     other = {}
@@ -279,18 +279,18 @@ function StatsOverlay:draw(playerStats, xpSystem, player)
   local abilityY = contentY + 24
   local abilityLineH = 16
 
-  -- Power Shot
+  -- Multi Shot
   love.graphics.setFont(self.fontSmall)
   love.graphics.setColor(0.9, 0.6, 0.2, 1)
-  love.graphics.print("Power Shot [Q]", col2X, abilityY)
+  love.graphics.print("Multi Shot [Q]", col2X, abilityY)
   abilityY = abilityY + 18
 
-  if #grouped.power_shot == 0 then
+  if #grouped.multi_shot == 0 then
     love.graphics.setColor(1, 1, 1, 0.5)
     love.graphics.print("  No upgrades", col2X, abilityY)
     abilityY = abilityY + abilityLineH
   else
-    for _, u in ipairs(grouped.power_shot) do
+    for _, u in ipairs(grouped.multi_shot) do
       local r, g, b = rarityColor(u.rarity)
       love.graphics.setColor(r, g, b, 1)
       love.graphics.print("  " .. (u.name or "Unknown"), col2X, abilityY)

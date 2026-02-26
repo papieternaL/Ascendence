@@ -18,6 +18,7 @@ local DamageNumbers = require("systems.damage_numbers")
 local JuiceManager = require("systems.juice_manager")
 local VineLane = require("entities.vine_lane")
 local FallingTrunk = require("entities.falling_trunk")
+local BarkVolleyAOE = require("entities.bark_volley_aoe")
 local AbilityHUD = require("ui.ability_hud")
 local BuffBar = require("ui.buff_bar")
 local StatsOverlay = require("ui.stats_overlay")
@@ -111,6 +112,14 @@ function BossArenaScene:new(player, playerStats, gameState, xpSystem, rarityChar
 
         -- Arrow Volley (falling arrows, impact-timed)
         arrowVolleys = {},
+
+        -- Bark Volley AOE (circular zones near player)
+        barkVolleyAoEs = {},
+        barkVolleySpawnTimer = 0,
+
+        -- Mouse aim (for manual Multi Shot)
+        mouseX = 0,
+        mouseY = 0,
     }
     
     setmetatable(scene, BossArenaScene)
@@ -143,6 +152,10 @@ function BossArenaScene:initialize()
         self.player.x = screenWidth / 2
         self.player.y = screenHeight - 100
     end
+
+    -- Initialize mouse aim (center of screen)
+    self.mouseX = screenWidth / 2
+    self.mouseY = screenHeight / 2
     
     -- Wire player abilities (15% base cooldown reduction)
     local baseCDMul = (Config.game_balance and Config.game_balance.player and Config.game_balance.player.base_cooldown_mul) or 0.85
@@ -157,12 +170,12 @@ function BossArenaScene:initialize()
         self.player.abilities.frenzy.currentCooldown = 0
         self.player.abilities.frenzy.cooldown = 15.0 * baseCDMul
         
-        -- Ensure power_shot exists
-        if not self.player.abilities.power_shot then
-            self.player.abilities.power_shot = { name = "Power Shot", key = "Q", icon = "⚡", unlocked = true }
+        -- Ensure multi_shot exists
+        if not self.player.abilities.multi_shot then
+            self.player.abilities.multi_shot = { name = "Multi Shot", key = "Q", icon = "➶", unlocked = true }
         end
-        self.player.abilities.power_shot.currentCooldown = 0
-        self.player.abilities.power_shot.cooldown = aCfg.powerShot.cooldown * baseCDMul
+        self.player.abilities.multi_shot.currentCooldown = 0
+        self.player.abilities.multi_shot.cooldown = (aCfg.multiShot and aCfg.multiShot.cooldown or 2.5) * baseCDMul
         
         -- Ensure arrow_volley exists
         if not self.player.abilities.arrow_volley then
@@ -202,11 +215,11 @@ function BossArenaScene:applyStatsToPlayer()
 
     if self.player.abilities then
         local aCfg = Config.Abilities
-        if self.player.abilities.power_shot then
-            local basePS = (aCfg.powerShot and aCfg.powerShot.cooldown or 6.0) * baseCDMul
-            basePS = self.playerStats:getAbilityValue("power_shot", "cooldown_add", basePS)
-            basePS = self.playerStats:getAbilityValue("power_shot", "cooldown_mul", basePS)
-            self.player.abilities.power_shot.cooldown = math.max(1.0, basePS)
+        if self.player.abilities.multi_shot then
+            local baseMS = (aCfg.multiShot and aCfg.multiShot.cooldown or 2.5) * baseCDMul
+            baseMS = self.playerStats:getAbilityValue("multi_shot", "cooldown_add", baseMS)
+            baseMS = self.playerStats:getAbilityValue("multi_shot", "cooldown_mul", baseMS)
+            self.player.abilities.multi_shot.cooldown = math.max(0.5, baseMS)
         end
         if self.player.abilities.arrow_volley then
             local baseAV = 8.0 * baseCDMul
@@ -459,68 +472,6 @@ function BossArenaScene:update(dt)
             end
         end
 
-        -- Auto-cast Power Shot (blocked during typing test)
-        if self.player and self.player:isAbilityReady("power_shot") and not self.isDashing and not self.typingTestActive then
-            local psTargetX, psTargetY = nil, nil
-            local psCfg = Config.Abilities.powerShot
-            
-            -- Target the boss
-            if self.boss and self.boss.isAlive then
-                psTargetX, psTargetY = self.boss:getPosition()
-            end
-            
-            if psTargetX and psTargetY then
-                self.player:aimAt(psTargetX, psTargetY)
-                self.player:useAbility("power_shot", self.playerStats)
-                local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
-                
-                -- Apply ability mods
-                local damageMul = self.playerStats:getAbilityValue("power_shot", "damage_mul", 1.0)
-                local base = (self.player.attackDamage or 10) * psCfg.damageMult * damageMul
-                
-                -- Check for elite/MCM bonus damage mod (boss counts as elite)
-                local eliteMcmMod = self.playerStats:getAbilityMod("power_shot", "bonus_damage_vs_elite_mcm")
-                if eliteMcmMod then
-                    base = base * eliteMcmMod.value
-                end
-                
-                local appliesStatus = self.playerStats:getAbilityMod("power_shot", "applies_status")
-                
-                local ps = Arrow:new(sx, sy, psTargetX, psTargetY, {
-                    damage = base,
-                    speed = psCfg.speed,
-                    size = 12,
-                    lifetime = 1.8,
-                    pierce = 999,
-                    alwaysCrit = true,
-                    kind = "power_shot",
-                    knockback = psCfg.knockback,
-                    appliesStatus = appliesStatus,
-                })
-                table.insert(self.arrows, ps)
-                if _G.audio then _G.audio:playSFX("shoot_arrow") end
-                self.screenShake:add(3, 0.12)
-                if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
-                if self.player.playAttackAnimation then self.player:playAttackAnimation() end
-                
-                -- Handle fires_twice mod: spawn second arrow after delay
-                local firesTwiceMod = self.playerStats:getAbilityMod("power_shot", "fires_twice")
-                if firesTwiceMod then
-                    local delay = firesTwiceMod.delay or 0.08
-                    local secondDamageMul = firesTwiceMod.second_shot_damage_mul or 0.55
-                    self.pendingPowerShots = self.pendingPowerShots or {}
-                    table.insert(self.pendingPowerShots, {
-                        timer = delay,
-                        sx = sx, sy = sy, ex = psTargetX, ey = psTargetY,
-                        damage = base * secondDamageMul,
-                        speed = psCfg.speed,
-                        knockback = psCfg.knockback,
-                        appliesStatus = appliesStatus,
-                    })
-                end
-            end
-        end
-        
         -- Auto-cast Arrow Volley (targets boss, blocked during typing test)
         if self.player and self.player:isAbilityReady("arrow_volley") and not self.typingTestActive then
             local volleyRange = 300
@@ -568,30 +519,6 @@ function BossArenaScene:update(dt)
                             damage = damage * 0.7,
                         })
                     end
-                end
-            end
-        end
-        
-        -- Process pending power shots (fires_twice mod)
-        if self.pendingPowerShots then
-            for i = #self.pendingPowerShots, 1, -1 do
-                local pending = self.pendingPowerShots[i]
-                pending.timer = pending.timer - dt
-                if pending.timer <= 0 then
-                    local ps = Arrow:new(pending.sx, pending.sy, pending.ex, pending.ey, {
-                        damage = pending.damage,
-                        speed = pending.speed,
-                        size = 12,
-                        lifetime = 1.8,
-                        pierce = 999,
-                        alwaysCrit = true,
-                        kind = "power_shot",
-                        knockback = pending.knockback,
-                        appliesStatus = pending.appliesStatus,
-                    })
-                    if _G.audio then _G.audio:playSFX("shoot_arrow") end
-                    table.insert(self.arrows, ps)
-                    table.remove(self.pendingPowerShots, i)
                 end
             end
         end
@@ -888,6 +815,54 @@ function BossArenaScene:update(dt)
                 end
             end
         end
+
+        -- Bark Volley AOE (circular zones near player; runs during lunge/bark loop)
+        if self.boss and self.boss.isAlive and not self.typingTestActive then
+            local cfg = Config.TreentOverlord or {}
+            local cooldown = cfg.barkVolleyCooldown or 3.5
+            local phase = self.boss.phase or 1
+            if phase == 2 then
+                cooldown = cooldown * (cfg.barkVolleyPhase2CooldownMul or 0.75)
+            end
+
+            self.barkVolleySpawnTimer = (self.barkVolleySpawnTimer or 0) + dt
+            if self.barkVolleySpawnTimer >= cooldown then
+                self.barkVolleySpawnTimer = 0
+                local placementRadius = cfg.barkVolleyPlacementRadius or 120
+                local angle = math.random() * math.pi * 2
+                local dist = math.random() * placementRadius
+                local cx = playerX + math.cos(angle) * dist
+                local cy = playerY + math.sin(angle) * dist
+                local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
+                cx = math.max(60, math.min(sw - 60, cx))
+                cy = math.max(60, math.min(sh - 60, cy))
+                local aoe = BarkVolleyAOE:new(
+                    cx, cy,
+                    cfg.barkVolleyRadius or 55,
+                    cfg.barkVolleyDamage or 25,
+                    cfg.barkVolleyTelegraphDuration or 0.9,
+                    cfg.barkVolleyImpactDuration or 0.25
+                )
+                table.insert(self.barkVolleyAoEs, aoe)
+            end
+
+            for i = #self.barkVolleyAoEs, 1, -1 do
+                local aoe = self.barkVolleyAoEs[i]
+                aoe:update(dt)
+                if aoe:isInImpactPhase() and self.player then
+                    if aoe:isPlayerInDanger(playerX, playerY) then
+                        local dmg = aoe:getDamage()
+                        if self.frenzyActive then dmg = dmg * Config.Abilities.frenzy.damageTakenMult end
+                        self.player:takeDamage(dmg)
+                        self.screenShake:add(8, 0.25)
+                        self.particles:createExplosion(playerX, playerY, {0.9, 0.5, 0.15})
+                    end
+                end
+                if aoe.isFinished then
+                    table.remove(self.barkVolleyAoEs, i)
+                end
+            end
+        end
         
         -- Phase-aware add spawning (no adds during typing test)
         if self.boss and self.boss.isAlive and not self.typingTestActive then
@@ -1033,9 +1008,9 @@ function BossArenaScene:update(dt)
                         arrow:markHit(self.boss)
                         local dmg, isCrit = rollDamage(arrow.damage, arrow.alwaysCrit)
                         
-                        -- Power Shot impact juice (freeze, shake, flash)
-                        if arrow.kind == "power_shot" then
-                            JuiceManager.impact(self.boss, 0.05, 12, 0.18, 0.1)
+                        -- Multi Shot impact juice (freeze, shake, flash)
+                        if arrow.kind == "multi_shot" then
+                            JuiceManager.impact(self.boss, 0.04, 8, 0.12, 0.08)
                         end
                         
                         self.particles:createHitSpark(bx, by, {1, 1, 0.6})
@@ -1198,6 +1173,11 @@ function BossArenaScene:draw()
         if trunk.state == "telegraph" or trunk.state == "falling" then
             trunk:draw()
         end
+    end
+
+    -- Draw bark volley AOE telegraphs and impacts
+    for _, aoe in ipairs(self.barkVolleyAoEs) do
+        aoe:draw()
     end
 
     -- Y-sort drawing
@@ -1605,6 +1585,12 @@ function BossArenaScene:keypressed(key)
         return true  -- Consume input
     end
     
+    -- Manual Multi Shot (Q) - blocked during typing test and when rooted
+    if key == "q" and self.player and not self.typingTestActive and not (self.player.isRooted) and not (self.statsOverlay and self.statsOverlay:isVisible()) then
+        self:fireMultiShot()
+        return true
+    end
+
     -- Manual abilities (blocked during typing test)
     if key == "r" and self.player and self.player:isAbilityReady("frenzy") and self.frenzyCharge >= self.frenzyChargeMax and not self.typingTestActive then
         self.player:useAbility("frenzy", self.playerStats)
@@ -1641,6 +1627,78 @@ function BossArenaScene:keypressed(key)
     end
     
     return false
+end
+
+---------------------------------------------------------------------------
+-- HELPER: fire Multi Shot (3-arrow cone toward mouse)
+---------------------------------------------------------------------------
+function BossArenaScene:fireMultiShot()
+    if not self.player or not self.player:isAbilityReady("multi_shot") or self.isDashing then return end
+    local cfg = Config.Abilities and Config.Abilities.multiShot or {}
+    local arrowCount = cfg.arrowCount or 3
+    local baseConeDeg = cfg.coneSpreadDeg or 15
+    if self.playerStats then
+        baseConeDeg = self.playerStats:getAbilityValue("multi_shot", "cone_spread_add", baseConeDeg)
+    end
+    local coneSpreadDeg = baseConeDeg * (math.pi / 180)
+    local speed = cfg.speed or 500
+    local knockback = cfg.knockback or 100
+
+    local px, py = self.player:getPosition()
+    local mx, my = self.mouseX or px, self.mouseY or py
+    local dx = mx - px
+    local dy = my - py
+    local dist = math.sqrt(dx * dx + dy * dy)
+    if dist < 1 then dist, dx, dy = 1, 1, 0 end
+    local baseAngle = math.atan2(dy, dx)
+
+    local sx, sy = self.player.getBowTip and self.player:getBowTip() or px, py
+    local baseDmg = (self.player.attackDamage or 10)
+    if self.playerStats then
+        baseDmg = baseDmg * (self.playerStats:getAbilityValue("multi_shot", "damage_mul", 1.0) or 1.0)
+    end
+
+    self.player:aimAt(mx, my)
+    self.player:useAbility("multi_shot")
+
+    local offsets = {}
+    if arrowCount == 1 then
+        offsets = { 0 }
+    elseif arrowCount == 2 then
+        offsets = { -coneSpreadDeg / 2, coneSpreadDeg / 2 }
+    else
+        local step = coneSpreadDeg / math.max(1, arrowCount - 1)
+        for i = 0, arrowCount - 1 do
+            offsets[i + 1] = -coneSpreadDeg / 2 + step * i
+        end
+    end
+
+    for _, off in ipairs(offsets) do
+        local a = baseAngle + off
+        local tdist = 400
+        local tx = sx + math.cos(a) * tdist
+        local ty = sy + math.sin(a) * tdist
+        local arr = Arrow:new(sx, sy, tx, ty, {
+            damage = baseDmg,
+            speed = speed,
+            size = 10,
+            lifetime = 1.5,
+            pierce = 0,
+            kind = "multi_shot",
+            knockback = knockback,
+        })
+        table.insert(self.arrows, arr)
+    end
+
+    if _G.audio then _G.audio:playSFX("shoot_arrow") end
+    self.screenShake:add(2, 0.08)
+    if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
+    if self.player.playAttackAnimation then self.player:playAttackAnimation() end
+end
+
+function BossArenaScene:mousemoved(x, y)
+    self.mouseX = x
+    self.mouseY = y
 end
 
 function BossArenaScene:startDash()

@@ -37,8 +37,8 @@ This file is the **single source of truth** for coordination between multiple Cu
 ## Confirmed Design Decisions (as of 2025-12-30)
 
 ### Combat & Input Split
-- **Auto-Aim**: Primary weapon + Core abilities (Power Shot, Entangle) for speed.
-- **Manual**: Utility (Dash) + Ultimates (Frenzy) for skill expression.
+- **Auto-Aim**: Primary weapon + Core abilities (Entangle/Arrow Volley) for speed.
+- **Manual**: Multi Shot (Q), Utility (Dash) + Ultimates (Frenzy) for skill expression.
 
 ### Progression: The Major Level System
 - **Major Levels** (1, 5, 10, 15, 20, 25): Grant **mechanical augments only** (e.g., bouncing arrows, lingering slow zones). Pool-based selection.
@@ -237,6 +237,13 @@ Input → Player.update() → Movement
 10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
+- 2026-02-15: **Boss rework + Multi Shot + PixelGen**:
+  - **Boss phase logic**: Vine Attack sequence only at 50% and 25% HP; removed 5% typing-test trigger. Phase 2 pace multipliers for lunge and bark barrage cooldowns.
+  - **Bark Volley AOE**: Circular telegraphed zones near player with config-driven telegraph/damage timing; runs concurrently with lunge + bark barrage.
+  - **Multi Shot (Q)**: Replaced Power Shot with manual 3-arrow cone (2.5s cooldown). Fires toward mouse aim in game and boss scenes; disabled during typing test/root.
+  - **Power Shot removal**: Removed Power Shot ability path and arch_r_tactical_draw; added Multi Shot path (Wide Spread, Heavy Tips). Updated upgrade_roll, ability_hud, stats_overlay, arrow.lua, status_effects.
+  - **PixelGen dev tool**: Added `systems/pixelgen.lua` for procedural asset generation. F9 (when `_G.DEBUG_PIXELGEN` is true) exports to LOVE save dir `generated/`. Isolated; does not affect main gameplay.
+  - Files: entities/treent_overlord.lua, entities/bark_volley_aoe.lua, scenes/boss_arena_scene.lua, scenes/game_scene.lua, entities/player.lua, data/config.lua, data/ability_paths_archer.lua, data/upgrades_archer.lua, systems/upgrade_roll.lua, ui/ability_hud.lua, ui/stats_overlay.lua, entities/arrow.lua, data/status_effects.lua, systems/pixelgen.lua, main.lua, AGENTS.md.
 - 2026-02-15: **Phase 1 boss pressure + spawn tuning**:
   - **Phase 1 falling trunks**: Trunks now spawn in both phases; Phase 1 uses lighter tuning (2.2s interval, 40 dmg) vs Phase 2 (1.5s, 60 dmg). Config: `trunkPhase1Interval`, `trunkPhase1Damage`, `trunkPhase2Interval`, `trunkPhase2Damage`.
   - **Bark barrage per-shot targeting**: Each bark shot aims at the player's position at fire time (per-shot snapshot) with small random spread (25px) for readability.

@@ -438,6 +438,23 @@ function drawAbilityIcon(ability, x, y, size)
 end
 
 function love.keypressed(key)
+    -- Debug: PixelGen export (F9, gated by DEBUG_PIXELGEN)
+    if key == "f9" and _G.DEBUG_PIXELGEN then
+        local ok, err = pcall(function()
+            local pixelgen = require("systems.pixelgen")
+            local ok2, path = pixelgen:generateAndExport()
+            if ok2 then
+                print("[PixelGen] Exported to " .. tostring(path))
+            else
+                print("[PixelGen] Error: " .. tostring(path))
+            end
+        end)
+        if not ok then
+            print("[PixelGen] " .. tostring(err))
+        end
+        return
+    end
+
     -- Global mute toggle
     if key == "m" and audio then
         audio:toggleMute()
