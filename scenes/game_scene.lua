@@ -634,37 +634,25 @@ function GameScene:update(dt)
         -- Drive bow attunement VFX from current element
         self.player.activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
 
-        -- Primary aim: mouse direction (movement and aim decoupled)
-        local mx, my = self.mouseX or playerX, self.mouseY or playerY
-        self.player:aimAt(mx, my)
+        -- Find nearest enemy for targeting (all types)
+        local nearestEnemy, nearestDistance = self:findNearestEnemyTo(playerX, playerY, self.attackRange)
 
-        -- Primary auto-fire toward mouse (keep cadence, aim at cursor)
-        if self.fireCooldown <= 0 and not self.isDashing then
-            local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult
-            local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
-            local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
+        -- Aim bow at nearest enemy for presentation + primary targeting
+        if nearestEnemy then
+            local ex, ey = nearestEnemy:getPosition()
+            self.player:aimAt(ex, ey)
 
-            -- Target point: mouse position, or min distance along aim direction if too close
-            local dx = mx - sx
-            local dy = my - sy
-            local dist = math.sqrt(dx * dx + dy * dy)
-            local tx, ty
-            if dist < 50 then
-                tx = sx + math.cos(self.player.bowAngle) * 400
-                ty = sy + math.sin(self.player.bowAngle) * 400
-            else
-                dist = math.min(dist, 600)
-                local inv = 1 / dist
-                tx = sx + dx * inv * dist
-                ty = sy + dy * inv * dist
-            end
+            if self.fireCooldown <= 0 and not self.isDashing then
+                local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult
+                local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
+                local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
 
-            local ricBounces = (self.playerStats and self.playerStats.weaponMods.ricochet_bounces) or 0
-            local ricRange = (self.playerStats and self.playerStats.weaponMods.ricochet_range) or 220
-            local isGhosting = self.ghostQuiverTimer > 0
-            local activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
+                local ricBounces = (self.playerStats and self.playerStats.weaponMods.ricochet_bounces) or 0
+                local ricRange = (self.playerStats and self.playerStats.weaponMods.ricochet_range) or 220
+                local isGhosting = self.ghostQuiverTimer > 0
+                local activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
 
-            local arrow = Arrow:new(sx, sy, tx, ty, {
+                local arrow = Arrow:new(sx, sy, ex, ey, {
                     damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140,
                     ricochetBounces = ricBounces, ricochetRange = ricRange,
                     ghosting = isGhosting,
@@ -696,14 +684,14 @@ function GameScene:update(dt)
                 if bonusProj > 0 then
                     local spreadDeg = (self.playerStats and self.playerStats.weaponMods.projectile_spread) or 10
                     local spreadRad = math.rad(spreadDeg)
-                    local baseAngle = math.atan2(ty - sy, tx - sx)
+                    local baseAngle = math.atan2(ey - sy, ex - sx)
                     for p = 1, bonusProj do
                         local offset = spreadRad * p * (p % 2 == 0 and 1 or -1)
                         local bx = sx + math.cos(baseAngle + offset) * 10
                         local by = sy + math.sin(baseAngle + offset) * 10
-                        local btx = sx + math.cos(baseAngle + offset) * 300
-                        local bty = sy + math.sin(baseAngle + offset) * 300
-                        local bonusArrow = Arrow:new(bx, by, btx, bty, {
+                        local tx = sx + math.cos(baseAngle + offset) * 300
+                        local ty = sy + math.sin(baseAngle + offset) * 300
+                        local bonusArrow = Arrow:new(bx, by, tx, ty, {
                             damage = baseDmg * 0.7,
                             pierce = pierce,
                             kind = "primary",
@@ -718,8 +706,9 @@ function GameScene:update(dt)
                     end
                 end
 
-            self.fireCooldown = self.fireRate
-            if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
+                self.fireCooldown = self.fireRate
+                if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
+            end
         end
 
         -- Multi Shot (Q): auto-cast at nearest enemy when off cooldown
