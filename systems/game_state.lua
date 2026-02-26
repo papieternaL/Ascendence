@@ -13,7 +13,8 @@ GameState.States = {
     BOSS_FIGHT = "boss_fight",
     PAUSED = "paused",
     GAME_OVER = "game_over",
-    VICTORY = "victory"
+    VICTORY = "victory",
+    TUTORIAL = "tutorial"
 }
 
 -- Hero Classes

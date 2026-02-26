@@ -91,18 +91,16 @@ function Menu:update(dt)
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
     
     if state == States.MENU then
-        if self:isPointInButton(mx, my, w/2, h * 0.55, 200, 45) then
-            self.selectedIndex = 1
-            self.hoveredButton = "begin"
-        elseif self:isPointInButton(mx, my, w/2, h * 0.62, 200, 45) then
-            self.selectedIndex = 2
-            self.hoveredButton = "boss_test"
-        elseif self:isPointInButton(mx, my, w/2, h * 0.69, 200, 45) then
-            self.selectedIndex = 3
-            self.hoveredButton = "settings"
-        elseif self:isPointInButton(mx, my, w/2, h * 0.76, 200, 45) then
-            self.selectedIndex = 4
-            self.hoveredButton = "quit"
+        if self:isPointInButton(mx, my, w/2, h * 0.50, 200, 40) then
+            self.selectedIndex = 1; self.hoveredButton = "begin"
+        elseif self:isPointInButton(mx, my, w/2, h * 0.56, 200, 40) then
+            self.selectedIndex = 2; self.hoveredButton = "tutorial"
+        elseif self:isPointInButton(mx, my, w/2, h * 0.62, 200, 40) then
+            self.selectedIndex = 3; self.hoveredButton = "boss_test"
+        elseif self:isPointInButton(mx, my, w/2, h * 0.68, 200, 40) then
+            self.selectedIndex = 4; self.hoveredButton = "settings"
+        elseif self:isPointInButton(mx, my, w/2, h * 0.74, 200, 40) then
+            self.selectedIndex = 5; self.hoveredButton = "quit"
         else
             self.hoveredButton = nil
         end
@@ -185,14 +183,12 @@ function Menu:drawMainMenu()
     love.graphics.setColor(0.7, 0.6, 0.5, 0.9)
     drawTextWithShadow(subtitle, w/2 - subW/2, h * 0.25 + 60 + self.titleBob)
     
-    -- Begin button
-    self:drawButton("BEGIN TRIAL", w/2, h * 0.55, 200, 45, self.selectedIndex == 1)
-    -- Boss test button
-    self:drawButton("BOSS TEST", w/2, h * 0.62, 200, 45, self.selectedIndex == 2)
-    -- Settings button
-    self:drawButton("SETTINGS", w/2, h * 0.69, 200, 45, self.selectedIndex == 3)
-    -- Quit button
-    self:drawButton("QUIT", w/2, h * 0.76, 200, 45, self.selectedIndex == 4)
+    -- Menu buttons
+    self:drawButton("BEGIN TRIAL", w/2, h * 0.50, 200, 40, self.selectedIndex == 1)
+    self:drawButton("TUTORIAL", w/2, h * 0.56, 200, 40, self.selectedIndex == 2)
+    self:drawButton("BOSS TEST", w/2, h * 0.62, 200, 40, self.selectedIndex == 3)
+    self:drawButton("SETTINGS", w/2, h * 0.68, 200, 40, self.selectedIndex == 4)
+    self:drawButton("QUIT", w/2, h * 0.74, 200, 40, self.selectedIndex == 5)
     
     -- Instructions
     love.graphics.setFont(self.smallFont)
@@ -658,17 +654,20 @@ function Menu:keypressed(key)
         if key == "up" or key == "down" then
             if key == "up" then
                 self.selectedIndex = self.selectedIndex - 1
-                if self.selectedIndex < 1 then self.selectedIndex = 4 end
+                if self.selectedIndex < 1 then self.selectedIndex = 5 end
             else
                 self.selectedIndex = self.selectedIndex + 1
-                if self.selectedIndex > 4 then self.selectedIndex = 1 end
+                if self.selectedIndex > 5 then self.selectedIndex = 1 end
             end
         elseif key == "return" or key == "space" then
             if self.selectedIndex == 1 then
                 self.gameState:transitionTo(States.CHARACTER_SELECT)
                 self.selectedIndex = 1
             elseif self.selectedIndex == 2 then
-                -- Boss Test: auto-select Archer, Deepwood, default difficulty, skip to boss
+                self.gameState:selectHeroClass("ARCHER")
+                self.gameState:transitionTo(States.TUTORIAL)
+                self.selectedIndex = 1
+            elseif self.selectedIndex == 3 then
                 self.gameState:selectHeroClass("ARCHER")
                 self.gameState:selectBiome("DEEPWOOD")
                 self.gameState:setDefaultDifficulty()
@@ -676,7 +675,7 @@ function Menu:keypressed(key)
                 self.gameState.bossTestMode = true
                 self.gameState:transitionTo(States.PLAYING)
                 self.selectedIndex = 1
-            elseif self.selectedIndex == 3 then
+            elseif self.selectedIndex == 4 then
                 self.gameState:transitionTo(States.SETTINGS)
                 self.selectedIndex = 1
             else
@@ -775,11 +774,14 @@ function Menu:mousepressed(x, y, button)
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
     
     if state == States.MENU then
-        if self:isPointInButton(x, y, w/2, h * 0.55, 200, 45) then
+        if self:isPointInButton(x, y, w/2, h * 0.50, 200, 40) then
             self.gameState:transitionTo(States.CHARACTER_SELECT)
             self.selectedIndex = 1
-        elseif self:isPointInButton(x, y, w/2, h * 0.62, 200, 45) then
-            -- Boss Test
+        elseif self:isPointInButton(x, y, w/2, h * 0.56, 200, 40) then
+            self.gameState:selectHeroClass("ARCHER")
+            self.gameState:transitionTo(States.TUTORIAL)
+            self.selectedIndex = 1
+        elseif self:isPointInButton(x, y, w/2, h * 0.62, 200, 40) then
             self.gameState:selectHeroClass("ARCHER")
             self.gameState:selectBiome("DEEPWOOD")
             self.gameState:setDefaultDifficulty()
@@ -787,10 +789,10 @@ function Menu:mousepressed(x, y, button)
             self.gameState.bossTestMode = true
             self.gameState:transitionTo(States.PLAYING)
             self.selectedIndex = 1
-        elseif self:isPointInButton(x, y, w/2, h * 0.69, 200, 45) then
+        elseif self:isPointInButton(x, y, w/2, h * 0.68, 200, 40) then
             self.gameState:transitionTo(States.SETTINGS)
             self.selectedIndex = 1
-        elseif self:isPointInButton(x, y, w/2, h * 0.76, 200, 45) then
+        elseif self:isPointInButton(x, y, w/2, h * 0.74, 200, 40) then
             love.event.quit()
         end
     elseif state == States.SETTINGS then

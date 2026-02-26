@@ -62,6 +62,8 @@ function Player:new(x, y)
                 cooldown = 2.25,
                 currentCooldown = 0,
                 unlocked = true,
+                description = "Fires a cone of 3 arrows at the nearest enemy. Auto-casts when ready.",
+                castType = "auto",
             },
             entangle = {
                 name = "Arrow Volley",
@@ -70,6 +72,8 @@ function Player:new(x, y)
                 cooldown = 7.2,
                 currentCooldown = 0,
                 unlocked = true,
+                description = "Rains arrows on the largest enemy cluster. Auto-casts when ready.",
+                castType = "auto",
             },
             frenzy = {
                 name = "Frenzy",
@@ -78,6 +82,8 @@ function Player:new(x, y)
                 cooldown = 13.5,
                 currentCooldown = 0,
                 unlocked = true,
+                description = "Press R to activate. Grants bonus crit chance and move speed. Charges from combat and kills.",
+                castType = "manual",
             },
             dash = {
                 name = "Dash",
@@ -86,6 +92,8 @@ function Player:new(x, y)
                 cooldown = 0.9,
                 currentCooldown = 0,
                 unlocked = true,
+                description = "Press SPACE to dash in your movement direction. Grants invincibility frames.",
+                castType = "manual",
             },
         },
         -- Ability order for display

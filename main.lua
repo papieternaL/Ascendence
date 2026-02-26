@@ -5,6 +5,7 @@ local GameState = require("systems.game_state")
 local Menu = require("ui.menu")
 local GameScene = require("scenes.game_scene")
 local BossArenaScene = require("scenes.boss_arena_scene")
+local TutorialScene = require("scenes.tutorial_scene")
 local Audio = require("systems.audio")
 local Settings = require("systems.settings")
 local JuiceManager = require("systems.juice_manager")
@@ -26,6 +27,7 @@ local gameState
 local menu
 local gameScene
 local bossArenaScene
+local tutorialScene
 local audio
 local settings
 local prevState = nil
@@ -160,14 +162,19 @@ function love.update(dt)
         if bossArenaScene then
             bossArenaScene:update(dt)
         end
+    elseif state == States.TUTORIAL then
+        if not tutorialScene then
+            tutorialScene = TutorialScene:new(gameState)
+            tutorialScene:load()
+        end
+        tutorialScene:update(dt)
     elseif state == States.MENU or state == States.SETTINGS or
            state == States.CHARACTER_SELECT or state == States.BIOME_SELECT then
         menu:update(dt)
-        -- Reset game scene when in menu
-        if gameScene then
-            gameScene = nil
-        end
+        -- Reset scenes when in menu
+        if gameScene then gameScene = nil end
         bossArenaScene = nil
+        tutorialScene = nil
     elseif state == States.GAME_OVER or state == States.VICTORY then
         bossArenaScene = nil
         menu:update(dt)
@@ -212,6 +219,10 @@ function love.draw()
         if bossArenaScene then
             bossArenaScene:draw()
             drawQuitButton()
+        end
+    elseif state == States.TUTORIAL then
+        if tutorialScene then
+            tutorialScene:draw()
         end
     end
 
@@ -361,6 +372,89 @@ function drawBottomHUD(player)
             drawAbilityDiamond(ability, cx, abilitiesCY, diamondR)
         end
     end
+
+    -- Ability tooltip on hover
+    local mx, my = love.mouse.getPosition()
+    for i, abilityId in ipairs(player.abilityOrder) do
+        local ability = player.abilities[abilityId]
+        if ability and ability.description then
+            local cx = abilitiesStartX + (i - 1) * diamondSpacing
+            local dx = mx - cx
+            local dy = my - abilitiesCY
+            if math.abs(dx) + math.abs(dy) < diamondR + 4 then
+                drawAbilityTooltip(ability, cx, abilitiesCY - diamondR - 8)
+                break
+            end
+        end
+    end
+end
+
+function drawAbilityTooltip(ability, anchorX, anchorY)
+    local tipFont = hudFonts.uiTiny or love.graphics.getFont()
+    local nameFont = hudFonts.uiSmall or tipFont
+    love.graphics.setFont(tipFont)
+
+    local maxW = 200
+    local padding = 8
+    local lines = {}
+    local currentLine = ""
+    for word in ability.description:gmatch("%S+") do
+        local test = currentLine == "" and word or (currentLine .. " " .. word)
+        if tipFont:getWidth(test) <= maxW then
+            currentLine = test
+        else
+            if currentLine ~= "" then lines[#lines + 1] = currentLine end
+            currentLine = word
+        end
+    end
+    if currentLine ~= "" then lines[#lines + 1] = currentLine end
+
+    local lineH = tipFont:getHeight() + 2
+    local nameH = nameFont:getHeight() + 4
+    local castH = 0
+    if ability.castType then castH = lineH end
+    local tipH = nameH + #lines * lineH + castH + padding * 2
+    local tipW = maxW + padding * 2
+    local tipX = anchorX - tipW / 2
+    local tipY = anchorY - tipH
+
+    -- Clamp to screen
+    tipX = math.max(4, math.min(love.graphics.getWidth() - tipW - 4, tipX))
+
+    -- Background
+    love.graphics.setColor(0.06, 0.06, 0.1, 0.94)
+    love.graphics.rectangle("fill", tipX, tipY, tipW, tipH, 6, 6)
+    love.graphics.setColor(0.45, 0.4, 0.3, 0.6)
+    love.graphics.setLineWidth(1)
+    love.graphics.rectangle("line", tipX, tipY, tipW, tipH, 6, 6)
+
+    -- Name
+    love.graphics.setFont(nameFont)
+    love.graphics.setColor(1, 0.9, 0.7, 1)
+    local nameW = nameFont:getWidth(ability.name)
+    love.graphics.print(ability.name, tipX + tipW / 2 - nameW / 2, tipY + padding)
+
+    -- Cast type label
+    local yOff = tipY + padding + nameH
+    if ability.castType then
+        love.graphics.setFont(tipFont)
+        local castLabel = ability.castType == "auto" and "AUTO-CAST" or "MANUAL"
+        local castColor = ability.castType == "auto" and {0.4, 0.8, 0.5} or {1, 0.7, 0.3}
+        love.graphics.setColor(castColor[1], castColor[2], castColor[3], 0.9)
+        local cw = tipFont:getWidth(castLabel)
+        love.graphics.print(castLabel, tipX + tipW / 2 - cw / 2, yOff)
+        yOff = yOff + lineH
+    end
+
+    -- Description lines
+    love.graphics.setFont(tipFont)
+    love.graphics.setColor(0.8, 0.8, 0.8, 1)
+    for _, line in ipairs(lines) do
+        love.graphics.print(line, tipX + padding, yOff)
+        yOff = yOff + lineH
+    end
+
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 -- Ability color accents per key (matching element vibes)
@@ -500,6 +594,13 @@ function love.keypressed(key)
     elseif state == States.BOSS_FIGHT then
         if bossArenaScene and bossArenaScene.keypressed then
             bossArenaScene:keypressed(key)
+        end
+    elseif state == States.TUTORIAL then
+        if tutorialScene and tutorialScene.keypressed then
+            tutorialScene:keypressed(key)
+        end
+        if key == "escape" then
+            gameState:reset()
         end
     else
         menu:keypressed(key)
