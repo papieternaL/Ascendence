@@ -283,8 +283,48 @@ function Player:draw()
             bowScale, bowScale,
             imgW / 2, imgH / 2 -- Center origin
         )
+
+        -- Bow attunement VFX (Fire/Ice/Lightning)
+        local elem = self.activeElement
+        if elem then
+            local t = love.timer.getTime()
+            if elem == "fire" then
+                local flicker = 0.5 + 0.35 * math.sin(t * 14)
+                love.graphics.setColor(1.0, 0.45, 0.1, flicker * 0.45)
+                love.graphics.circle("fill", bowX, bowY, 18)
+                love.graphics.setColor(1.0, 0.7, 0.2, flicker * 0.6)
+                love.graphics.circle("fill", bowX, bowY, 10)
+                love.graphics.setColor(1.0, 0.9, 0.4, flicker * 0.5)
+                love.graphics.circle("fill", bowX + math.cos(self.bowAngle) * 12, bowY + math.sin(self.bowAngle) * 12, 4)
+            elseif elem == "ice" then
+                local shimmer = 0.5 + 0.3 * math.sin(t * 10)
+                love.graphics.setColor(0.5, 0.85, 1.0, shimmer * 0.45)
+                love.graphics.circle("fill", bowX, bowY, 18)
+                love.graphics.setColor(0.7, 0.95, 1.0, shimmer * 0.6)
+                love.graphics.circle("fill", bowX, bowY, 10)
+                for k = 0, 2 do
+                    local a = t * 4 + k * (math.pi * 2 / 3)
+                    local r = 14
+                    love.graphics.setColor(0.85, 0.95, 1.0, shimmer * 0.7)
+                    love.graphics.rectangle("fill", bowX + math.cos(a) * r - 1.5, bowY + math.sin(a) * r - 1.5, 3, 3)
+                end
+            elseif elem == "lightning" then
+                local pulse = 0.5 + 0.35 * math.sin(t * 18)
+                love.graphics.setColor(0.4, 0.7, 1.0, pulse * 0.45)
+                love.graphics.circle("fill", bowX, bowY, 18)
+                love.graphics.setColor(0.7, 0.9, 1.0, pulse * 0.6)
+                love.graphics.circle("fill", bowX, bowY, 10)
+                for k = 0, 1 do
+                    local sparkA = t * 12 + k * math.pi + self.bowAngle
+                    local sr = 12 + 3 * math.sin(t * 15 + k)
+                    love.graphics.setColor(0.8, 0.95, 1.0, pulse * 0.85)
+                    love.graphics.circle("fill", bowX + math.cos(sparkA) * sr, bowY + math.sin(sparkA) * sr, 3)
+                end
+            end
+            love.graphics.setColor(1, 1, 1, 1)
+        end
     end
-    
+
     -- Draw health bar above player
     local barWidth = 40
     local barHeight = 6

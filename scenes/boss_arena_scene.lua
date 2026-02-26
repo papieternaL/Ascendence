@@ -439,37 +439,49 @@ function BossArenaScene:update(dt)
         end
         
         local playerX, playerY = self.player:getPosition()
-        
-        -- Find target (boss only - no root entities)
-        local targetX, targetY = nil, nil
-        
-        -- Target the boss
-        if self.boss and self.boss.isAlive then
-            targetX, targetY = self.boss:getPosition()
-        end
-        
-        -- Aim at target
-        if targetX and targetY then
-            self.player:aimAt(targetX, targetY)
 
-            -- Auto-fire primary (blocked during typing test - boss is invulnerable)
-            if self.fireCooldown <= 0 and not self.isDashing and not self.typingTestActive then
-                local baseDmg = (self.player.attackDamage or 10) * 1.0
-                local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
-                local ricBounces = (self.playerStats and self.playerStats:getWeaponMod("ricochet_bounces")) or 0
-                local ricRange = (self.playerStats and self.playerStats:getWeaponMod("ricochet_range")) or 220
-                local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
-                local arrow = Arrow:new(sx, sy, targetX, targetY, {
-                    damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140,
-                    ricochetBounces = ricBounces, ricochetRange = ricRange,
-                    iceAttuned = self.playerStats and self.playerStats.activePrimaryElement == "ice",
-                })
-                table.insert(self.arrows, arrow)
-                if _G.audio then _G.audio:playSFX("shoot_arrow") end
-                self.fireCooldown = self.fireRate
-                if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
-                if self.player.playAttackAnimation then self.player:playAttackAnimation() end
+        -- Drive bow attunement VFX from current element
+        self.player.activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
+
+        -- Primary aim: mouse direction (movement and aim decoupled)
+        local mx, my = self.mouseX or playerX, self.mouseY or playerY
+        self.player:aimAt(mx, my)
+
+        -- Auto-fire primary toward mouse (blocked during typing test - boss is invulnerable)
+        if self.boss and self.boss.isAlive and self.fireCooldown <= 0 and not self.isDashing and not self.typingTestActive then
+            local baseDmg = (self.player.attackDamage or 10) * 1.0
+            local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
+            local ricBounces = (self.playerStats and self.playerStats:getWeaponMod("ricochet_bounces")) or 0
+            local ricRange = (self.playerStats and self.playerStats:getWeaponMod("ricochet_range")) or 220
+            local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
+            local activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
+
+            -- Target point: mouse position, or min distance along aim direction if too close
+            local dx = mx - sx
+            local dy = my - sy
+            local dist = math.sqrt(dx * dx + dy * dy)
+            local tx, ty
+            if dist < 50 then
+                tx = sx + math.cos(self.player.bowAngle) * 400
+                ty = sy + math.sin(self.player.bowAngle) * 400
+            else
+                dist = math.min(dist, 600)
+                local inv = 1 / dist
+                tx = sx + dx * inv * dist
+                ty = sy + dy * inv * dist
             end
+
+            local arrow = Arrow:new(sx, sy, tx, ty, {
+                damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140,
+                ricochetBounces = ricBounces, ricochetRange = ricRange,
+                iceAttuned = activeElement == "ice",
+                element = activeElement,
+            })
+            table.insert(self.arrows, arrow)
+            if _G.audio then _G.audio:playSFX("shoot_arrow") end
+            self.fireCooldown = self.fireRate
+            if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
+            if self.player.playAttackAnimation then self.player:playAttackAnimation() end
         end
 
         -- Auto-cast Arrow Volley (targets boss, blocked during typing test)

@@ -118,7 +118,7 @@ function GameScene:new(gameState)
         majorProgress = 0,
         majorProgressMax = 100,
 
-        -- Cores objective
+        -- Cores objective (starts at 25% major progress)
         cores = {},
         coresTotal = 20,
         coresDestroyed = 0,
@@ -126,7 +126,9 @@ function GameScene:new(gameState)
         coreObjectiveTimeLimit = 180, -- 3 minutes
         coreObjectiveComplete = false,
         coreObjectiveRewardGiven = false,
-        coreObjectiveStarted = true,
+        coreObjectiveStarted = false,
+        coreObjectiveStartPct = 0.25,
+        coreObjectivePopupTimer = 0, -- popup display duration when objective starts
 
         -- Progress per event
         majorProgressPerKill = 0.35,
@@ -235,8 +237,7 @@ function GameScene:load()
     -- Apply stats (including 15% cooldown reduction) at run start
     self:applyStatsToPlayer()
 
-    -- Spawn cores around the map for the objective
-    self:spawnCores()
+    -- Cores spawn when major progress reaches 25% (see addMajorProgress)
 end
 
 function GameScene:spawnEnemies()
@@ -493,6 +494,11 @@ function GameScene:update(dt)
         self.coreObjectiveTimer = self.coreObjectiveTimer + dt
     end
 
+    -- Update core objective popup (fade-out display when objective starts)
+    if self.coreObjectivePopupTimer and self.coreObjectivePopupTimer > 0 then
+        self.coreObjectivePopupTimer = self.coreObjectivePopupTimer - dt
+    end
+
     -- Update cores
     for _, core in ipairs(self.cores) do
         if core.isAlive then
@@ -624,30 +630,41 @@ function GameScene:update(dt)
         self:resolvePlayerBlockers()
 
         local playerX, playerY = self.player:getPosition()
-        
-        -- Find nearest enemy for targeting (all types)
-        local nearestEnemy, nearestDistance = self:findNearestEnemyTo(playerX, playerY, self.attackRange)
-        
-        -- Aim at nearest enemy for bow presentation + primary targeting
-        if nearestEnemy then
-            local ex, ey = nearestEnemy:getPosition()
-            self.player:aimAt(ex, ey)
-            
-            if self.fireCooldown <= 0 and not self.isDashing then
-                -- Create primary projectile (auto-target)
-                local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult
-                local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
-                local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
 
-                -- Ricochet params from weapon mods
-                local ricBounces = (self.playerStats and self.playerStats.weaponMods.ricochet_bounces) or 0
-                local ricRange = (self.playerStats and self.playerStats.weaponMods.ricochet_range) or 220
+        -- Drive bow attunement VFX from current element
+        self.player.activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
 
-                -- Ghost quiver: infinite pierce on primary while active
-                local isGhosting = self.ghostQuiverTimer > 0
+        -- Primary aim: mouse direction (movement and aim decoupled)
+        local mx, my = self.mouseX or playerX, self.mouseY or playerY
+        self.player:aimAt(mx, my)
 
-                local activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
-                local arrow = Arrow:new(sx, sy, ex, ey, {
+        -- Primary auto-fire toward mouse (keep cadence, aim at cursor)
+        if self.fireCooldown <= 0 and not self.isDashing then
+            local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult
+            local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
+            local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
+
+            -- Target point: mouse position, or min distance along aim direction if too close
+            local dx = mx - sx
+            local dy = my - sy
+            local dist = math.sqrt(dx * dx + dy * dy)
+            local tx, ty
+            if dist < 50 then
+                tx = sx + math.cos(self.player.bowAngle) * 400
+                ty = sy + math.sin(self.player.bowAngle) * 400
+            else
+                dist = math.min(dist, 600)
+                local inv = 1 / dist
+                tx = sx + dx * inv * dist
+                ty = sy + dy * inv * dist
+            end
+
+            local ricBounces = (self.playerStats and self.playerStats.weaponMods.ricochet_bounces) or 0
+            local ricRange = (self.playerStats and self.playerStats.weaponMods.ricochet_range) or 220
+            local isGhosting = self.ghostQuiverTimer > 0
+            local activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
+
+            local arrow = Arrow:new(sx, sy, tx, ty, {
                     damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140,
                     ricochetBounces = ricBounces, ricochetRange = ricRange,
                     ghosting = isGhosting,
@@ -679,14 +696,14 @@ function GameScene:update(dt)
                 if bonusProj > 0 then
                     local spreadDeg = (self.playerStats and self.playerStats.weaponMods.projectile_spread) or 10
                     local spreadRad = math.rad(spreadDeg)
-                    local baseAngle = math.atan2(ey - sy, ex - sx)
+                    local baseAngle = math.atan2(ty - sy, tx - sx)
                     for p = 1, bonusProj do
                         local offset = spreadRad * p * (p % 2 == 0 and 1 or -1)
                         local bx = sx + math.cos(baseAngle + offset) * 10
                         local by = sy + math.sin(baseAngle + offset) * 10
-                        local tx = sx + math.cos(baseAngle + offset) * 300
-                        local ty = sy + math.sin(baseAngle + offset) * 300
-                        local bonusArrow = Arrow:new(bx, by, tx, ty, {
+                        local btx = sx + math.cos(baseAngle + offset) * 300
+                        local bty = sy + math.sin(baseAngle + offset) * 300
+                        local bonusArrow = Arrow:new(bx, by, btx, bty, {
                             damage = baseDmg * 0.7,
                             pierce = pierce,
                             kind = "primary",
@@ -701,9 +718,8 @@ function GameScene:update(dt)
                     end
                 end
 
-                self.fireCooldown = self.fireRate
-                if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
-            end
+            self.fireCooldown = self.fireRate
+            if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
         end
 
         -- Multi Shot (Q): auto-cast at nearest enemy when off cooldown
@@ -1409,6 +1425,21 @@ end
 ---------------------------------------------------------------------------
 function GameScene:addMajorProgress(amount)
     self.majorProgress = math.min(self.majorProgressMax, self.majorProgress + (amount or 0))
+
+    -- Start core objective when progress crosses 25% threshold
+    if not self.coreObjectiveStarted then
+        local threshold = self.majorProgressMax * (self.coreObjectiveStartPct or 0.25)
+        if self.majorProgress >= threshold then
+            self.coreObjectiveStarted = true
+            self:spawnCores()
+            self.coreObjectivePopupTimer = 3.0
+            if _G.audio then _G.audio:playSFX("portal_open") end
+            if _G.triggerScreenFlash then
+                _G.triggerScreenFlash({0.3, 0.6, 1.0, 0.25}, 0.12)
+            end
+            if self.screenShake then self.screenShake:add(4, 0.15) end
+        end
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -2040,7 +2071,12 @@ function GameScene:draw()
     -- Draw HUD (not affected by screen shake or camera)
     self:drawXPBar()
     self:drawMajorProgressBar()
-    self:drawObjectiveHUD()
+    if self.coreObjectiveStarted then
+        self:drawObjectiveHUD()
+    end
+    if self.coreObjectivePopupTimer and self.coreObjectivePopupTimer > 0 then
+        self:drawCoreObjectivePopup()
+    end
     
     -- Draw upgrade UI (on top of everything)
     if self.upgradeUI then
@@ -2168,6 +2204,35 @@ function GameScene:drawMajorProgressBar()
     love.graphics.setColor(0.9, 0.8, 0.5, 0.9)
     local pct = string.format("%d%%", math.floor(progress * 100))
     love.graphics.print(pct, barX - labelFont:getWidth(pct) - 8, barY)
+
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
+function GameScene:drawCoreObjectivePopup()
+    local screenWidth = love.graphics.getWidth()
+    local screenHeight = love.graphics.getHeight()
+    local t = love.timer.getTime()
+
+    local duration = 3.0
+    local alpha = math.min(1, (self.coreObjectivePopupTimer or 0) / 0.5)
+    if self.coreObjectivePopupTimer < 0.5 then
+        alpha = math.max(0, self.coreObjectivePopupTimer / 0.5)
+    end
+
+    local titleFont = _G.PixelFonts and _G.PixelFonts.uiLarge or love.graphics.getFont()
+    local bodyFont = _G.PixelFonts and _G.PixelFonts.uiBody or love.graphics.getFont()
+
+    love.graphics.setFont(titleFont)
+    local title = "CORE OBJECTIVE!"
+    local tw = titleFont:getWidth(title)
+    love.graphics.setColor(0.3, 0.7, 1.0, alpha)
+    love.graphics.print(title, screenWidth / 2 - tw / 2, screenHeight / 2 - 50)
+
+    love.graphics.setFont(bodyFont)
+    local body = "DESTROY 20 CORES"
+    local bw = bodyFont:getWidth(body)
+    love.graphics.setColor(0.9, 0.9, 0.95, alpha * 0.9)
+    love.graphics.print(body, screenWidth / 2 - bw / 2, screenHeight / 2 - 10)
 
     love.graphics.setColor(1, 1, 1, 1)
 end
@@ -2429,6 +2494,42 @@ function GameScene:drawPauseOverlay()
 end
 
 function GameScene:mousepressed(x, y, button)
+    -- Handle pause overlay clicks
+    if self.pauseMenuVisible and button == 1 then
+        local w, h = love.graphics.getWidth(), love.graphics.getHeight()
+        local panelW, panelH = 520, 320
+        local panelX, panelY = (w - panelW) / 2, (h - panelH) / 2
+
+        if self.pauseSettingsVisible then
+            -- BACK button: y0 + gap*3, reasonable width
+            local y0, gap = panelY + 96, 56
+            local backY = y0 + gap * 3
+            local btnW, btnH = 200, 36
+            local btnX = panelX + (panelW - btnW) / 2
+            if x >= btnX and x <= btnX + btnW and y >= backY - 8 and y <= backY + 28 then
+                self.pauseSettingsVisible = false
+                return true
+            end
+        else
+            -- Main menu: Resume, Settings, Quit to Menu
+            local optY0, optGap = panelY + 98, 56
+            local btnW, btnH = 220, 44
+            local btnX = panelX + (panelW - btnW) / 2
+            for i = 1, 3 do
+                local optTop = optY0 + (i - 1) * optGap
+                if x >= btnX and x <= btnX + btnW and y >= optTop and y <= optTop + btnH then
+                    if i == 1 then self.pauseMenuVisible = false
+                    elseif i == 2 then self.pauseSettingsVisible = true; self.pauseSettingsIndex = 1
+                    elseif i == 3 then self.pauseMenuVisible = false; self.gameState:transitionTo(self.gameState.States.MENU)
+                    end
+                    return true
+                end
+            end
+        end
+        -- Click on overlay but not on a button: consume to avoid accidental game input
+        return true
+    end
+
     -- Handle upgrade UI input
     if self.upgradeUI and self.upgradeUI:isVisible() then
         if self.upgradeUI:mousepressed(x, y, button) then

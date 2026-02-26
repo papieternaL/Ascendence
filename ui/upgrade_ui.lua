@@ -205,9 +205,9 @@ function UpgradeUI:draw()
   local titleWidth = font:getWidth(title)
   love.graphics.print(title, screenWidth / 2 - titleWidth / 2, 60)
   
-  -- Draw upgrade cards
-  local cardWidth = 250
-  local cardHeight = 340
+  -- Draw upgrade cards (slightly larger for readable text)
+  local cardWidth = 260
+  local cardHeight = 360
   local cardSpacing = 30
   local totalWidth = #self.options * cardWidth + (#self.options - 1) * cardSpacing
   local startX = (screenWidth - totalWidth) / 2
@@ -270,10 +270,10 @@ function UpgradeUI:drawCardFront(upgrade, width, height, isSelected)
   local color = rarityColors[rarity] or rarityColors.common
   local glow = rarityGlow[rarity] or rarityGlow.common
 
-  -- Font selection for card content
-  local nameFont = _G.PixelFonts and _G.PixelFonts.uiSmall or love.graphics.getFont()
-  local descFont = _G.PixelFonts and _G.PixelFonts.uiTiny or love.graphics.getFont()
-  local tagFont  = _G.PixelFonts and _G.PixelFonts.uiSmallText or descFont
+  -- Font selection for card content (larger for readability)
+  local nameFont = _G.PixelFonts and _G.PixelFonts.uiBody or love.graphics.getFont()
+  local descFont = _G.PixelFonts and _G.PixelFonts.uiSmall or love.graphics.getFont()
+  local tagFont  = _G.PixelFonts and _G.PixelFonts.uiTiny or descFont
   
   -- Glow effect for selected/hovered
   if isSelected then
@@ -328,8 +328,8 @@ function UpgradeUI:drawCardFront(upgrade, width, height, isSelected)
   local description = self:getUpgradeDescription(upgrade)
   
   local maxWidth = width - 16
-  local lineHeight = font:getHeight() + 1
-  local tagY = height - 28
+  local lineHeight = font:getHeight() + 4
+  local tagY = height - 32
   local lines = self:wrapText(description, maxWidth)
   local lineY = 64
   for _, line in ipairs(lines) do
@@ -655,8 +655,8 @@ function UpgradeUI:getCardAtPosition(x, y)
   local screenWidth = love.graphics.getWidth()
   local screenHeight = love.graphics.getHeight()
   
-  local cardWidth = 250
-  local cardHeight = 340
+  local cardWidth = 260
+  local cardHeight = 360
   local cardSpacing = 30
   local totalWidth = #self.options * cardWidth + (#self.options - 1) * cardSpacing
   local startX = (screenWidth - totalWidth) / 2

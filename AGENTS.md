@@ -237,6 +237,20 @@ Input → Player.update() → Movement
 10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
+- 2026-02-15: **Attunement bow VFX + mouse-aim primary**:
+  - **Bow attunement VFX**: Fire/Ice/Lightning attunements now show visible aura on the bow (flicker, shimmer, pulse) in both main map and boss arena.
+  - **Primary aim**: Auto-fire primary arrows now shoot toward mouse cursor instead of nearest enemy; movement and aim decoupled.
+  - **Arrow elemental aura**: Slightly increased visibility (alpha, radius) for Fire/Ice/Lightning projectile auras.
+  - Boss arena primary arrows now receive `element` for full attunement VFX parity.
+  - Files: entities/player.lua, entities/arrow.lua, scenes/game_scene.lua, scenes/boss_arena_scene.lua.
+- 2026-02-15: **Pause menu mouse clicks**:
+  - Pause overlay buttons (Resume, Settings, Quit to Menu) now respond to left-click. Added hit-testing in `GameScene:mousepressed`; Settings sub-view BACK button also clickable.
+  - Files: scenes/game_scene.lua.
+- 2026-02-25: **Upgrade card readability + core objective at 25%**:
+  - **Upgrade card text**: Larger fonts (name uiBody, desc uiSmall, tags uiTiny), increased line-height and card size (260x360) for readability.
+  - **Core objective delayed**: Cores spawn only when major progress reaches 25% (not at run start). Objective HUD hidden until then.
+  - **Objective start popup**: When 25% threshold is crossed, popup displays "CORE OBJECTIVE!" / "DESTROY 20 CORES" with SFX (portal_open), screen flash, and screen shake.
+  - Files: ui/upgrade_ui.lua, scenes/game_scene.lua, AGENTS.md.
 - 2026-02-15: **Boss rework + Multi Shot + PixelGen**:
   - **Boss phase logic**: Vine Attack sequence only at 50% and 25% HP; removed 5% typing-test trigger. Phase 2 pace multipliers for lunge and bark barrage cooldowns.
   - **Bark Volley AOE**: Circular telegraphed zones near player with config-driven telegraph/damage timing; runs concurrently with lunge + bark barrage.
