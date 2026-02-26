@@ -134,6 +134,11 @@ function love.update(dt)
         if not gameScene then
             gameScene = GameScene:new(gameState)
             gameScene:load()
+            -- Boss Test Mode: immediately jump to boss fight after scene loads
+            if gameState.bossTestMode then
+                gameState.bossTestMode = false
+                gameState:enterBossFight()
+            end
         end
         gameScene:update(dt)
 

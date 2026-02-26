@@ -70,6 +70,9 @@ function Arrow:new(x, y, targetX, targetY, opts)
 
         -- Ice attunement: dissolve blast on expire
         iceAttuned = opts.iceAttuned == true,
+
+        -- Elemental attunement VFX
+        element = opts.element or nil,
     }
     setmetatable(arrow, Arrow)
     return arrow
@@ -140,6 +143,59 @@ function Arrow:draw()
         love.graphics.setColor(0.3, 0.7, 1.0, alpha * 0.3)
         local gs = (self.size or 10) * 0.6
         love.graphics.rectangle("fill", self.x - gs, self.y - gs, gs * 2, gs * 2)
+    end
+
+    -- Elemental aura VFX
+    local t = love.timer.getTime()
+    if self.element == "lightning" then
+        local pulse = 0.5 + 0.3 * math.sin(t * 18 + self.x * 0.1)
+        -- Outer electric glow
+        love.graphics.setColor(0.4, 0.7, 1.0, pulse * alpha * 0.5)
+        love.graphics.circle("fill", self.x, self.y, 12)
+        -- Inner bright core
+        love.graphics.setColor(0.7, 0.9, 1.0, pulse * alpha * 0.8)
+        love.graphics.circle("fill", self.x, self.y, 6)
+        -- Tiny spark trails (2 orbiting sparks)
+        for k = 0, 1 do
+            local sparkAngle = t * 12 + k * math.pi + self.age * 8
+            local sparkR = 8 + 3 * math.sin(t * 15 + k)
+            local sx = self.x + math.cos(sparkAngle) * sparkR
+            local sy = self.y + math.sin(sparkAngle) * sparkR
+            love.graphics.setColor(0.8, 0.95, 1.0, alpha * 0.9)
+            love.graphics.circle("fill", sx, sy, 2)
+        end
+
+    elseif self.element == "fire" then
+        local flicker = 0.5 + 0.3 * math.sin(t * 14 + self.y * 0.15)
+        -- Outer fire glow
+        love.graphics.setColor(1.0, 0.4, 0.1, flicker * alpha * 0.4)
+        love.graphics.circle("fill", self.x, self.y, 13)
+        -- Inner bright ember
+        love.graphics.setColor(1.0, 0.7, 0.2, flicker * alpha * 0.7)
+        love.graphics.circle("fill", self.x, self.y, 7)
+        -- Trailing ember particle behind arrow
+        local trailX = self.x - math.cos(self.angle) * 10
+        local trailY = self.y - math.sin(self.angle) * 10
+        love.graphics.setColor(1.0, 0.5, 0.1, alpha * 0.5 * flicker)
+        love.graphics.circle("fill", trailX, trailY, 4)
+
+    elseif self.element == "ice" then
+        local shimmer = 0.5 + 0.25 * math.sin(t * 10 + self.x * 0.12)
+        -- Outer frost glow
+        love.graphics.setColor(0.5, 0.85, 1.0, shimmer * alpha * 0.4)
+        love.graphics.circle("fill", self.x, self.y, 12)
+        -- Inner cold core
+        love.graphics.setColor(0.7, 0.95, 1.0, shimmer * alpha * 0.6)
+        love.graphics.circle("fill", self.x, self.y, 6)
+        -- Small frost crystals (3 rotating)
+        for k = 0, 2 do
+            local crystalAngle = t * 5 + k * (math.pi * 2 / 3)
+            local cr = 9
+            local cx = self.x + math.cos(crystalAngle) * cr
+            local cy = self.y + math.sin(crystalAngle) * cr
+            love.graphics.setColor(0.85, 0.95, 1.0, alpha * 0.7 * shimmer)
+            love.graphics.rectangle("fill", cx - 1.5, cy - 1.5, 3, 3)
+        end
     end
 
     love.graphics.setColor(1, 1, 1, 1)

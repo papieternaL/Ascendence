@@ -206,8 +206,8 @@ function UpgradeUI:draw()
   love.graphics.print(title, screenWidth / 2 - titleWidth / 2, 60)
   
   -- Draw upgrade cards
-  local cardWidth = 200
-  local cardHeight = 280
+  local cardWidth = 250
+  local cardHeight = 340
   local cardSpacing = 30
   local totalWidth = #self.options * cardWidth + (#self.options - 1) * cardSpacing
   local startX = (screenWidth - totalWidth) / 2
@@ -655,8 +655,8 @@ function UpgradeUI:getCardAtPosition(x, y)
   local screenWidth = love.graphics.getWidth()
   local screenHeight = love.graphics.getHeight()
   
-  local cardWidth = 200
-  local cardHeight = 280
+  local cardWidth = 250
+  local cardHeight = 340
   local cardSpacing = 30
   local totalWidth = #self.options * cardWidth + (#self.options - 1) * cardSpacing
   local startX = (screenWidth - totalWidth) / 2

@@ -572,11 +572,13 @@ function GameScene:update(dt)
                 -- Ghost quiver: infinite pierce on primary while active
                 local isGhosting = self.ghostQuiverTimer > 0
 
+                local activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
                 local arrow = Arrow:new(sx, sy, ex, ey, {
                     damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140,
                     ricochetBounces = ricBounces, ricochetRange = ricRange,
                     ghosting = isGhosting,
-                    iceAttuned = self.playerStats and self.playerStats.activePrimaryElement == "ice",
+                    iceAttuned = activeElement == "ice",
+                    element = activeElement,
                 })
                 table.insert(self.arrows, arrow)
                 if _G.audio then _G.audio:playSFX("shoot_arrow") end
@@ -617,7 +619,8 @@ function GameScene:update(dt)
                             knockback = 100,
                             ricochetBounces = ricBounces, ricochetRange = ricRange,
                             ghosting = isGhosting,
-                            iceAttuned = self.playerStats and self.playerStats.activePrimaryElement == "ice",
+                            iceAttuned = activeElement == "ice",
+                            element = activeElement,
                         })
                         table.insert(self.arrows, bonusArrow)
                         if _G.audio then _G.audio:playSFX("shoot_arrow") end
