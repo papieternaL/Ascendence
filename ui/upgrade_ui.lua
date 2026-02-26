@@ -364,7 +364,7 @@ function UpgradeUI:drawCardFront(upgrade, width, height, isSelected)
   local description = self:getUpgradeDescription(upgrade)
   
   local maxWidth = width - 16
-  local lineHeight = font:getHeight() + 2
+  local lineHeight = font:getHeight() * 2
   local tagY = height - 24
   local lines = self:wrapText(description, maxWidth)
   local lineY = 108
