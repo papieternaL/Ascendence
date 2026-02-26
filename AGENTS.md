@@ -126,3 +126,29 @@ Files touched/added:
   - Ultimate (Frenzy) is user-activated on `R` once fully charged.
   - Level-up UI no longer selects on Space; gameplay inputs are swallowed while the upgrade modal is open.
 
+## Cursor Cloud specific instructions
+
+### Engine & Runtime
+- **LÖVE2D 11.5** is the only external dependency. Installed from PPA `ppa:bartbes/love-stable`.
+- Lua/LuaJIT is bundled inside LÖVE2D — no separate Lua install needed.
+- No package manager, no build step, no lockfile. All `require()` calls reference internal project modules.
+
+### Running the Game
+- Launch: `love .` (or `love /workspace`) from the repository root.
+- ALSA audio warnings (`cannot find card '0'`) are expected in headless VMs — the game runs fine without audio hardware.
+- A display server is required. The VM provides `$DISPLAY=:1` via Xvfb.
+
+### Project Layout
+- `main.lua` / `conf.lua` — entry point and LÖVE2D config (1280×720, v11.5).
+- `entities/` — player, enemies, projectiles.
+- `scenes/` — game scene, scene management.
+- `systems/` — tilemap, XP, stats, particles, animation, etc.
+- `ui/` — menu, upgrade cards, stats overlay.
+- `data/` — upgrade/ability data tables.
+- `assets/` — bundled Kenney sprite/audio packs (~465 MB, committed).
+
+### Testing
+- There is no automated test suite. Verification is done by running the game (`love .`) and interacting via the GUI.
+- Menu flow: BEGIN TRIAL → Choose Hero (Archer) → Select Domain (Deepwood) → Choose Trial (Adept) → gameplay starts.
+- Core gameplay: WASD movement, auto-fire arrows, abilities auto-cast, press R for ultimate, Space to dash.
+
