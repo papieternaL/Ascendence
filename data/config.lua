@@ -15,7 +15,7 @@ Config.game_balance = {
     base_range = 400,
     dash_speed = 896,
     dash_duration = 0.2,
-    dash_cooldown = 1.0,
+    dash_cooldown = 0.9,
     base_cooldown_mul = 0.85,  -- 15% reduction to all ability cooldowns
   },
   
@@ -90,14 +90,14 @@ Config.enemy_hp_scaling = {
 -- Ability Specifics (kept for compatibility)
 Config.Abilities = {
   multiShot = {
-    cooldown = 2.5,
+    cooldown = 2.25,
     arrowCount = 3,
     coneSpreadDeg = 15,
     speed = 500,
     knockback = 100,
   },
   arrowVolley = {
-    cooldown = 8.0,
+    cooldown = 7.2,
     range = 300,
     baseDamage = 25,
     radius = 60,

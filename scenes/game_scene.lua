@@ -629,6 +629,15 @@ function GameScene:update(dt)
             end
         end
 
+        -- Multi Shot (Q): auto-cast at nearest enemy when off cooldown
+        if self.player and self.player:isAbilityReady("multi_shot") and not self.isDashing then
+            local msTarget = self:findNearestEnemyTo(playerX, playerY, self.attackRange)
+            if msTarget then
+                local tx, ty = msTarget:getPosition()
+                self:fireMultiShot(tx, ty)
+            end
+        end
+
         -- Entangle (Arrow Volley): ground circle AOE at nearest enemy (2s falling-arrows field)
         if self.player and self.player:isAbilityReady("entangle") and not self.isDashing then
             local px, py = playerX, playerY
@@ -1227,7 +1236,7 @@ function GameScene:applyStatsToPlayer()
     local baseCDMul = (Config.game_balance and Config.game_balance.player and Config.game_balance.player.base_cooldown_mul) or 0.85
     if self.player.abilities then
         -- Multi Shot cooldown mods
-        local baseMSCooldown = 2.5 * baseCDMul
+        local baseMSCooldown = 2.25 * baseCDMul
         if self.player.abilities.multi_shot then
             baseMSCooldown = self.playerStats:getAbilityValue("multi_shot", "cooldown_add", baseMSCooldown)
             baseMSCooldown = self.playerStats:getAbilityValue("multi_shot", "cooldown_mul", baseMSCooldown)
@@ -1235,7 +1244,7 @@ function GameScene:applyStatsToPlayer()
         end
 
         -- Entangle cooldown mods
-        local baseEntCooldown = 8.0 * baseCDMul
+        local baseEntCooldown = 7.2 * baseCDMul
         baseEntCooldown = self.playerStats:getAbilityValue("entangle", "cooldown_add", baseEntCooldown)
         baseEntCooldown = self.playerStats:getAbilityValue("entangle", "cooldown_mul", baseEntCooldown)
         self.player.abilities.entangle.cooldown = math.max(1.0, baseEntCooldown)
@@ -1247,9 +1256,10 @@ function GameScene:applyStatsToPlayer()
 end
 
 ---------------------------------------------------------------------------
--- HELPER: fire Multi Shot (3-arrow cone toward mouse)
+-- HELPER: fire Multi Shot (3-arrow cone toward target)
+-- targetX/targetY: auto-aim target coords (falls back to mouse if nil)
 ---------------------------------------------------------------------------
-function GameScene:fireMultiShot()
+function GameScene:fireMultiShot(targetX, targetY)
     if not self.player or not self.player:isAbilityReady("multi_shot") or self.isDashing then return end
     local cfg = Config.Abilities and Config.Abilities.multiShot or {}
     local arrowCount = cfg.arrowCount or 3
@@ -1262,7 +1272,7 @@ function GameScene:fireMultiShot()
     local knockback = cfg.knockback or 100
 
     local px, py = self.player:getPosition()
-    local mx, my = self.mouseX or px, self.mouseY or py
+    local mx, my = targetX or self.mouseX or px, targetY or self.mouseY or py
     local dx = mx - px
     local dy = my - py
     local dist = math.sqrt(dx * dx + dy * dy)
@@ -2041,12 +2051,6 @@ function GameScene:keypressed(key)
         return true
     end
     
-    -- Manual Multi Shot (Q)
-    if key == "q" and self.player and not self:hasOpenOverlay() then
-        self:fireMultiShot()
-        return true
-    end
-
     if key == "space" then
         self:startDash()
     end
