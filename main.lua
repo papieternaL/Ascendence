@@ -14,8 +14,9 @@ local JuiceManager = require("systems.juice_manager")
 -- local INTERNAL_H = 180
 -- local gameCanvas
 
--- Pre-loaded Kenney Pixel fonts (shared globally via _G)
-local FONT_PATH = "assets/Other/Fonts/Kenney Pixel.ttf"
+-- Pre-loaded fonts (shared globally via _G)
+local FONT_PATH = "assets/Other/Fonts/Kenney Future Narrow.ttf"
+local FONT_PATH_BOLD = "assets/Other/Fonts/Kenney Future.ttf"
 
 -- Screen flash system (game_scene can trigger via _G.triggerScreenFlash)
 local screenFlash = { timer = 0, duration = 0, color = {1, 1, 1, 0} }
@@ -39,21 +40,10 @@ function love.load()
     -- Nearest-neighbor filtering for crisp pixel art
     love.graphics.setDefaultFilter("nearest", "nearest")
 
-    -- Load Kenney Pixel fonts at various sizes
+    -- Load fonts with linear filter for clean scaling
     local ok, f
-    local function loadPixelFont(size)
-        ok, f = pcall(love.graphics.newFont, FONT_PATH, size)
-        if ok then
-            f:setFilter("nearest", "nearest")
-            return f
-        end
-        f = love.graphics.newFont(size)
-        f:setFilter("nearest", "nearest")
-        return f
-    end
-    -- UI fonts: linear filter for ~10% less pixelation on long descriptions
-    local function loadUIFont(size)
-        ok, f = pcall(love.graphics.newFont, FONT_PATH, size)
+    local function loadFont(path, size)
+        ok, f = pcall(love.graphics.newFont, path, size)
         if ok then
             f:setFilter("linear", "linear")
             return f
@@ -63,19 +53,18 @@ function love.load()
         return f
     end
 
-    hudFonts.tiny   = loadPixelFont(18)
-    hudFonts.small  = loadPixelFont(22)
-    hudFonts.body   = loadPixelFont(30)
-    hudFonts.header = loadPixelFont(44)
-    hudFonts.title  = loadPixelFont(64)
-    hudFonts.dmgNormal = loadPixelFont(24)
-    hudFonts.dmgCrit   = loadPixelFont(32)
-    -- UI-specific fonts (linear filter for readability)
-    hudFonts.uiTiny      = loadUIFont(20)
-    hudFonts.uiSmall     = loadUIFont(24)
-    hudFonts.uiBody      = loadUIFont(33)
-    hudFonts.uiSmallText = loadUIFont(14)
-    hudFonts.uiLarge     = loadUIFont(54)
+    hudFonts.tiny   = loadFont(FONT_PATH, 16)
+    hudFonts.small  = loadFont(FONT_PATH, 20)
+    hudFonts.body   = loadFont(FONT_PATH, 26)
+    hudFonts.header = loadFont(FONT_PATH_BOLD, 38)
+    hudFonts.title  = loadFont(FONT_PATH_BOLD, 56)
+    hudFonts.dmgNormal = loadFont(FONT_PATH, 20)
+    hudFonts.dmgCrit   = loadFont(FONT_PATH_BOLD, 28)
+    hudFonts.uiTiny      = loadFont(FONT_PATH, 16)
+    hudFonts.uiSmall     = loadFont(FONT_PATH, 20)
+    hudFonts.uiBody      = loadFont(FONT_PATH, 28)
+    hudFonts.uiSmallText = loadFont(FONT_PATH, 13)
+    hudFonts.uiLarge     = loadFont(FONT_PATH_BOLD, 46)
 
     -- Expose fonts globally so other modules can use them
     _G.PixelFonts = hudFonts

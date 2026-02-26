@@ -25,22 +25,22 @@ function Menu:new(gameState)
 end
 
 function Menu:init()
-    -- Create fonts using Kenney Pixel (linear filter for UI readability)
-    local fontPath = "assets/Other/Fonts/Kenney Pixel.ttf"
-    local function loadFont(size, useLinear)
-        local ok, f = pcall(love.graphics.newFont, fontPath, size)
+    local fontNarrow = "assets/Other/Fonts/Kenney Future Narrow.ttf"
+    local fontBold   = "assets/Other/Fonts/Kenney Future.ttf"
+    local function loadFont(path, size)
+        local ok, f = pcall(love.graphics.newFont, path, size)
         if ok then
-            f:setFilter(useLinear and "linear" or "nearest", useLinear and "linear" or "nearest")
+            f:setFilter("linear", "linear")
             return f
         end
         f = love.graphics.newFont(size)
-        f:setFilter(useLinear and "linear" or "nearest", useLinear and "linear" or "nearest")
+        f:setFilter("linear", "linear")
         return f
     end
-    self.titleFont  = loadFont(72, false)
-    self.headerFont = loadFont(48, false)
-    self.bodyFont   = loadFont(35, true)   -- UI body: linear for readability
-    self.smallFont  = loadFont(26, true)   -- UI small: linear for long descriptions
+    self.titleFont  = loadFont(fontBold, 64)
+    self.headerFont = loadFont(fontBold, 40)
+    self.bodyFont   = loadFont(fontNarrow, 28)
+    self.smallFont  = loadFont(fontNarrow, 22)
     
     -- Initialize floating particles
     for i = 1, 30 do
