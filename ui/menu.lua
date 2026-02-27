@@ -17,7 +17,9 @@ function Menu:new(gameState)
         titleFont = nil,
         headerFont = nil,
         bodyFont = nil,
-        smallFont = nil
+        smallFont = nil,
+        -- Keybind rebinding state
+        rebindingIndex = nil,
     }
     setmetatable(menu, Menu)
     menu:init()
@@ -218,6 +220,19 @@ function Menu:drawSlider(label, value, x, y, width, isSelected)
     drawTextWithShadow(string.format("%d%%", math.floor(clamped * 100)), x + width + 20, y - 3)
 end
 
+-- Settings menu items layout:
+-- 1: Music Volume (slider)
+-- 2: Sound Volume (slider)
+-- 3: Screen Shake (slider)
+-- 4: Fullscreen (toggle)
+-- 5: VSync (toggle)
+-- 6: Dash keybind
+-- 7: Multi Shot keybind
+-- 8: Arrow Volley keybind
+-- 9: Frenzy keybind
+-- 10: BACK button
+local SETTINGS_ITEM_COUNT = 10
+
 function Menu:drawSettings()
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
     self:drawBackground()
@@ -225,26 +240,96 @@ function Menu:drawSettings()
     love.graphics.setFont(self.headerFont)
     love.graphics.setColor(1, 0.9, 0.7, 1)
     local title = "SETTINGS"
-    drawTextWithShadow(title, w/2 - self.headerFont:getWidth(title)/2, h * 0.15)
+    drawTextWithShadow(title, w/2 - self.headerFont:getWidth(title)/2, h * 0.08)
 
-    local settings = _G.settings and _G.settings:get() or nil
-    local music = settings and settings.audio and settings.audio.musicVolume or 0.35
-    local sfx = settings and settings.audio and settings.audio.sfxVolume or 0.5
-    local shake = settings and settings.graphics and settings.graphics.screenShake or 1.0
+    local mgr = _G.settings
+    local s = mgr and mgr:get() or nil
+    local music = s and s.audio and s.audio.musicVolume or 0.35
+    local sfx = s and s.audio and s.audio.sfxVolume or 0.5
+    local shake = s and s.graphics and s.graphics.screenShake or 1.0
+    local fullscreen = s and s.graphics and s.graphics.fullscreen or false
+    local vsync = s and s.graphics and s.graphics.vsync or false
 
-    local barX = w/2 - 120
-    local startY = h * 0.35
-    local gap = 70
+    local barX = w/2 - 100
+    local barW = 220
+    local y0 = h * 0.20
+    local gap = 38
 
-    self:drawSlider("Music Volume", music, barX, startY, 260, self.selectedIndex == 1)
-    self:drawSlider("Sound Volume", sfx, barX, startY + gap, 260, self.selectedIndex == 2)
-    self:drawSlider("Screen Shake", shake, barX, startY + gap * 2, 260, self.selectedIndex == 3)
+    -- Section: Audio
+    love.graphics.setFont(self.smallFont)
+    love.graphics.setColor(0.6, 0.55, 0.45, 0.8)
+    love.graphics.print("AUDIO", barX - 160, y0 - 4)
+    self:drawSlider("Music", music, barX, y0, barW, self.selectedIndex == 1)
+    self:drawSlider("Sound", sfx, barX, y0 + gap, barW, self.selectedIndex == 2)
+    self:drawSlider("Shake", shake, barX, y0 + gap * 2, barW, self.selectedIndex == 3)
 
-    self:drawButton("BACK", w/2, h * 0.78, 180, 50, self.selectedIndex == 4)
+    -- Section: Graphics
+    local gfxY = y0 + gap * 3 + 16
+    love.graphics.setFont(self.smallFont)
+    love.graphics.setColor(0.6, 0.55, 0.45, 0.8)
+    love.graphics.print("GRAPHICS", barX - 160, gfxY - 4)
+    self:drawToggle("Fullscreen", fullscreen, barX, gfxY, barW, self.selectedIndex == 4)
+    self:drawToggle("VSync", vsync, barX, gfxY + gap, barW, self.selectedIndex == 5)
+
+    -- Section: Keybinds
+    local kbY = gfxY + gap * 2 + 16
+    love.graphics.setFont(self.smallFont)
+    love.graphics.setColor(0.6, 0.55, 0.45, 0.8)
+    love.graphics.print("KEYBINDS", barX - 160, kbY - 4)
+
+    local keybindActions = {"dash", "multi_shot", "arrow_volley", "frenzy"}
+    local keybindLabels = {"Dash", "Multi Shot", "Arrow Volley", "Frenzy"}
+    for i, action in ipairs(keybindActions) do
+        local key = mgr and mgr:getKeybind(action) or action
+        local isSelected = self.selectedIndex == 5 + i
+        local isBinding = self.rebindingIndex == 5 + i
+        self:drawKeybindRow(keybindLabels[i], key, barX, kbY + (i - 1) * gap, barW, isSelected, isBinding)
+    end
+
+    -- Back button
+    self:drawButton("BACK", w/2, h * 0.92, 160, 36, self.selectedIndex == SETTINGS_ITEM_COUNT)
 
     love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(0.75, 0.72, 0.68, 0.95)
-    drawTextWithShadow("UP/DOWN: select  LEFT/RIGHT: adjust  ESC: back", w/2 - 280, h * 0.88)
+    love.graphics.setColor(0.6, 0.58, 0.52, 0.8)
+    local hint = self.rebindingIndex and "Press any key to bind..." or "UP/DOWN: select  LEFT/RIGHT: adjust  ENTER: toggle/rebind"
+    local hw = self.smallFont:getWidth(hint)
+    drawTextWithShadow(hint, w/2 - hw/2, h * 0.97)
+end
+
+function Menu:drawToggle(label, value, x, y, width, isSelected)
+    love.graphics.setColor(0.9, 0.9, 0.95, 1)
+    local f = self.smallFont or love.graphics.getFont()
+    love.graphics.setFont(f)
+    love.graphics.print(label, x - 160, y - 3)
+    local valText = value and "ON" or "OFF"
+    local valColor = value and {0.4, 0.9, 0.5} or {0.6, 0.4, 0.4}
+    if isSelected then
+        love.graphics.setColor(1, 0.9, 0.5, 1)
+    else
+        love.graphics.setColor(valColor[1], valColor[2], valColor[3], 1)
+    end
+    love.graphics.print(valText, x + width / 2 - f:getWidth(valText) / 2, y - 3)
+end
+
+function Menu:drawKeybindRow(label, key, x, y, width, isSelected, isBinding)
+    local f = self.smallFont or love.graphics.getFont()
+    love.graphics.setFont(f)
+    love.graphics.setColor(0.9, 0.9, 0.95, 1)
+    love.graphics.print(label, x - 160, y - 3)
+
+    local displayKey = isBinding and "..." or string.upper(key or "?")
+    if isSelected then
+        love.graphics.setColor(1, 0.9, 0.5, 1)
+    else
+        love.graphics.setColor(0.7, 0.75, 0.85, 1)
+    end
+
+    -- Key box
+    local kw = math.max(60, f:getWidth(displayKey) + 16)
+    local kx = x + width / 2 - kw / 2
+    love.graphics.setLineWidth(1)
+    love.graphics.rectangle("line", kx, y - 5, kw, f:getHeight() + 6, 4, 4)
+    love.graphics.print(displayKey, kx + kw / 2 - f:getWidth(displayKey) / 2, y - 2)
 end
 
 function Menu:drawCharacterSelect()
@@ -685,12 +770,26 @@ function Menu:keypressed(key)
     elseif state == States.SETTINGS then
         local mgr = _G.settings
         local step = 0.05
+
+        -- If rebinding a key, capture the next keypress
+        if self.rebindingIndex then
+            if key ~= "escape" then
+                local keybindActions = {"dash", "multi_shot", "arrow_volley", "frenzy"}
+                local actionIdx = self.rebindingIndex - 5
+                if actionIdx >= 1 and actionIdx <= #keybindActions and mgr then
+                    mgr:setKeybind(keybindActions[actionIdx], key)
+                end
+            end
+            self.rebindingIndex = nil
+            return
+        end
+
         if key == "up" then
             self.selectedIndex = self.selectedIndex - 1
-            if self.selectedIndex < 1 then self.selectedIndex = 4 end
+            if self.selectedIndex < 1 then self.selectedIndex = SETTINGS_ITEM_COUNT end
         elseif key == "down" then
             self.selectedIndex = self.selectedIndex + 1
-            if self.selectedIndex > 4 then self.selectedIndex = 1 end
+            if self.selectedIndex > SETTINGS_ITEM_COUNT then self.selectedIndex = 1 end
         elseif key == "left" or key == "right" then
             local dir = (key == "right") and 1 or -1
             if mgr then
@@ -704,13 +803,21 @@ function Menu:keypressed(key)
                 end
             end
         elseif key == "return" or key == "space" then
-            if self.selectedIndex == 4 then
+            if self.selectedIndex == 4 and mgr then
+                mgr:toggleFullscreen()
+            elseif self.selectedIndex == 5 and mgr then
+                mgr:toggleVsync()
+            elseif self.selectedIndex >= 6 and self.selectedIndex <= 9 then
+                self.rebindingIndex = self.selectedIndex
+            elseif self.selectedIndex == SETTINGS_ITEM_COUNT then
+                self.rebindingIndex = nil
                 self.gameState:transitionTo(States.MENU)
-                self.selectedIndex = 2
+                self.selectedIndex = 4
             end
         elseif key == "escape" then
+            self.rebindingIndex = nil
             self.gameState:transitionTo(States.MENU)
-            self.selectedIndex = 2
+            self.selectedIndex = 4
         end
     elseif state == States.CHARACTER_SELECT then
         local classes = {"ARCHER", "WIZARD", "KNIGHT"}

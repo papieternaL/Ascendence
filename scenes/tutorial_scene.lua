@@ -13,9 +13,6 @@ local Config = require("data.config")
 local TutorialScene = {}
 TutorialScene.__index = TutorialScene
 
-local ARENA_W = 800
-local ARENA_H = 600
-
 -- Phase definitions
 local PHASES = {
     {
@@ -118,19 +115,26 @@ function TutorialScene:new(gameState)
         frenzyCharge = 0,
         frenzyChargeMax = 100,
         frenzyActive = false,
+
+        -- Arena dimensions (set in load)
+        arenaW = 1920,
+        arenaH = 1080,
     }
     setmetatable(scene, TutorialScene)
     return scene
 end
 
 function TutorialScene:load()
-    self.player = Player:new(ARENA_W / 2, ARENA_H / 2)
+    self.arenaW = love.graphics.getWidth()
+    self.arenaH = love.graphics.getHeight()
+
+    self.player = Player:new(self.arenaW / 2, self.arenaH / 2)
     self.player.maxHealth = 999
     self.player.health = 999
 
     self.particles = Particles:new()
     self.screenShake = ScreenShake:new()
-    self.camera = Camera:new(0, 0, ARENA_W, ARENA_H)
+    self.camera = Camera:new(0, 0, self.arenaW, self.arenaH)
     self.damageNumbers = DamageNumbers:new()
 
     self.player.abilities.frenzy.charge = 0
@@ -155,8 +159,8 @@ function TutorialScene:startPhase(idx)
         for i = 1, phase.spawnEnemies do
             local angle = (i / phase.spawnEnemies) * math.pi * 2
             local dist = 150 + math.random(0, 80)
-            local sx = ARENA_W / 2 + math.cos(angle) * dist
-            local sy = ARENA_H / 2 + math.sin(angle) * dist
+            local sx = self.arenaW / 2 + math.cos(angle) * dist
+            local sy = self.arenaH / 2 + math.sin(angle) * dist
             local slime = Slime:new(sx, sy)
             slime.health = 30
             slime.maxHealth = 30
@@ -201,8 +205,8 @@ function TutorialScene:update(dt)
     self.player:update(dt)
 
     -- Clamp to arena
-    self.player.x = math.max(self.player.size, math.min(ARENA_W - self.player.size, self.player.x))
-    self.player.y = math.max(self.player.size, math.min(ARENA_H - self.player.size, self.player.y))
+    self.player.x = math.max(self.player.size, math.min(self.arenaW - self.player.size, self.player.x))
+    self.player.y = math.max(self.player.size, math.min(self.arenaH - self.player.size, self.player.y))
 
     -- Track movement directions
     if love.keyboard.isDown("w") then self.movedDirs["w"] = true end
@@ -357,11 +361,11 @@ function TutorialScene:draw()
 
     -- Arena floor
     love.graphics.setColor(0.12, 0.18, 0.12, 1)
-    love.graphics.rectangle("fill", 0, 0, ARENA_W, ARENA_H)
+    love.graphics.rectangle("fill", 0, 0, self.arenaW, self.arenaH)
     -- Arena border
     love.graphics.setColor(0.3, 0.4, 0.3, 0.8)
     love.graphics.setLineWidth(3)
-    love.graphics.rectangle("line", 0, 0, ARENA_W, ARENA_H, 4, 4)
+    love.graphics.rectangle("line", 2, 2, self.arenaW - 4, self.arenaH - 4, 4, 4)
     love.graphics.setLineWidth(1)
 
     -- Draw enemies

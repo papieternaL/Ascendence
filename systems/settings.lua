@@ -12,7 +12,15 @@ local DEFAULTS = {
         sfxVolume = 0.50,
     },
     graphics = {
-        screenShake = 1.0, -- 0..1 multiplier
+        screenShake = 1.0,
+        fullscreen = false,
+        vsync = true,
+    },
+    keybinds = {
+        dash = "space",
+        frenzy = "r",
+        multi_shot = "q",
+        arrow_volley = "e",
     },
 }
 
@@ -105,6 +113,15 @@ function Settings:load()
         self.values.audio.musicVolume = clamp(tonumber(loaded.audio and loaded.audio.musicVolume) or self.values.audio.musicVolume, 0, 1)
         self.values.audio.sfxVolume = clamp(tonumber(loaded.audio and loaded.audio.sfxVolume) or self.values.audio.sfxVolume, 0, 1)
         self.values.graphics.screenShake = clamp(tonumber(loaded.graphics and loaded.graphics.screenShake) or self.values.graphics.screenShake, 0, 1)
+        if loaded.graphics then
+            if loaded.graphics.fullscreen ~= nil then self.values.graphics.fullscreen = loaded.graphics.fullscreen end
+            if loaded.graphics.vsync ~= nil then self.values.graphics.vsync = loaded.graphics.vsync end
+        end
+        if loaded.keybinds and type(loaded.keybinds) == "table" then
+            for action, key in pairs(loaded.keybinds) do
+                self.values.keybinds[action] = key
+            end
+        end
     end
 
     self:apply()
@@ -131,6 +148,33 @@ function Settings:setScreenShake(v)
     self.values.graphics.screenShake = clamp(v, 0, 1)
     self:apply()
     self:save()
+end
+
+function Settings:toggleFullscreen()
+    self.values.graphics.fullscreen = not self.values.graphics.fullscreen
+    love.window.setFullscreen(self.values.graphics.fullscreen, "desktop")
+    self:save()
+end
+
+function Settings:toggleVsync()
+    self.values.graphics.vsync = not self.values.graphics.vsync
+    local w, h, flags = love.window.getMode()
+    flags.vsync = self.values.graphics.vsync and 1 or 0
+    love.window.setMode(w, h, flags)
+    self:save()
+end
+
+function Settings:setKeybind(action, key)
+    if not self.values.keybinds then self.values.keybinds = deepCopy(DEFAULTS.keybinds) end
+    self.values.keybinds[action] = key
+    self:save()
+end
+
+function Settings:getKeybind(action)
+    if self.values.keybinds and self.values.keybinds[action] then
+        return self.values.keybinds[action]
+    end
+    return DEFAULTS.keybinds[action]
 end
 
 return Settings
