@@ -153,7 +153,14 @@ function GameState:update(dt)
     end
 end
 
-function GameState:transitionTo(newState)
+function GameState:transitionTo(newState, instant)
+    if instant then
+        self.currentState = newState
+        self.isTransitioning = false
+        self.transitionAlpha = 0
+        self.transitionTarget = nil
+        return
+    end
     if not self.isTransitioning then
         self.isTransitioning = true
         self.transitionTarget = newState
@@ -199,8 +206,8 @@ function GameState:nextFloor()
     return true
 end
 
-function GameState:enterBossFight()
-    self:transitionTo(GameState.States.BOSS_FIGHT)
+function GameState:enterBossFight(instant)
+    self:transitionTo(GameState.States.BOSS_FIGHT, instant)
 end
 
 function GameState:reset()

@@ -1,9 +1,13 @@
 -- scenes/tutorial_scene.lua
 -- Phased tutorial: introduces player to each ability in a small arena.
+-- Self-paced with dummy enemy; ends with practice wave then transition to main game.
 
 local Player = require("entities.player")
 local Arrow = require("entities.arrow")
+local ArrowVolley = require("entities.arrow_volley")
 local Slime = require("entities.slime")
+local TutorialDummy = require("entities.tutorial_dummy")
+local BarkVolleyAOE = require("entities.bark_volley_aoe")
 local Particles = require("systems.particles")
 local ScreenShake = require("systems.screen_shake")
 local Camera = require("systems.camera")
@@ -12,6 +16,13 @@ local Config = require("data.config")
 
 local TutorialScene = {}
 TutorialScene.__index = TutorialScene
+
+-- Tutorial pacing (slower so player can observe)
+local MIN_PHASE_DURATION = 6
+local APPROACH_DISTANCE = 200
+local DASH_PHASE_REQUIRED = 2
+local PRACTICE_WAVE_KILLS = 3
+local BARK_VOLLEY_SPAWN_INTERVAL = 2.8
 
 -- Phase definitions
 local PHASES = {
@@ -25,55 +36,65 @@ local PHASES = {
     {
         id = "primary",
         title = "PRIMARY ATTACK",
-        body = "Your bow auto-fires at the nearest enemy.",
-        hint = "Kill 2 slimes to continue.",
-        condition = "kill_2",
-        spawnEnemies = 3,
+        body = "Walk toward the target. Your bow auto-fires at the nearest enemy.",
+        hint = "Get within range and watch your arrows aim automatically!",
+        condition = "approached_dummy",
+        spawnDummy = 1,
     },
     {
         id = "multi_shot",
         title = "MULTI SHOT (Q)",
-        body = "Fires a cone of 3 arrows at the nearest enemy. Auto-casts when off cooldown.",
+        body = "Fires a cone of 3 arrows. Auto-casts when off cooldown.",
         hint = "Watch Multi Shot fire automatically!",
-        condition = "wait_ability_fire",
+        condition = "ability_fired",
         abilityId = "multi_shot",
         highlight = "Q",
-        spawnEnemies = 4,
-    },
-    {
-        id = "dash",
-        title = "DASH (SPACE)",
-        body = "Press SPACE to dash in your movement direction. Grants invincibility frames.",
-        hint = "Press SPACE to dash!",
-        condition = "press_key",
-        waitKey = "space",
-        highlight = "SPACE",
+        spawnDummy = 1,
     },
     {
         id = "arrow_volley",
         title = "ARROW VOLLEY (E)",
-        body = "Rains arrows on the largest enemy cluster. Auto-casts when off cooldown.",
-        hint = "Watch Arrow Volley target a group!",
-        condition = "wait_ability_fire",
+        body = "Rains arrows on the target. Auto-casts when off cooldown.",
+        hint = "Watch Arrow Volley rain down!",
+        condition = "ability_fired",
         abilityId = "entangle",
         highlight = "E",
-        spawnEnemies = 6,
+        spawnDummy = 1,
+    },
+    {
+        id = "dash",
+        title = "DASH (SPACE)",
+        body = "Dodge the incoming volleys! Press SPACE to dash. Grants invincibility frames.",
+        hint = "Dash out of 2 red circles to continue!",
+        condition = "dash_count",
+        highlight = "SPACE",
+        spawnDummy = 1,
     },
     {
         id = "frenzy",
         title = "FRENZY (R)",
-        body = "Press R when fully charged to activate. Grants crit chance and move speed. Charges from combat.",
-        hint = "Your Frenzy is fully charged! Press R!",
+        body = "You're hurt! Press R to activate Frenzy, then attack the dummy. Watch your HP rise from lifesteal.",
+        hint = "Press R, then attack to heal!",
         condition = "press_key",
         waitKey = "r",
         highlight = "R",
         grantFrenzy = true,
+        spawnDummy = 1,
+        scriptedDamage = true,
+    },
+    {
+        id = "practice_wave",
+        title = "SEE IT IN ACTION",
+        body = "Defeat the monsters using everything you've learned!",
+        hint = "Kill the monsters to continue.",
+        condition = "practice_wave",
+        spawnSlimes = 4,
     },
     {
         id = "complete",
         title = "TUTORIAL COMPLETE!",
         body = "You're ready to begin your ascent. Good luck!",
-        hint = "Press ENTER to return to the menu.",
+        hint = "Press ENTER or click BEGIN below.",
         condition = "press_key",
         waitKey = "return",
     },
@@ -88,7 +109,10 @@ function TutorialScene:new(gameState)
         camera = nil,
         damageNumbers = nil,
         arrows = {},
+        arrowVolleys = {},
         enemies = {},
+        barkVolleyAoEs = {},
+        barkVolleySpawnTimer = 0,
         fireCooldown = 0,
         fireRate = 0.4,
         attackRange = 350,
@@ -101,6 +125,7 @@ function TutorialScene:new(gameState)
         dashDuration = 0.2,
         dashSpeed = 800,
         dashCooldown = 0,
+        dashCount = 0,
 
         -- Tutorial state
         currentPhase = 1,
@@ -110,11 +135,13 @@ function TutorialScene:new(gameState)
         movedDirs = {},
         abilityFiredThisPhase = false,
         keyPressedThisPhase = false,
+        approachedDummy = false,
 
         -- Frenzy (simplified for tutorial)
         frenzyCharge = 0,
         frenzyChargeMax = 100,
         frenzyActive = false,
+        frenzyDuration = 0,
 
         -- Arena dimensions (set in load)
         arenaW = 1920,
@@ -150,27 +177,63 @@ function TutorialScene:startPhase(idx)
     self.killCount = 0
     self.abilityFiredThisPhase = false
     self.keyPressedThisPhase = false
+    self.approachedDummy = false
+    self.dashCount = 0
+    self.barkVolleyAoEs = {}
+    self.barkVolleySpawnTimer = 0
+    self.arrows = {}
+    self.arrowVolleys = {}
 
     local phase = PHASES[idx]
     if not phase then return end
 
-    if phase.spawnEnemies then
+    -- Spawn dummy (invulnerable target)
+    if phase.spawnDummy then
         self.enemies = {}
-        for i = 1, phase.spawnEnemies do
-            local angle = (i / phase.spawnEnemies) * math.pi * 2
-            local dist = 150 + math.random(0, 80)
+        local dx = 220
+        local dy = 0
+        local dummyX = self.arenaW / 2 + dx
+        local dummyY = self.arenaH / 2 + dy
+        local dummy = TutorialDummy:new(dummyX, dummyY)
+        dummy.damage = 0
+        dummy.speed = 0
+        table.insert(self.enemies, dummy)
+    end
+
+    -- Spawn real slimes (practice wave)
+    if phase.spawnSlimes then
+        self.enemies = {}
+        for i = 1, phase.spawnSlimes do
+            local angle = (i / phase.spawnSlimes) * math.pi * 2
+            local dist = 180 + math.random(0, 60)
             local sx = self.arenaW / 2 + math.cos(angle) * dist
             local sy = self.arenaH / 2 + math.sin(angle) * dist
             local slime = Slime:new(sx, sy)
             slime.health = 30
             slime.maxHealth = 30
-            slime.damage = 0
-            slime.speed = 15
+            slime.damage = 8
+            slime.speed = 40
             table.insert(self.enemies, slime)
         end
     end
 
-    if phase.grantFrenzy then
+    -- Tutorial cooldowns (slower so player can observe)
+    if self.player then
+        if phase.abilityId == "multi_shot" then
+            self.player.abilities.multi_shot.cooldown = 4.5
+            self.player.abilities.multi_shot.currentCooldown = 0
+        elseif phase.abilityId == "entangle" then
+            self.player.abilities.entangle.cooldown = 3
+            self.player.abilities.entangle.currentCooldown = 3  -- Start on CD so it doesn't fire right away
+        end
+    end
+
+    -- Frenzy phase: scripted damage + grant charge
+    if phase.scriptedDamage and self.player then
+        self.player.maxHealth = 100
+        self.player.health = math.max(1, math.floor(self.player.maxHealth * 0.5))
+    end
+    if phase.grantFrenzy and self.player then
         self.frenzyCharge = self.frenzyChargeMax
         self.player.abilities.frenzy.charge = self.frenzyChargeMax
     end
@@ -217,11 +280,16 @@ function TutorialScene:update(dt)
     -- Update cooldowns
     self.fireCooldown = math.max(0, self.fireCooldown - dt)
 
-    -- Frenzy charge display
+    -- Frenzy charge display and duration
     self.player.abilities.frenzy.charge = math.floor(self.frenzyCharge)
     self.player.abilities.frenzy.chargeMax = self.frenzyChargeMax
+    if self.frenzyActive then
+        self.frenzyDuration = self.frenzyDuration - dt
+        if self.frenzyDuration <= 0 then
+            self.frenzyActive = false
+        end
+    end
 
-    -- Auto-fire primary at nearest enemy
     local px, py = self.player:getPosition()
     local nearest, nearDist = nil, self.attackRange
     for _, e in ipairs(self.enemies) do
@@ -232,9 +300,14 @@ function TutorialScene:update(dt)
                 nearest = e
                 nearDist = d
             end
+            -- Track approached dummy (phase 2)
+            if e.isTutorialDummy and d <= APPROACH_DISTANCE then
+                self.approachedDummy = true
+            end
         end
     end
 
+    -- Auto-fire primary at nearest enemy
     if nearest then
         local ex, ey = nearest:getPosition()
         self.player:aimAt(ex, ey)
@@ -247,8 +320,8 @@ function TutorialScene:update(dt)
         end
     end
 
-    -- Multi Shot auto-cast (phase 3+)
-    if self.currentPhase >= 3 and self.player:isAbilityReady("multi_shot") and nearest and not self.isDashing then
+    -- Multi Shot auto-cast (phase 3 only)
+    if self.currentPhase == 3 and self.player:isAbilityReady("multi_shot") and nearest and not self.isDashing then
         local ex, ey = nearest:getPosition()
         self.player:useAbility("multi_shot")
         self.abilityFiredThisPhase = true
@@ -264,21 +337,80 @@ function TutorialScene:update(dt)
         self.screenShake:add(2, 0.08)
     end
 
-    -- Arrow Volley auto-cast (phase 5+) — simplified visual
-    if self.currentPhase >= 5 and self.player:isAbilityReady("entangle") and nearest and not self.isDashing then
+    -- Arrow Volley auto-cast (phase 4 only) — uses real ArrowVolley entity for in-game VFX
+    if self.currentPhase == 4 and self.player:isAbilityReady("entangle") and nearest and not self.isDashing then
         self.player:useAbility("entangle")
         self.abilityFiredThisPhase = true
         local ex, ey = nearest:getPosition()
-        for i = 1, 8 do
-            local a = (i / 8) * math.pi * 2
-            local ox = ex + math.cos(a) * 30
-            local oy = ey + math.sin(a) * 30
-            table.insert(self.arrows, Arrow:new(ox, oy - 100, ox, oy, { damage = 8, kind = "entangle", knockback = 40 }))
-        end
+        local volley = ArrowVolley:new(ex, ey, 25, 80, 0)
+        table.insert(self.arrowVolleys, volley)
         self.screenShake:add(3, 0.12)
+        self.particles:createRootBurst(px, py)
+        if _G.audio then _G.audio:playSFX("shoot_arrow") end
+        if _G.triggerScreenFlash then _G.triggerScreenFlash({0.8, 0.2, 0.2, 0.2}, 0.08) end
     end
 
-    -- Update arrows + collision
+    -- Dash phase: spawn Bark Volley AOE at player
+    if self.currentPhase == 5 then
+        self.barkVolleySpawnTimer = self.barkVolleySpawnTimer + dt
+        if self.barkVolleySpawnTimer >= BARK_VOLLEY_SPAWN_INTERVAL then
+            self.barkVolleySpawnTimer = 0
+            local cfg = Config.TreentOverlord or {}
+            local radius = cfg.barkVolleyRadius or 55
+            local damage = cfg.barkVolleyDamage or 25
+            local telegraph = cfg.barkVolleyTelegraphDuration or 0.9
+            local impact = cfg.barkVolleyImpactDuration or 0.25
+            local aoe = BarkVolleyAOE:new(px, py, radius, damage, telegraph, impact)
+            table.insert(self.barkVolleyAoEs, aoe)
+        end
+    end
+
+    -- Update Bark Volley AOEs and check player damage (dash phase)
+    for i = #self.barkVolleyAoEs, 1, -1 do
+        local aoe = self.barkVolleyAoEs[i]
+        aoe:update(dt)
+        if aoe:isInImpactPhase() and self.player then
+            if aoe:isPlayerInDanger(px, py) and not self.isDashing then
+                local dmg = aoe:getDamage()
+                self.player:takeDamage(dmg)
+                self.screenShake:add(3, 0.12)
+            end
+        end
+        if aoe.isFinished then
+            table.remove(self.barkVolleyAoEs, i)
+        end
+    end
+
+    -- Update Arrow Volleys (phase 4 — impact-timed damage, same as real game)
+    for i = #self.arrowVolleys, 1, -1 do
+        local volley = self.arrowVolleys[i]
+        volley:update(dt)
+        if volley:shouldApplyDamage() then
+            local dmg = volley:getDamage()
+            local vx, vy = volley:getPosition()
+            local radius = volley:getDamageRadius()
+            for _, e in ipairs(self.enemies) do
+                if e.isAlive then
+                    local ex, ey = e:getPosition()
+                    local dx = ex - vx
+                    local dy = ey - vy
+                    if dx * dx + dy * dy <= radius * radius then
+                        e:takeDamage(dmg, vx, vy, nil)
+                        self.particles:createHitSpark(ex, ey, {1, 1, 0.6})
+                        if self.damageNumbers then
+                            self.damageNumbers:add(ex, ey - e:getSize(), dmg, {})
+                        end
+                    end
+                end
+            end
+        end
+        if volley:isFinished() then
+            table.remove(self.arrowVolleys, i)
+        end
+    end
+
+    -- Update arrows + collision (with lifesteal for Frenzy phase)
+    local lifeSteal = (Config.Abilities and Config.Abilities.frenzy and Config.Abilities.frenzy.lifeSteal) or 0.10
     for i = #self.arrows, 1, -1 do
         local arrow = self.arrows[i]
         arrow:update(dt)
@@ -292,10 +424,15 @@ function TutorialScene:update(dt)
                 local sumR = e:getSize() + arrow:getSize()
                 if dx * dx + dy * dy < sumR * sumR and arrow:canHit(e) then
                     arrow:markHit(e)
-                    local died = e:takeDamage(arrow.damage)
+                    local died = e:takeDamage(arrow.damage, ax, ay, 100)
                     self.particles:createHitSpark(ex, ey, {1, 1, 0.6})
                     if self.damageNumbers then
                         self.damageNumbers:add(ex, ey - e:getSize(), arrow.damage, {})
+                    end
+                    -- Frenzy lifesteal
+                    if self.frenzyActive and self.player and not self.player:isDead() then
+                        local healAmount = arrow.damage * lifeSteal
+                        self.player.health = math.min(self.player.maxHealth, self.player.health + healAmount)
                     end
                     if died then
                         self.killCount = self.killCount + 1
@@ -317,6 +454,31 @@ function TutorialScene:update(dt)
         if e.isAlive then e:update(dt, px, py) end
     end
 
+    -- Practice wave: enemy contact damage (throttled per enemy)
+    if self.currentPhase == 7 then
+        for _, e in ipairs(self.enemies) do
+            if e.isAlive and e.damage and e.damage > 0 then
+                local ex, ey = e:getPosition()
+                local dist = math.sqrt((px - ex)^2 + (py - ey)^2)
+                if dist < self.player:getSize() + e:getSize() and not self.isDashing and not self.player:isInvincible() then
+                    e.tutorialContactTimer = (e.tutorialContactTimer or 0) + dt
+                    if e.tutorialContactTimer >= 0.6 then
+                        e.tutorialContactTimer = 0
+                        self.player:takeDamage(e.damage)
+                    end
+                else
+                    e.tutorialContactTimer = 0
+                end
+            end
+        end
+    end
+
+    -- Practice wave: player death returns to menu
+    if self.currentPhase == 7 and self.player and self.player:isDead() then
+        self.gameState:reset()
+        return
+    end
+
     -- Check phase completion
     self:checkPhaseCondition()
 end
@@ -326,19 +488,31 @@ function TutorialScene:checkPhaseCondition()
     if not phase or self.phaseComplete then return end
 
     if phase.condition == "move_all_dirs" then
-        if self.movedDirs["w"] and self.movedDirs["a"] and self.movedDirs["s"] and self.movedDirs["d"] then
+        if self.movedDirs["w"] and self.movedDirs["a"] and self.movedDirs["s"] and self.movedDirs["d"] and self.phaseTimer >= MIN_PHASE_DURATION then
             self:completePhase()
         end
-    elseif phase.condition == "kill_2" then
-        if self.killCount >= 2 then
+    elseif phase.condition == "approached_dummy" then
+        if self.approachedDummy and self.phaseTimer >= MIN_PHASE_DURATION then
             self:completePhase()
         end
-    elseif phase.condition == "wait_ability_fire" then
-        if self.abilityFiredThisPhase and self.phaseTimer > 2.0 then
+    elseif phase.condition == "ability_fired" then
+        if self.abilityFiredThisPhase and self.phaseTimer >= MIN_PHASE_DURATION then
+            self:completePhase()
+        end
+    elseif phase.condition == "dash_count" then
+        if self.dashCount >= DASH_PHASE_REQUIRED and self.phaseTimer >= MIN_PHASE_DURATION then
             self:completePhase()
         end
     elseif phase.condition == "press_key" then
-        if self.keyPressedThisPhase then
+        if self.keyPressedThisPhase and self.phaseTimer >= MIN_PHASE_DURATION then
+            self:completePhase()
+        end
+    elseif phase.condition == "practice_wave" then
+        if self.killCount >= PRACTICE_WAVE_KILLS then
+            self:completePhase()
+        end
+    elseif phase.condition == "press_key" then
+        if self.keyPressedThisPhase and self.phaseTimer >= MIN_PHASE_DURATION then
             self:completePhase()
         end
     end
@@ -346,10 +520,23 @@ end
 
 function TutorialScene:completePhase()
     self.phaseComplete = true
+    local phase = PHASES[self.currentPhase]
+    if phase and phase.id == "complete" then
+        self:transitionToGame()
+        return
+    end
     local next = self.currentPhase + 1
     if next <= #PHASES then
         self:startPhase(next)
     end
+end
+
+-- Shared transition logic (complete phase or skip)
+function TutorialScene:transitionToGame()
+    self.gameState:selectBiome("DEEPWOOD")
+    self.gameState:setDefaultDifficulty()
+    self.gameState:initFloor(1)
+    self.gameState:transitionTo(self.gameState.States.PLAYING)
 end
 
 function TutorialScene:draw()
@@ -368,6 +555,11 @@ function TutorialScene:draw()
     love.graphics.rectangle("line", 2, 2, self.arenaW - 4, self.arenaH - 4, 4, 4)
     love.graphics.setLineWidth(1)
 
+    -- Draw Bark Volley AOEs (dash phase)
+    for _, aoe in ipairs(self.barkVolleyAoEs) do
+        aoe:draw()
+    end
+
     -- Draw enemies
     for _, e in ipairs(self.enemies) do
         if e.isAlive then e:draw() end
@@ -378,6 +570,11 @@ function TutorialScene:draw()
         if self.isDashing then love.graphics.setColor(1, 1, 1, 0.3) end
         self.player:draw()
         love.graphics.setColor(1, 1, 1, 1)
+    end
+
+    -- Arrow Volleys (falling arrows + impact zones)
+    for _, volley in ipairs(self.arrowVolleys) do
+        volley:draw()
     end
 
     -- Arrows
@@ -399,6 +596,7 @@ end
 
 function TutorialScene:drawTutorialHUD()
     local w = love.graphics.getWidth()
+    local h = love.graphics.getHeight()
     local phase = PHASES[self.currentPhase]
     if not phase then return end
 
@@ -406,11 +604,11 @@ function TutorialScene:drawTutorialHUD()
     local bodyFont = _G.PixelFonts and _G.PixelFonts.uiSmall or love.graphics.getFont()
     local hintFont = _G.PixelFonts and _G.PixelFonts.uiTiny or bodyFont
 
-    -- Top panel
+    -- Panel in play area (center-lower, not at top)
     local panelW = 600
-    local panelH = 90
+    local panelH = 100
     local panelX = (w - panelW) / 2
-    local panelY = 20
+    local panelY = h * 0.35
 
     love.graphics.setColor(0.04, 0.04, 0.08, 0.9)
     love.graphics.rectangle("fill", panelX, panelY, panelW, panelH, 8, 8)
@@ -418,6 +616,11 @@ function TutorialScene:drawTutorialHUD()
     love.graphics.setLineWidth(1.5)
     love.graphics.rectangle("line", panelX, panelY, panelW, panelH, 8, 8)
     love.graphics.setLineWidth(1)
+
+    -- Skip hint (for returning players)
+    love.graphics.setFont(hintFont)
+    love.graphics.setColor(0.5, 0.6, 0.7, 0.7)
+    love.graphics.print("Press Tab to skip tutorial", panelX + panelW - hintFont:getWidth("Press Tab to skip tutorial") - 10, panelY + 6)
 
     -- Phase counter
     love.graphics.setFont(hintFont)
@@ -435,14 +638,32 @@ function TutorialScene:drawTutorialHUD()
     love.graphics.setFont(bodyFont)
     love.graphics.setColor(0.85, 0.85, 0.85, 1)
     local bw = bodyFont:getWidth(phase.body)
-    love.graphics.print(phase.body, w / 2 - bw / 2, panelY + 38)
+    love.graphics.print(phase.body, w / 2 - bw / 2, panelY + 42)
 
     -- Hint (pulsing)
     love.graphics.setFont(hintFont)
     local pulse = 0.6 + 0.4 * math.sin(love.timer.getTime() * 3)
     love.graphics.setColor(0.4, 0.8, 1.0, pulse)
     local hw = hintFont:getWidth(phase.hint)
-    love.graphics.print(phase.hint, w / 2 - hw / 2, panelY + 62)
+    love.graphics.print(phase.hint, w / 2 - hw / 2, panelY + 70)
+
+    -- Begin button (complete phase only)
+    if phase.id == "complete" then
+        local btnW, btnH = 180, 44
+        local btnX = (w - btnW) / 2
+        local btnY = panelY + panelH + 24
+        local hover = self:isPointInBeginButton(love.mouse.getX(), love.mouse.getY())
+        love.graphics.setColor(0.15, 0.35, 0.2, 0.95)
+        love.graphics.rectangle("fill", btnX, btnY, btnW, btnH, 8, 8)
+        love.graphics.setColor(hover and 0.5 or 0.35, 0.85, hover and 0.6 or 0.45, 1)
+        love.graphics.setLineWidth(2)
+        love.graphics.rectangle("line", btnX, btnY, btnW, btnH, 8, 8)
+        love.graphics.setLineWidth(1)
+        love.graphics.setFont(titleFont)
+        love.graphics.setColor(1, 1, 0.95, 1)
+        local btnText = "BEGIN"
+        love.graphics.print(btnText, btnX + (btnW - titleFont:getWidth(btnText)) / 2, btnY + (btnH - titleFont:getHeight()) / 2 - 2)
+    end
 
     -- Highlight indicator on the relevant ability diamond
     if phase.highlight then
@@ -452,32 +673,40 @@ function TutorialScene:drawTutorialHUD()
     love.graphics.setColor(1, 1, 1, 1)
 end
 
-function TutorialScene:drawAbilityHighlight(key)
-    if not self.player then return end
+function TutorialScene:getBeginButtonRect()
     local w = love.graphics.getWidth()
     local h = love.graphics.getHeight()
-    local diamondR = 28
-    local diamondSpacing = 76
-    local numAbilities = #self.player.abilityOrder
-    local abilitiesWidth = (numAbilities - 1) * diamondSpacing
-    local startX = w / 2 - abilitiesWidth / 2
+    local panelW, panelH = 600, 100
+    local panelY = h * 0.35
+    local btnW, btnH = 180, 44
+    local btnX = (w - btnW) / 2
+    local btnY = panelY + panelH + 24
+    return btnX, btnY, btnW, btnH
+end
 
-    for i, abilityId in ipairs(self.player.abilityOrder) do
-        local ability = self.player.abilities[abilityId]
-        if ability and ability.key == key then
-            local cx = startX + (i - 1) * diamondSpacing
-            local cy = h - 110 - 8 + 14 + 18 + 10 + diamondR + 2
+function TutorialScene:isPointInBeginButton(px, py)
+    local phase = PHASES[self.currentPhase]
+    if not phase or phase.id ~= "complete" then return false end
+    local bx, by, bw, bh = self:getBeginButtonRect()
+    return px >= bx and px <= bx + bw and py >= by and py <= by + bh
+end
+
+function TutorialScene:drawAbilityHighlight(key)
+    local slots = getAbilitySlotLayout()
+    for _, slot in ipairs(slots) do
+        if slot.key == key then
+            local r = slot.r or 26
             local pulse = 0.5 + 0.5 * math.sin(love.timer.getTime() * 5)
             love.graphics.setColor(1, 0.9, 0.3, 0.3 * pulse)
-            love.graphics.circle("fill", cx, cy, diamondR + 14)
+            love.graphics.circle("fill", slot.cx, slot.cy, r + 14)
             love.graphics.setColor(1, 0.9, 0.3, 0.7 * pulse)
             love.graphics.setLineWidth(2)
-            love.graphics.circle("line", cx, cy, diamondR + 10)
+            love.graphics.circle("line", slot.cx, slot.cy, r + 10)
             love.graphics.setLineWidth(1)
             -- Arrow pointing at diamond
             love.graphics.setColor(1, 0.9, 0.3, pulse)
-            local arrowY = cy - diamondR - 20
-            love.graphics.polygon("fill", cx, arrowY + 8, cx - 6, arrowY, cx + 6, arrowY)
+            local arrowY = slot.cy - r - 20
+            love.graphics.polygon("fill", slot.cx, arrowY + 8, slot.cx - 6, arrowY, slot.cx + 6, arrowY)
             break
         end
     end
@@ -492,6 +721,12 @@ end
 function TutorialScene:keypressed(key)
     local phase = PHASES[self.currentPhase]
 
+    -- Tab: skip tutorial (for returning players)
+    if key == "tab" then
+        self:transitionToGame()
+        return
+    end
+
     if phase and phase.condition == "press_key" and key == phase.waitKey then
         self.keyPressedThisPhase = true
 
@@ -500,6 +735,7 @@ function TutorialScene:keypressed(key)
         elseif key == "r" and self.frenzyCharge >= self.frenzyChargeMax then
             self.frenzyCharge = 0
             self.frenzyActive = true
+            self.frenzyDuration = (Config.Abilities and Config.Abilities.frenzy and Config.Abilities.frenzy.duration) or 8.0
             self.screenShake:add(4, 0.15)
             if self.player then
                 local px, py = self.player:getPosition()
@@ -511,7 +747,7 @@ function TutorialScene:keypressed(key)
     end
 
     if phase and phase.id == "complete" and key == "return" then
-        self.gameState:reset()
+        self:completePhase()
     end
 end
 
@@ -522,6 +758,9 @@ function TutorialScene:startDash()
     self.dashCooldown = self.player.abilities.dash.cooldown
     self.player.abilities.dash.currentCooldown = self.player.abilities.dash.cooldown
     self.player.invincibleTime = self.dashDuration
+    if self.currentPhase == 5 then
+        self.dashCount = self.dashCount + 1
+    end
 
     local dx, dy = 0, 0
     if love.keyboard.isDown("a") then dx = dx - 1 end
@@ -539,7 +778,11 @@ function TutorialScene:startDash()
     self.screenShake:add(2, 0.1)
 end
 
-function TutorialScene:mousepressed(x, y, button) end
+function TutorialScene:mousepressed(x, y, button)
+    if button == 1 and self:isPointInBeginButton(x, y) then
+        self:completePhase()
+    end
+end
 function TutorialScene:mousemoved(x, y) end
 
 return TutorialScene

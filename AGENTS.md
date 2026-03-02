@@ -237,15 +237,89 @@ Input → Player.update() → Movement
 10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
+- 2026-02-15: **Ice attunement rework + Arrow Volley upgrades + Tactical Spacing removed**:
+  - **Tactical Spacing removed**: "Deal 25% more damage to distant enemies" upgrade deleted.
+  - **Ice Attunement rework**: Base effect now applies chill (slow) instead of freeze; when chill expires, ice burst deals AOE damage at entity position. StatusEffects.update returns expiredChillEntity for chill-expiry handling.
+  - **Ice Blast (rare)**: When enemies die with chill or freeze, they release an ice blast (AOE damage). Proc engine + executeAction in game_scene and boss_arena.
+  - **Double Volley (common)**: Arrow Volley spawns 2 volleys at once.
+  - **Volley Line (rare)**: Arrow Volley becomes 3 smaller circles in a vertical line (OOO).
+  - **Explosion Volley (rare)**: Arrow Volley applies burn on impact.
+  - Boss arena: ProcEngine for on-kill procs; status effect ticking for boss/adds; chill expiry burst; ice blast on add death.
+  - Files: data/upgrades_archer.lua, data/ability_paths_archer.lua, systems/status_effects.lua, systems/player_stats.lua, scenes/game_scene.lua, scenes/boss_arena_scene.lua.
+- 2026-02-15: **Boss arena auto-aim/attack parity with main game**:
+  - Primary aim and fire now auto-target boss/adds (nearest in range) instead of mouse.
+  - Multi Shot (Q) auto-casts at nearest target when off cooldown; manual Q key removed.
+  - Bonus projectiles from weapon mods now fire in boss arena.
+  - `fireMultiShot(targetX, targetY)` accepts target coords for auto-cast; falls back to mouse when nil.
+  - Files: scenes/boss_arena_scene.lua.
+- 2026-02-15: **Boss Test instant teleport**:
+  - Main menu Boss Test now teleports straight into the boss arena (no main map visible).
+  - Added optional `instant` param to `GameState:transitionTo(newState, instant)` and `enterBossFight(instant)`.
+  - Menu uses `transitionTo(PLAYING, true)` for Boss Test; main.lua uses `enterBossFight(true)` and creates boss arena in same frame.
+  - Files: systems/game_state.lua, ui/menu.lua, main.lua.
+- 2026-02-15: **Tutorial skip + Begin button**:
+  - **Tab to skip**: "Press Tab to skip tutorial" shown in panel; Tab at any time transitions directly to main game (for returning players).
+  - **Begin button**: On complete phase, clickable "BEGIN" button below the hint; ENTER or click both start the game.
+  - Main.lua: TUTORIAL state now receives mousepressed for button clicks.
+  - Files: scenes/tutorial_scene.lua, main.lua, AGENTS.md.
+- 2026-02-15: **Tutorial Arrow Volley: 3s CD + in-game VFX**:
+  - **3s cooldown**: Arrow Volley phase starts with 3s cooldown (currentCooldown = 3) so it doesn't fire immediately; player sees the countdown before it triggers.
+  - **Real ArrowVolley entity**: Replaced fake arrow-circle VFX with the actual `ArrowVolley` entity (red target circle, falling arrows, impact flash) to match in-game visuals.
+  - Added root burst particles, screen flash, and SFX when volley fires for parity with main game.
+  - Files: scenes/tutorial_scene.lua, AGENTS.md.
+- 2026-02-15: **Multi-fix: upgrade UI, core timer, pause sliders, boss arrows, attunement**:
+  - **Upgrade cards**: Description starts at lineY 138 (below brighter band); nameFont uiBody, descFont uiSmall; brighter grey background (0.18).
+  - **Core objective timer expiry**: When timer hits limit, cores despawn, "TASK FAILED" popup + HUD; `despawnCores()` helper; `coreObjectiveFailed` and `coreObjectiveFailPopupTimer`.
+  - **Pause settings sliders**: Mouse click on slider track sets value (Music/SFX/Shake); `getPauseOverlayLayout` extended with sliderX/sliderW/sliderH.
+  - **Boss arena arrows**: Sync mouse position every frame via `love.mouse.getPosition()` so aim is correct even after transition.
+  - **Attunement filter**: Current attunement (fire/ice/lightning) excluded from upgrade roll; only other attunements shown for switching.
+  - Files: ui/upgrade_ui.lua, scenes/game_scene.lua, scenes/boss_arena_scene.lua.
+- 2026-02-15: **Pause menu fix + HUD cleanup**:
+  - **Pause menu mouse interaction**: Added `getPauseOverlayLayout()` so draw and hit-test use identical coordinates; expanded hit regions to 56px (optGap) so no dead zones between Resume/Settings/Quit; BACK button uses same layout.
+  - **Black bars removed**: Top bar dark fill removed; bottom HUD panel alpha reduced to 0.18 (was 0.85).
+  - **Timer placement**: Timer moved from center-right to left, next to level/currency (`coinX + 70`).
+  - Files: scenes/game_scene.lua, main.lua.
+- 2026-02-15: **Forest Scene (rich environment)**:
+  - Added `scenes/forest_scene.lua`: standalone scene with load/update/draw, asset management, procedural map generation, atmospheric particles, tiling background, interactive camera, and Y-sorted rendering.
+  - Asset paths: `assets/forest/grass_dirt.png`, `forest_sheet.png`, `fungi_sheet.png` (procedural fallback when missing).
+  - Config: `Config.ForestScene` with asset paths. `assets/forest/ASSETS_README.txt` documents required sheet layouts.
+  - Use: `ForestScene:new({ player = ..., worldWidth, worldHeight })` then load/update/draw. Can replace or compose with ForestTilemap when integrated into game_scene.
+  - Files: scenes/forest_scene.lua, data/config.lua, assets/forest/ASSETS_README.txt.
+- 2026-02-15: **Settings menu mouse support + overlap fix**:
+  - **Full mouse support**: Sliders (click to set value), toggles (Fullscreen/VSync), keybind rows (click to rebind), and BACK button now respond to left-click.
+  - **Hover feedback**: `mousemoved` and `update` update `selectedIndex` for SETTINGS so selection highlight follows the mouse.
+  - **Overlap fix**: Section headers (AUDIO, GRAPHICS, KEYBINDS) moved from `y - 4` to `y - 20` to avoid overlap with first item labels.
+  - **Shared layout**: Added `getSettingsLayout(w, h)` and `isPointInRect` for consistent hit-testing across draw, mousepressed, and mousemoved.
+  - Files: ui/menu.lua.
 - 2026-02-15: **Attunement bow VFX + mouse-aim primary**:
   - **Bow attunement VFX**: Fire/Ice/Lightning attunements now show visible aura on the bow (flicker, shimmer, pulse) in both main map and boss arena.
   - **Primary aim**: Auto-fire primary arrows now shoot toward mouse cursor instead of nearest enemy; movement and aim decoupled.
   - **Arrow elemental aura**: Slightly increased visibility (alpha, radius) for Fire/Ice/Lightning projectile auras.
   - Boss arena primary arrows now receive `element` for full attunement VFX parity.
   - Files: entities/player.lua, entities/arrow.lua, scenes/game_scene.lua, scenes/boss_arena_scene.lua.
+- 2026-02-15: **Tutorial redesign: self-paced phases + practice wave**:
+  - **Dummy enemy**: Added `entities/tutorial_dummy.lua` — invulnerable target (Slime-like) for phases 2–6; never dies, shows hit feedback.
+  - **Phase flow**: Movement → Primary (approach dummy, observe auto-aim) → Multi Shot (slower CD, observe) → Arrow Volley (slower CD, observe) → Dash (dodge 2 Bark Volley AOEs) → Frenzy (scripted damage, lifesteal demo) → Practice wave (3–5 real slimes) → Complete (ENTER → PLAYING).
+  - **Slower pacing**: MIN_PHASE_DURATION 6s; Multi Shot CD 4.5s, Arrow Volley 21s in tutorial.
+  - **Dash phase**: BarkVolleyAOE spawns at player every 2.8s; player must dash out of 2 circles.
+  - **Frenzy phase**: Player health set to 50%; grant Frenzy charge; lifesteal applied when arrows hit dummy.
+  - **Practice wave**: 4 slimes; kill 3 to complete. Death returns to menu.
+  - **Transition**: Complete phase transitions to PLAYING (main game) with DEEPWOOD, floor 1.
+  - Files: entities/tutorial_dummy.lua, scenes/tutorial_scene.lua, AGENTS.md.
+- 2026-02-15: **UI cleanup + tutorial improvements**:
+  - **Top bar**: Removed ASCENDENCE text (was overlapping game world). Kept level, currency, time, QUIT.
+  - **Ability slots**: Reduced to 4 (Q, SPACE, E, R); removed W placeholder. Removed procedural icons; key labels only.
+  - **Tutorial**: Panel moved to play area (h*0.35). Min phase duration 4s; ability-fire wait 5s. Highlight circle uses `getAbilitySlotLayout()` for correct slot alignment.
+  - Files: main.lua, scenes/tutorial_scene.lua, AGENTS.md.
 - 2026-02-15: **Pause menu mouse clicks**:
   - Pause overlay buttons (Resume, Settings, Quit to Menu) now respond to left-click. Added hit-testing in `GameScene:mousepressed`; Settings sub-view BACK button also clickable.
   - Files: scenes/game_scene.lua.
+- 2026-02-15: **Upgrade screen mockup implementation**:
+  - **Top bar**: "ASCENDENCE" title, LVL + gem icon, currency (placeholder 0), time (hourglass), QUIT with dark banner. `drawTopBar()` in main.lua; `gameState.runTimer` and `gameState.runCurrency` in game_scene load/update.
+  - **Upgrade modal**: Ornate "LEVEL UP! CHOOSE AN UPGRADE" banner with metallic borders and corner flourishes. Metallic card frames (grey common, green rare, blue epic). Type labels (Passive/Element/Projectile) derived from tags. Procedural upgrade icons (boot, flame, snowflake, bolt, arrow, etc.). Larger cards (260x320). Overlay 0.6 alpha so forest visible behind.
+  - **Bottom HUD**: Red crystal on left of health bar. Five ability slots (Q Multi Shot, W placeholder, SPACE Dash, E Arrow Volley, R Frenzy) with procedural icons (bow, shield, burst, multi-arrow, focus-arrow).
+  - **Data**: `upgrade.type` and `upgrade.icon` added to select upgrades in upgrades_archer.lua; derivation from tags for others. ASSETS_README updated with icon layout for future sprite sheet.
+  - Files: main.lua, ui/upgrade_ui.lua, scenes/game_scene.lua, scenes/boss_arena_scene.lua, data/upgrades_archer.lua, assets/forest/ASSETS_README.txt, AGENTS.md.
 - 2026-02-25: **Upgrade card readability + core objective at 25%**:
   - **Upgrade card text**: Larger fonts (name uiBody, desc uiSmall, tags uiTiny), increased line-height and card size (260x360) for readability.
   - **Core objective delayed**: Cores spawn only when major progress reaches 25% (not at run start). Objective HUD hidden until then.

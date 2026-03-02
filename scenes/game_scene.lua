@@ -129,6 +129,8 @@ function GameScene:new(gameState)
         coreObjectiveStarted = false,
         coreObjectiveStartPct = 0.25,
         coreObjectivePopupTimer = 0, -- popup display duration when objective starts
+        coreObjectiveFailed = false,
+        coreObjectiveFailPopupTimer = 0, -- popup when timer expires
 
         -- Progress per event
         majorProgressPerKill = 0.35,
@@ -237,6 +239,10 @@ function GameScene:load()
     -- Apply stats (including 15% cooldown reduction) at run start
     self:applyStatsToPlayer()
 
+    -- Run state for HUD (top bar)
+    self.gameState.runTimer = 0
+    self.gameState.runCurrency = 0
+
     -- Cores spawn when major progress reaches 25% (see addMajorProgress)
 end
 
@@ -260,6 +266,15 @@ function GameScene:spawnEnemies()
     if self.enemySpawner then
         self.enemySpawner:syncCountFromScene()
     end
+end
+
+function GameScene:despawnCores()
+    for _, core in ipairs(self.cores) do
+        if core.isAlive then
+            core.isAlive = false
+        end
+    end
+    self.cores = {}
 end
 
 function GameScene:spawnCores()
@@ -454,13 +469,29 @@ function GameScene:update(dt)
     end
 
     -- Update core objective timer
-    if self.coreObjectiveStarted and not self.coreObjectiveComplete then
+    if self.coreObjectiveStarted and not self.coreObjectiveComplete and not self.coreObjectiveFailed then
         self.coreObjectiveTimer = self.coreObjectiveTimer + dt
+        -- Timer expired: despawn cores, mark failed, show popup
+        if self.coreObjectiveTimer >= self.coreObjectiveTimeLimit then
+            self.coreObjectiveFailed = true
+            self.coreObjectiveComplete = true
+            self:despawnCores()
+            self.coreObjectiveFailPopupTimer = 3.0
+            if _G.audio then _G.audio:playSFX("hit_heavy") end
+        end
     end
 
     -- Update core objective popup (fade-out display when objective starts)
     if self.coreObjectivePopupTimer and self.coreObjectivePopupTimer > 0 then
         self.coreObjectivePopupTimer = self.coreObjectivePopupTimer - dt
+    end
+    if self.coreObjectiveFailPopupTimer and self.coreObjectiveFailPopupTimer > 0 then
+        self.coreObjectiveFailPopupTimer = self.coreObjectiveFailPopupTimer - dt
+    end
+
+    -- Run timer for top bar
+    if self.gameState then
+        self.gameState.runTimer = (self.gameState.runTimer or 0) + dt
     end
 
     -- Update cores
@@ -537,7 +568,12 @@ function GameScene:update(dt)
                 if self.playerStats then
                     burnBase = burnBase * (self.playerStats:getElementMod("fire", "burn_damage_mul", 1.0) or 1.0)
                 end
-                local ticks = StatusEffects.update(e, dt, bleedBase, burnBase)
+                local ticks, expiredChillEntity = StatusEffects.update(e, dt, bleedBase, burnBase)
+                -- Ice attunement: chill expiry triggers ice burst at entity position
+                if expiredChillEntity and self.playerStats and self.playerStats.activePrimaryElement == "ice" then
+                    local ex, ey = expiredChillEntity:getPosition()
+                    self:iceDissolveBlast(ex, ey)
+                end
                 for _, tick in ipairs(ticks) do
                     if tick.entity.isAlive then
                         local died = tick.entity:takeDamage(tick.damage, nil, nil, 0)
@@ -707,16 +743,30 @@ function GameScene:update(dt)
                 local totalDamage = baseDmg * numTicks
                 local extraZones = self.playerStats and self.playerStats:getAbilityValue("entangle", "extra_zone_add", 0) or 0
                 local arrowCountAdd = self.playerStats and self.playerStats:getAbilityValue("entangle", "arrow_count_add", 0) or 0
+                local doubleVolley = self.playerStats and self.playerStats:getAbilityMod("entangle", "double_volley")
+                local volleyLine = self.playerStats and self.playerStats:getAbilityMod("entangle", "volley_line")
 
-                for z = 0, extraZones do
-                    local ox, oy = tx, ty
-                    if z > 0 then
-                        local angle = (z - 1) * (math.pi * 2 / math.max(1, extraZones)) + math.random() * 0.5
-                        ox = tx + math.cos(angle) * 110
-                        oy = ty + math.sin(angle) * 110
+                if volleyLine then
+                    -- Volley Line: 3 smaller circles in vertical line OOO
+                    local lineRadius, lineDamage = 40, totalDamage * 0.6
+                    for _, oy in ipairs({ ty - 60, ty, ty + 60 }) do
+                        local volley = ArrowVolley:new(tx, oy, lineDamage, lineRadius, arrowCountAdd)
+                        table.insert(self.arrowVolleys, volley)
                     end
-                    local volley = ArrowVolley:new(ox, oy, totalDamage, 80, arrowCountAdd)
-                    table.insert(self.arrowVolleys, volley)
+                else
+                    local volleyCount = (doubleVolley and 2 or 1) + extraZones
+                    for z = 0, volleyCount - 1 do
+                        local ox, oy = tx, ty
+                        if z == 1 and doubleVolley then
+                            ox, oy = tx + 35, ty
+                        elseif z > (doubleVolley and 1 or 0) then
+                            local angle = (z - (doubleVolley and 2 or 1)) * (math.pi * 2 / math.max(1, extraZones)) + math.random() * 0.5
+                            ox = tx + math.cos(angle) * 110
+                            oy = ty + math.sin(angle) * 110
+                        end
+                        local volley = ArrowVolley:new(ox, oy, totalDamage, 80, arrowCountAdd)
+                        table.insert(self.arrowVolleys, volley)
+                    end
                 end
 
                 if _G.audio then _G.audio:playSFX("shoot_arrow") end
@@ -932,6 +982,10 @@ function GameScene:update(dt)
                                 self:applyFrenzyLifesteal(dmg)
                                 if self.damageNumbers then
                                     self.damageNumbers:add(ex, ey - (enemy.getSize and enemy:getSize() or 16), dmg, { isCrit = false })
+                                end
+                                -- Explosion Volley: apply burn on hit
+                                if self.playerStats and self.playerStats:getAbilityMod("entangle", "explosion_volley") then
+                                    StatusEffects.apply(enemy, "burn", 1, 2.5)
                                 end
                                 if died then
                                     if self.enemySpawner then self.enemySpawner:onEnemyDeath() end
@@ -1293,8 +1347,15 @@ function GameScene:showUpgradeSelection()
             if self:isUtilityUpgrade(upgrade) then
                 return true
             end
-            -- Core attunements (fire/ice/lightning) are always eligible; integral to Archer kit
-            if self:isCoreAttunement(upgrade) then
+            -- Core attunements: exclude the one currently active (no duplicate; switch via fire/ice/lightning)
+            if self:isCoreAttunement(upgrade) and self.playerStats then
+                local active = self.playerStats.activePrimaryElement
+                local elemFor = (upgrade.id == "arch_c_fire_attunement" and "fire")
+                    or (upgrade.id == "arch_c_ice_attunement" and "ice")
+                    or (upgrade.id == "arch_c_lightning_attunement" and "lightning")
+                if elemFor and active == elemFor then
+                    return false
+                end
                 return true
             end
             local tier = self:getUpgradePathTier(upgrade)
@@ -1720,6 +1781,23 @@ function GameScene:iceDissolveBlast(x, y)
 end
 
 ---------------------------------------------------------------------------
+-- HELPER: ice blast on death (AOE when enemy with chill dies)
+---------------------------------------------------------------------------
+function GameScene:iceBlastOnDeath(target, radius, damageMultOfMaxHP)
+    local tx, ty = target:getPosition()
+    local damage = (target.maxHealth or 50) * (damageMultOfMaxHP or 0.05)
+    local radiusAdd = self.playerStats and self.playerStats:getElementMod("ice", "ice_blast_radius_add", 0) or 0
+    radius = (radius or 70) + radiusAdd
+    self:aoeDamage(tx, ty, radius, damage)
+    self.particles:createIceBlast(tx, ty, radius)
+    self.screenShake:add(5, 0.12)
+    self:hitFreeze(0.04)
+    if _G.triggerScreenFlash then
+        _G.triggerScreenFlash({0.6, 0.9, 1.0, 0.25}, 0.08)
+    end
+end
+
+---------------------------------------------------------------------------
 -- HELPER: hemorrhage explosion (AOE on killing bleeding target)
 ---------------------------------------------------------------------------
 function GameScene:hemorrhageExplosion(target, damageMultOfMaxHP, radius)
@@ -1782,6 +1860,11 @@ function GameScene:executeAction(action)
     elseif apply.kind == "aoe_explosion" then
         if action.target then
             self:hemorrhageExplosion(action.target, apply.damage_mul_of_target_maxhp or 0.06, apply.radius or 90)
+        end
+
+    elseif apply.kind == "ice_blast" then
+        if action.target then
+            self:iceBlastOnDeath(action.target, apply.radius or 70, apply.damage_mul_of_target_maxhp or 0.05)
         end
 
     elseif apply.kind == "buff" then
@@ -2030,6 +2113,9 @@ function GameScene:draw()
     if self.coreObjectivePopupTimer and self.coreObjectivePopupTimer > 0 then
         self:drawCoreObjectivePopup()
     end
+    if self.coreObjectiveFailPopupTimer and self.coreObjectiveFailPopupTimer > 0 then
+        self:drawCoreObjectiveFailPopup()
+    end
     
     -- Draw upgrade UI (on top of everything)
     if self.upgradeUI then
@@ -2190,6 +2276,33 @@ function GameScene:drawCoreObjectivePopup()
     love.graphics.setColor(1, 1, 1, 1)
 end
 
+function GameScene:drawCoreObjectiveFailPopup()
+    local screenWidth = love.graphics.getWidth()
+    local screenHeight = love.graphics.getHeight()
+    local timer = self.coreObjectiveFailPopupTimer or 0
+    local alpha = math.min(1, timer / 0.5)
+    if timer < 0.5 then
+        alpha = math.max(0, timer / 0.5)
+    end
+
+    local titleFont = _G.PixelFonts and _G.PixelFonts.uiLarge or love.graphics.getFont()
+    local bodyFont = _G.PixelFonts and _G.PixelFonts.uiBody or love.graphics.getFont()
+
+    love.graphics.setFont(titleFont)
+    local title = "TASK FAILED"
+    local tw = titleFont:getWidth(title)
+    love.graphics.setColor(1, 0.25, 0.2, alpha)
+    love.graphics.print(title, screenWidth / 2 - tw / 2, screenHeight / 2 - 50)
+
+    love.graphics.setFont(bodyFont)
+    local body = "You ran out of time. Cores despawned."
+    local bw = bodyFont:getWidth(body)
+    love.graphics.setColor(0.95, 0.7, 0.65, alpha * 0.9)
+    love.graphics.print(body, screenWidth / 2 - bw / 2, screenHeight / 2 - 10)
+
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
 function GameScene:drawObjectiveHUD()
     local screenWidth = love.graphics.getWidth()
     local t = love.timer.getTime()
@@ -2213,7 +2326,10 @@ function GameScene:drawObjectiveHUD()
 
     -- Objective title + count
     local coreText = string.format("CORES: %d/%d", self.coresDestroyed, self.coresTotal)
-    if self.coreObjectiveComplete then
+    if self.coreObjectiveFailed then
+        love.graphics.setColor(1, 0.3, 0.25, 1)
+        coreText = "TASK FAILED"
+    elseif self.coreObjectiveComplete then
         love.graphics.setColor(0.3, 1, 0.4, 1)
         coreText = "CORES COMPLETE!"
     else
@@ -2227,7 +2343,10 @@ function GameScene:drawObjectiveHUD()
     local mins = math.floor(remaining / 60)
     local secs = math.floor(remaining % 60)
     local timerText = string.format("TIME: %d:%02d", mins, secs)
-    if self.coreObjectiveComplete then
+    if self.coreObjectiveFailed then
+        timerText = "TIME EXPIRED"
+        love.graphics.setColor(1, 0.35, 0.3, 1)
+    elseif self.coreObjectiveComplete then
         timerText = "BONUS CLAIMED!"
         love.graphics.setColor(1, 0.85, 0.3, 1)
     elseif remaining <= 30 then
@@ -2379,6 +2498,26 @@ function GameScene:hasOpenOverlay()
     return ((self.statsOverlay and self.statsOverlay:isVisible()) == true) or self.pauseMenuVisible
 end
 
+-- Shared layout for pause overlay (draw and hit-test use identical coordinates)
+function GameScene:getPauseOverlayLayout()
+    local w, h = love.graphics.getWidth(), love.graphics.getHeight()
+    local panelW, panelH = 520, 320
+    local panelX, panelY = (w - panelW) / 2, (h - panelH) / 2
+    local optY0, optGap = panelY + 98, 56
+    local btnW, btnH = 220, 56  -- btnH = optGap so each option spans full vertical space
+    local y0 = panelY + 96
+    local backY = y0 + optGap * 3
+    local sliderX = panelX + 220
+    local sliderW = 220
+    local sliderH = 24  -- hit region height for easier clicking
+    return {
+        panelX = panelX, panelY = panelY, panelW = panelW, panelH = panelH,
+        optY0 = optY0, optGap = optGap, btnW = btnW, btnH = btnH,
+        y0 = y0, backY = backY,
+        sliderX = sliderX, sliderW = sliderW, sliderH = sliderH,
+    }
+end
+
 function GameScene:drawPauseSlider(label, value, x, y, width, isSelected)
     local v = math.max(0, math.min(1, value or 0))
     love.graphics.setColor(0.16, 0.16, 0.22, 0.95)
@@ -2394,11 +2533,14 @@ end
 
 function GameScene:drawPauseOverlay()
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
+    local L = self:getPauseOverlayLayout()
+    local panelX, panelY = L.panelX, L.panelY
+    local panelW, panelH = L.panelW, L.panelH
+    local optY0, optGap = L.optY0, L.optGap
+
     love.graphics.setColor(0, 0, 0, 0.65)
     love.graphics.rectangle("fill", 0, 0, w, h)
 
-    local panelW, panelH = 520, 320
-    local panelX, panelY = (w - panelW) / 2, (h - panelH) / 2
     love.graphics.setColor(0.08, 0.08, 0.12, 0.96)
     love.graphics.rectangle("fill", panelX, panelY, panelW, panelH, 12, 12)
     love.graphics.setColor(0.6, 0.6, 0.75, 1)
@@ -2418,20 +2560,17 @@ function GameScene:drawPauseOverlay()
         local sfx = settings and settings.audio and settings.audio.sfxVolume or 0.5
         local shake = settings and settings.graphics and settings.graphics.screenShake or 1.0
         local sliderX = panelX + 220
-        local y0 = panelY + 96
-        local gap = 56
 
-        self:drawPauseSlider("Music Volume", music, sliderX, y0, 220, self.pauseSettingsIndex == 1)
-        self:drawPauseSlider("Sound Volume", sfx, sliderX, y0 + gap, 220, self.pauseSettingsIndex == 2)
-        self:drawPauseSlider("Screen Shake", shake, sliderX, y0 + gap * 2, 220, self.pauseSettingsIndex == 3)
+        self:drawPauseSlider("Music Volume", music, sliderX, L.y0, 220, self.pauseSettingsIndex == 1)
+        self:drawPauseSlider("Sound Volume", sfx, sliderX, L.y0 + optGap, 220, self.pauseSettingsIndex == 2)
+        self:drawPauseSlider("Screen Shake", shake, sliderX, L.y0 + optGap * 2, 220, self.pauseSettingsIndex == 3)
 
-        local backY = y0 + gap * 3
         local backSelected = self.pauseSettingsIndex == 4
         love.graphics.setColor(backSelected and 0.95 or 0.45, backSelected and 0.75 or 0.45, backSelected and 0.35 or 0.5, 1)
         local body = (_G.PixelFonts and _G.PixelFonts.uiTiny) or love.graphics.getFont()
         love.graphics.setFont(body)
         local backText = "BACK"
-        love.graphics.print(backText, panelX + panelW / 2 - body:getWidth(backText) / 2, backY)
+        love.graphics.print(backText, panelX + panelW / 2 - body:getWidth(backText) / 2, L.backY)
     else
         local options = {"Resume", "Settings", "Quit to Menu"}
         local body = (_G.PixelFonts and _G.PixelFonts.uiBody) or love.graphics.getFont()
@@ -2439,7 +2578,7 @@ function GameScene:drawPauseOverlay()
         for i, text in ipairs(options) do
             local selected = self.pauseMenuIndex == i
             love.graphics.setColor(selected and 1 or 0.8, selected and 0.85 or 0.8, selected and 0.5 or 0.75, 1)
-            love.graphics.print(text, panelX + panelW / 2 - body:getWidth(text) / 2, panelY + 98 + (i - 1) * 56)
+            love.graphics.print(text, panelX + panelW / 2 - body:getWidth(text) / 2, optY0 + (i - 1) * optGap)
         end
     end
 
@@ -2447,30 +2586,40 @@ function GameScene:drawPauseOverlay()
 end
 
 function GameScene:mousepressed(x, y, button)
-    -- Handle pause overlay clicks
+    -- Handle pause overlay clicks (uses shared layout for exact draw/hit alignment)
     if self.pauseMenuVisible and button == 1 then
-        local w, h = love.graphics.getWidth(), love.graphics.getHeight()
-        local panelW, panelH = 520, 320
-        local panelX, panelY = (w - panelW) / 2, (h - panelH) / 2
+        local L = self:getPauseOverlayLayout()
+        local panelX, panelW = L.panelX, L.panelW
+        local btnX = panelX + (panelW - L.btnW) / 2
 
         if self.pauseSettingsVisible then
-            -- BACK button: y0 + gap*3, reasonable width
-            local y0, gap = panelY + 96, 56
-            local backY = y0 + gap * 3
-            local btnW, btnH = 200, 36
-            local btnX = panelX + (panelW - btnW) / 2
-            if x >= btnX and x <= btnX + btnW and y >= backY - 8 and y <= backY + 28 then
+            local settings = _G.settings
+            -- Slider hit-test: click on track to set value
+            if settings then
+                for i = 1, 3 do
+                    local sy = L.y0 + (i - 1) * L.optGap
+                    if x >= L.sliderX and x <= L.sliderX + L.sliderW and y >= sy and y <= sy + L.sliderH then
+                        local v = math.max(0, math.min(1, (x - L.sliderX) / L.sliderW))
+                        if i == 1 then settings:setMusicVolume(v)
+                        elseif i == 2 then settings:setSFXVolume(v)
+                        elseif i == 3 then settings:setScreenShake(v)
+                        end
+                        self.pauseSettingsIndex = i
+                        return true
+                    end
+                end
+            end
+            -- BACK button: full optGap height for easy click
+            local backBtnH = L.optGap
+            if x >= btnX and x <= btnX + L.btnW and y >= L.backY and y <= L.backY + backBtnH then
                 self.pauseSettingsVisible = false
                 return true
             end
         else
-            -- Main menu: Resume, Settings, Quit to Menu
-            local optY0, optGap = panelY + 98, 56
-            local btnW, btnH = 220, 44
-            local btnX = panelX + (panelW - btnW) / 2
+            -- Main menu: Resume, Settings, Quit to Menu (btnH = optGap, no dead zones)
             for i = 1, 3 do
-                local optTop = optY0 + (i - 1) * optGap
-                if x >= btnX and x <= btnX + btnW and y >= optTop and y <= optTop + btnH then
+                local optTop = L.optY0 + (i - 1) * L.optGap
+                if x >= btnX and x <= btnX + L.btnW and y >= optTop and y <= optTop + L.btnH then
                     if i == 1 then self.pauseMenuVisible = false
                     elseif i == 2 then self.pauseSettingsVisible = true; self.pauseSettingsIndex = 1
                     elseif i == 3 then self.pauseMenuVisible = false; self.gameState:transitionTo(self.gameState.States.MENU)

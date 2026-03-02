@@ -66,19 +66,23 @@ function StatusEffects.countBleedingEnemies(entityLists)
 end
 
 -- Update statuses: tick durations, apply bleed/burn DoT damage.
--- Returns a table of damage ticks: { {entity, damage, status}, ... }
+-- Returns: ticks (table of {entity, damage, status}), expiredChillEntity (entity that had chill expire, or nil)
 -- baseDamagePerBleedStack: for bleed. burnDamagePerStack: for burn (default 20% of hit, use config).
 function StatusEffects.update(entity, dt, baseDamagePerBleedStack, burnDamagePerStack)
-  if not entity.statuses then return {} end
+  if not entity.statuses then return {}, nil end
   baseDamagePerBleedStack = baseDamagePerBleedStack or 2
   burnDamagePerStack = burnDamagePerStack or 2
 
   local ticks = {}
   local toRemove = {}
+  local expiredChillEntity = nil
 
   for name, s in pairs(entity.statuses) do
     s.duration = s.duration - dt
     if s.duration <= 0 then
+      if name == "chill" then
+        expiredChillEntity = entity
+      end
       toRemove[#toRemove + 1] = name
     else
       -- Bleed DoT: tick every 0.5s
@@ -106,7 +110,7 @@ function StatusEffects.update(entity, dt, baseDamagePerBleedStack, burnDamagePer
     entity.statuses[name] = nil
   end
 
-  return ticks
+  return ticks, expiredChillEntity
 end
 
 -- Get speed multiplier from chill/freeze (1.0 = normal, 0.5 = 50% speed, 0 = frozen)

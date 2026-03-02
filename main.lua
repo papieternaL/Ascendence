@@ -136,13 +136,28 @@ function love.update(dt)
         if not gameScene then
             gameScene = GameScene:new(gameState)
             gameScene:load()
-            -- Boss Test Mode: immediately jump to boss fight after scene loads
+            -- Boss Test Mode: immediately jump to boss fight (instant, no main map)
             if gameState.bossTestMode then
                 gameState.bossTestMode = false
-                gameState:enterBossFight()
+                gameState:enterBossFight(true)
+                -- Create boss arena in same frame so we can draw it immediately
+                if gameState:getState() == States.BOSS_FIGHT and not bossArenaScene and gameScene then
+                    bossArenaScene = BossArenaScene:new(
+                        gameScene.player,
+                        gameScene.playerStats,
+                        gameState,
+                        gameScene.xpSystem,
+                        gameScene.rarityCharge,
+                        gameScene.frenzyCharge
+                    )
+                end
             end
         end
-        gameScene:update(dt)
+        if gameState:getState() == States.BOSS_FIGHT and bossArenaScene then
+            bossArenaScene:update(dt)
+        else
+            gameScene:update(dt)
+        end
 
         -- Check for game over
         if gameScene.player and gameScene.player:isDead() then
@@ -208,9 +223,6 @@ function love.draw()
         if gameScene then
             gameScene:draw()
             drawHUD()
-            if not gameScene.pauseMenuVisible then
-                drawQuitButton()
-            end
             if gameScene.drawOverlays then
                 gameScene:drawOverlays()
             end
@@ -218,7 +230,7 @@ function love.draw()
     elseif state == States.BOSS_FIGHT then
         if bossArenaScene then
             bossArenaScene:draw()
-            drawQuitButton()
+            drawTopBar()
         end
     elseif state == States.TUTORIAL then
         if tutorialScene then
@@ -251,14 +263,93 @@ local function drawTextWithShadow(text, x, y)
     love.graphics.print(text, x, y)
 end
 
+-- Helper: draw a diamond (rotated square) polygon
+local function drawDiamond(mode, cx, cy, halfW, halfH)
+    love.graphics.polygon(mode, cx, cy - halfH, cx + halfW, cy, cx, cy + halfH, cx - halfW, cy)
+end
+
 function drawHUD()
     local w = love.graphics.getWidth()
     local h = love.graphics.getHeight()
+
+    -- Draw top bar (title, level, currency, time, QUIT)
+    drawTopBar()
 
     -- Draw bottom HUD (health bar + abilities)
     if gameScene and gameScene.player then
         drawBottomHUD(gameScene.player)
     end
+end
+
+-- Top bar layout (used by drawTopBar and isPointInQuitButton)
+local TOP_BAR_H = 36
+local TOP_BAR_PAD = 12
+local QUIT_BTN_W = 80
+local QUIT_BTN_H = 28
+
+function drawTopBar()
+    local w = love.graphics.getWidth()
+    local state = gameState:getState()
+    local States = gameState.States
+
+    -- Only draw during play or boss fight
+    if state ~= States.PLAYING and state ~= States.BOSS_FIGHT then return end
+
+    local level = 1
+    local runTimer = gameState.runTimer or 0
+    local currency = gameState.runCurrency or 0
+
+    if state == States.PLAYING and gameScene and gameScene.xpSystem then
+        level = gameScene.xpSystem.level
+    elseif state == States.BOSS_FIGHT and bossArenaScene and bossArenaScene.xpSystem then
+        level = bossArenaScene.xpSystem.level
+    end
+
+    local barY = TOP_BAR_PAD
+    local barH = TOP_BAR_H
+
+    -- No dark bar background (removed per plan)
+
+    -- Left: level with gem icon
+    love.graphics.setFont(hudFonts.small)
+    local gemX = TOP_BAR_PAD + 20
+    local gemY = barY + barH / 2
+    love.graphics.setColor(0.2, 0.85, 0.4, 0.95)
+    drawDiamond("fill", gemX, gemY, 6, 6)
+    love.graphics.setColor(0.35, 0.9, 0.5, 1)
+    love.graphics.print("LVL " .. level, gemX + 16, barY + 6)
+
+    -- Currency with coin icon (placeholder)
+    local coinX = gemX + 90
+    love.graphics.setColor(0.9, 0.75, 0.2, 0.95)
+    love.graphics.circle("fill", coinX, gemY, 6)
+    love.graphics.setColor(0.95, 0.85, 0.4, 1)
+    love.graphics.print(tostring(currency), coinX + 16, barY + 6)
+
+    -- Time with hourglass (next to level/currency on left)
+    local timeM = math.floor(runTimer / 60)
+    local timeS = math.floor(runTimer % 60)
+    local timeStr = string.format("%d:%02d", timeM, timeS)
+    love.graphics.setFont(hudFonts.small)
+    local hourglassX = coinX + 70
+    love.graphics.setColor(0.7, 0.65, 0.5, 0.9)
+    drawDiamond("fill", hourglassX, gemY, 5, 5)
+    love.graphics.setColor(0.9, 0.85, 0.75, 1)
+    love.graphics.print(timeStr, hourglassX + 14, barY + 6)
+
+    -- Right: QUIT with skull
+    local btnX = w - QUIT_BTN_W - TOP_BAR_PAD
+    local btnY = barY + (barH - QUIT_BTN_H) / 2
+    love.graphics.setColor(0.2, 0.15, 0.18, 0.95)
+    love.graphics.rectangle("fill", btnX, btnY, QUIT_BTN_W, QUIT_BTN_H, 6, 6)
+    love.graphics.setColor(0.5, 0.45, 0.5, 0.8)
+    love.graphics.rectangle("line", btnX, btnY, QUIT_BTN_W, QUIT_BTN_H, 6, 6)
+    love.graphics.setColor(0.9, 0.85, 0.8, 0.95)
+    love.graphics.setFont(hudFonts.small)
+    local quitW = hudFonts.small:getWidth("QUIT")
+    drawTextWithShadow("QUIT", btnX + QUIT_BTN_W / 2 - quitW / 2, btnY + 6)
+
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 function drawQuitButton()
@@ -280,15 +371,36 @@ end
 
 function isPointInQuitButton(px, py)
     local w = love.graphics.getWidth()
-    local btnW, btnH = 90, 32
-    local btnX = w - btnW - 20
-    local btnY = 20
-    return px >= btnX and px <= btnX + btnW and py >= btnY and py <= btnY + btnH
+    local btnX = w - QUIT_BTN_W - TOP_BAR_PAD
+    local btnY = TOP_BAR_PAD + (TOP_BAR_H - QUIT_BTN_H) / 2
+    return px >= btnX and px <= btnX + QUIT_BTN_W and py >= btnY and py <= btnY + QUIT_BTN_H
 end
 
--- Helper: draw a diamond (rotated square) polygon
-local function drawDiamond(mode, cx, cy, halfW, halfH)
-    love.graphics.polygon(mode, cx, cy - halfH, cx + halfW, cy, cx, cy + halfH, cx - halfW, cy)
+-- Returns ability slot positions for tutorial highlight and other reuse
+function getAbilitySlotLayout()
+    local w = love.graphics.getWidth()
+    local h = love.graphics.getHeight()
+    local panelW, panelH = 560, 110
+    local panelY = h - panelH - 8
+    local healthBarY = panelY + 14
+    local healthBarHeight = 18
+    local diamondR, diamondSpacing = 26, 70
+    local slotConfig = {
+        { key = "Q", abilityId = "multi_shot" },
+        { key = "SPACE", abilityId = "dash" },
+        { key = "E", abilityId = "entangle" },
+        { key = "R", abilityId = "frenzy" },
+    }
+    local numSlots = #slotConfig
+    local abilitiesWidth = (numSlots - 1) * diamondSpacing
+    local abilitiesStartX = w / 2 - abilitiesWidth / 2
+    local abilitiesCY = healthBarY + healthBarHeight + 10 + diamondR + 2
+    local slots = {}
+    for i, slot in ipairs(slotConfig) do
+        local cx = abilitiesStartX + (i - 1) * diamondSpacing
+        slots[#slots + 1] = { key = slot.key, cx = cx, cy = abilitiesCY, r = diamondR }
+    end
+    return slots
 end
 
 function drawBottomHUD(player)
@@ -302,24 +414,36 @@ function drawBottomHUD(player)
     local panelX = (w - panelW) / 2
     local panelY = h - panelH - 8
 
-    -- Panel background gradient (dark, semi-transparent)
-    love.graphics.setColor(0.04, 0.04, 0.08, 0.85)
+    -- Minimal panel background (no black bar; subtle alpha per plan)
+    love.graphics.setColor(0.04, 0.04, 0.08, 0.18)
     love.graphics.rectangle("fill", panelX, panelY, panelW, panelH, 10, 10)
     -- Panel top accent line (warm gold, Hades-style)
-    love.graphics.setColor(0.75, 0.55, 0.25, 0.6)
+    love.graphics.setColor(0.75, 0.55, 0.25, 0.4)
     love.graphics.setLineWidth(1)
     love.graphics.line(panelX + 20, panelY, panelX + panelW - 20, panelY)
-    -- Panel border
-    love.graphics.setColor(0.35, 0.28, 0.18, 0.5)
+    -- Panel border (subtle)
+    love.graphics.setColor(0.35, 0.28, 0.18, 0.35)
     love.graphics.setLineWidth(1.5)
     love.graphics.rectangle("line", panelX, panelY, panelW, panelH, 10, 10)
     love.graphics.setLineWidth(1)
 
-    -- Health bar (Hades/CotDG style: red fill, metallic frame)
-    local healthBarWidth = panelW - 60
+    -- Health bar with red crystal on left (Hades-style)
+    local crystalSize = 22
+    local healthBarWidth = panelW - 60 - crystalSize
     local healthBarHeight = 18
-    local healthBarX = panelX + 30
+    local healthBarX = panelX + 30 + crystalSize
     local healthBarY = panelY + 14
+
+    -- Red crystal (procedural diamond) on left end
+    local crystalCX = panelX + 30 + crystalSize / 2
+    local crystalCY = panelY + 14 + healthBarHeight / 2
+    love.graphics.setColor(0.5, 0.08, 0.08, 1)
+    drawDiamond("fill", crystalCX, crystalCY, crystalSize / 2, crystalSize / 2)
+    love.graphics.setColor(0.85, 0.2, 0.15, 0.9)
+    drawDiamond("fill", crystalCX, crystalCY, crystalSize / 2 - 2, crystalSize / 2 - 2)
+    love.graphics.setColor(0.6, 0.15, 0.12, 0.8)
+    love.graphics.setLineWidth(1)
+    drawDiamond("line", crystalCX, crystalCY, crystalSize / 2, crystalSize / 2)
 
     local healthPercent = math.max(0, player.health / player.maxHealth)
 
@@ -357,26 +481,30 @@ function drawBottomHUD(player)
     local textWidth = font:getWidth(healthText)
     drawTextWithShadow(healthText, healthBarX + healthBarWidth / 2 - textWidth / 2, healthBarY + 1)
 
-    -- Ability diamonds (Hades-inspired rotated squares)
-    local diamondR = 28
-    local diamondSpacing = 76
-    local numAbilities = #player.abilityOrder
-    local abilitiesWidth = (numAbilities - 1) * diamondSpacing
+    -- Four ability slots: Q (Multi Shot), SPACE (Dash), E (Arrow Volley), R (Frenzy)
+    local slotConfig = {
+        { key = "Q", abilityId = "multi_shot" },
+        { key = "SPACE", abilityId = "dash" },
+        { key = "E", abilityId = "entangle" },
+        { key = "R", abilityId = "frenzy" },
+    }
+    local diamondR = 26
+    local diamondSpacing = 70
+    local numSlots = #slotConfig
+    local abilitiesWidth = (numSlots - 1) * diamondSpacing
     local abilitiesStartX = w / 2 - abilitiesWidth / 2
     local abilitiesCY = healthBarY + healthBarHeight + 10 + diamondR + 2
 
-    for i, abilityId in ipairs(player.abilityOrder) do
-        local ability = player.abilities[abilityId]
-        if ability then
-            local cx = abilitiesStartX + (i - 1) * diamondSpacing
-            drawAbilityDiamond(ability, cx, abilitiesCY, diamondR)
-        end
+    for i, slot in ipairs(slotConfig) do
+        local ability = slot.abilityId and player.abilities[slot.abilityId] or nil
+        local cx = abilitiesStartX + (i - 1) * diamondSpacing
+        drawAbilityDiamond(ability, slot.key, cx, abilitiesCY, diamondR)
     end
 
     -- Ability tooltip on hover
     local mx, my = love.mouse.getPosition()
-    for i, abilityId in ipairs(player.abilityOrder) do
-        local ability = player.abilities[abilityId]
+    for i, slot in ipairs(slotConfig) do
+        local ability = slot.abilityId and player.abilities[slot.abilityId] or nil
         if ability and ability.description then
             local cx = abilitiesStartX + (i - 1) * diamondSpacing
             local dx = mx - cx
@@ -457,7 +585,7 @@ function drawAbilityTooltip(ability, anchorX, anchorY)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
--- Ability color accents per key (matching element vibes)
+-- Ability color accents per key
 local abilityAccents = {
     Q = {0.3, 0.75, 1.0},
     SPACE = {0.9, 0.85, 0.4},
@@ -465,22 +593,25 @@ local abilityAccents = {
     R = {1.0, 0.55, 0.15},
 }
 
-function drawAbilityDiamond(ability, cx, cy, r)
-    local hasCharge = (ability.chargeMax ~= nil)
-    local isReady = ability.currentCooldown <= 0
+function drawAbilityDiamond(ability, key, cx, cy, r)
+    local isPlaceholder = (ability == nil)
+    local hasCharge = not isPlaceholder and ability and (ability.chargeMax ~= nil)
+    local isReady = false
     local cooldownPercent = 0
     local t = love.timer.getTime()
 
-    if hasCharge then
-        local c = ability.charge or 0
-        local m = ability.chargeMax or 1
+    if isPlaceholder then
+        isReady = false
+    elseif hasCharge then
+        local c, m = ability.charge or 0, ability.chargeMax or 1
         isReady = c >= m
         cooldownPercent = 1 - (c / m)
     else
-        cooldownPercent = ability.cooldown > 0 and (ability.currentCooldown / ability.cooldown) or 0
+        isReady = ability and ability.currentCooldown <= 0
+        cooldownPercent = (ability and ability.cooldown > 0) and (ability.currentCooldown / ability.cooldown) or 0
     end
 
-    local accent = abilityAccents[ability.key] or {0.5, 0.7, 1.0}
+    local accent = abilityAccents[key] or {0.5, 0.7, 1.0}
 
     -- Outer glow when ready (pulsing)
     if isReady then
@@ -498,7 +629,7 @@ function drawAbilityDiamond(ability, cx, cy, r)
     drawDiamond("fill", cx, cy, r, r)
 
     -- Cooldown fill (dark overlay sweeping from bottom)
-    if not isReady then
+    if not isPlaceholder and not isReady then
         local fillH = r * 2 * cooldownPercent
         love.graphics.setColor(0, 0, 0, 0.55)
         love.graphics.stencil(function()
@@ -509,13 +640,7 @@ function drawAbilityDiamond(ability, cx, cy, r)
         love.graphics.setStencilTest()
     end
 
-    -- Ability icon symbol
-    love.graphics.setColor(1, 1, 1, isReady and 1 or 0.35)
-    love.graphics.setFont(hudFonts.body)
-    local font = love.graphics.getFont()
-    local iconW = font:getWidth(ability.icon)
-    local iconH = font:getHeight()
-    drawTextWithShadow(ability.icon, cx - iconW / 2, cy - iconH / 2 - 3)
+    -- Ability icon removed for now; key label only
 
     -- Diamond border
     if isReady then
@@ -528,11 +653,11 @@ function drawAbilityDiamond(ability, cx, cy, r)
     love.graphics.setLineWidth(1)
 
     -- Keybind label below diamond
-    love.graphics.setColor(0.85, 0.78, 0.6, isReady and 0.9 or 0.45)
+    love.graphics.setColor(0.85, 0.78, 0.6, (isReady or isPlaceholder) and 0.9 or 0.45)
     love.graphics.setFont(hudFonts.tiny)
-    font = love.graphics.getFont()
-    local keyW = font:getWidth(ability.key)
-    drawTextWithShadow(ability.key, cx - keyW / 2, cy + r + 4)
+    local font = love.graphics.getFont()
+    local keyW = font:getWidth(key)
+    drawTextWithShadow(key, cx - keyW / 2, cy + r + 4)
 
     -- Cooldown / charge text inside diamond
     if hasCharge then
@@ -544,11 +669,11 @@ function drawAbilityDiamond(ability, cx, cy, r)
         font = love.graphics.getFont()
         local tw = font:getWidth(txt)
         drawTextWithShadow(txt, cx - tw / 2, cy + 4)
-    elseif not isReady then
+    elseif not isPlaceholder and not isReady then
         love.graphics.setColor(1, 1, 1, 0.9)
         love.graphics.setFont(hudFonts.small)
         local cdText = string.format("%.1f", ability.currentCooldown)
-        font = love.graphics.getFont()
+        local font = love.graphics.getFont()
         local cdW = font:getWidth(cdText)
         drawTextWithShadow(cdText, cx - cdW / 2, cy - font:getHeight() / 2 + 2)
     end
@@ -625,6 +750,10 @@ function love.mousepressed(x, y, button)
             gameState:transitionTo(States.MENU)
         elseif bossArenaScene and bossArenaScene.mousepressed then
             bossArenaScene:mousepressed(x, y, button)
+        end
+    elseif state == States.TUTORIAL then
+        if tutorialScene and tutorialScene.mousepressed then
+            tutorialScene:mousepressed(x, y, button)
         end
     else
         menu:mousepressed(x, y, button)

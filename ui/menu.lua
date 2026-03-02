@@ -72,6 +72,11 @@ function Menu:isPointInButton(px, py, cx, cy, w, h)
     return px >= x and px <= x + w and py >= y and py <= y + h
 end
 
+-- Helper: check if point is inside a rectangle (left-aligned x, y)
+function Menu:isPointInRect(px, py, rx, ry, rw, rh)
+    return px >= rx and px <= rx + rw and py >= ry and py <= ry + rh
+end
+
 function Menu:update(dt)
     -- Title bobbing animation
     self.titleBob = math.sin(love.timer.getTime() * self.titleBobSpeed) * 5
@@ -105,6 +110,31 @@ function Menu:update(dt)
             self.selectedIndex = 5; self.hoveredButton = "quit"
         else
             self.hoveredButton = nil
+        end
+    elseif state == States.SETTINGS and not self.rebindingIndex then
+        local L = self:getSettingsLayout(w, h)
+        local barX, barW, y0, gap, gfxY, kbY = L.barX, L.barW, L.y0, L.gap, L.gfxY, L.kbY
+        local rowH = 24
+        if self:isPointInRect(mx, my, barX, y0, barW, 16) then
+            self.selectedIndex = 1
+        elseif self:isPointInRect(mx, my, barX, y0 + gap, barW, 16) then
+            self.selectedIndex = 2
+        elseif self:isPointInRect(mx, my, barX, y0 + gap * 2, barW, 16) then
+            self.selectedIndex = 3
+        elseif self:isPointInRect(mx, my, barX, gfxY, barW, rowH) then
+            self.selectedIndex = 4
+        elseif self:isPointInRect(mx, my, barX, gfxY + gap, barW, rowH) then
+            self.selectedIndex = 5
+        elseif self:isPointInRect(mx, my, barX, kbY, barW, rowH) then
+            self.selectedIndex = 6
+        elseif self:isPointInRect(mx, my, barX, kbY + gap, barW, rowH) then
+            self.selectedIndex = 7
+        elseif self:isPointInRect(mx, my, barX, kbY + gap * 2, barW, rowH) then
+            self.selectedIndex = 8
+        elseif self:isPointInRect(mx, my, barX, kbY + gap * 3, barW, rowH) then
+            self.selectedIndex = 9
+        elseif self:isPointInButton(mx, my, w/2, h * 0.92, 160, 36) then
+            self.selectedIndex = SETTINGS_ITEM_COUNT
         end
     end
 end
@@ -233,6 +263,16 @@ end
 -- 10: BACK button
 local SETTINGS_ITEM_COUNT = 10
 
+function Menu:getSettingsLayout(w, h)
+    local barX = w/2 - 100
+    local barW = 220
+    local y0 = h * 0.20
+    local gap = 38
+    local gfxY = y0 + gap * 3 + 16
+    local kbY = gfxY + gap * 2 + 16
+    return { barX = barX, barW = barW, y0 = y0, gap = gap, gfxY = gfxY, kbY = kbY }
+end
+
 function Menu:drawSettings()
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
     self:drawBackground()
@@ -250,32 +290,28 @@ function Menu:drawSettings()
     local fullscreen = s and s.graphics and s.graphics.fullscreen or false
     local vsync = s and s.graphics and s.graphics.vsync or false
 
-    local barX = w/2 - 100
-    local barW = 220
-    local y0 = h * 0.20
-    local gap = 38
+    local L = self:getSettingsLayout(w, h)
+    local barX, barW, y0, gap, gfxY, kbY = L.barX, L.barW, L.y0, L.gap, L.gfxY, L.kbY
 
-    -- Section: Audio
+    -- Section: Audio (header Y offset -20 to avoid overlap with first item)
     love.graphics.setFont(self.smallFont)
     love.graphics.setColor(0.6, 0.55, 0.45, 0.8)
-    love.graphics.print("AUDIO", barX - 160, y0 - 4)
+    love.graphics.print("AUDIO", barX - 160, y0 - 20)
     self:drawSlider("Music", music, barX, y0, barW, self.selectedIndex == 1)
     self:drawSlider("Sound", sfx, barX, y0 + gap, barW, self.selectedIndex == 2)
     self:drawSlider("Shake", shake, barX, y0 + gap * 2, barW, self.selectedIndex == 3)
 
     -- Section: Graphics
-    local gfxY = y0 + gap * 3 + 16
     love.graphics.setFont(self.smallFont)
     love.graphics.setColor(0.6, 0.55, 0.45, 0.8)
-    love.graphics.print("GRAPHICS", barX - 160, gfxY - 4)
+    love.graphics.print("GRAPHICS", barX - 160, gfxY - 20)
     self:drawToggle("Fullscreen", fullscreen, barX, gfxY, barW, self.selectedIndex == 4)
     self:drawToggle("VSync", vsync, barX, gfxY + gap, barW, self.selectedIndex == 5)
 
     -- Section: Keybinds
-    local kbY = gfxY + gap * 2 + 16
     love.graphics.setFont(self.smallFont)
     love.graphics.setColor(0.6, 0.55, 0.45, 0.8)
-    love.graphics.print("KEYBINDS", barX - 160, kbY - 4)
+    love.graphics.print("KEYBINDS", barX - 160, kbY - 20)
 
     local keybindActions = {"dash", "multi_shot", "arrow_volley", "frenzy"}
     local keybindLabels = {"Dash", "Multi Shot", "Arrow Volley", "Frenzy"}
@@ -405,17 +441,18 @@ function Menu:drawHeroCard(classData, x, y, w, h, isSelected)
     love.graphics.setColor(1, 1, 1, 1)
     drawTextWithShadow(classData.name, x + w/2 - nameW/2, y + 90)
     
-    -- Description
+    -- Description (increased line height to prevent overlap)
     love.graphics.setFont(self.smallFont)
     love.graphics.setColor(0.78, 0.78, 0.75, 0.95)
-    local descLines = self:wrapText(classData.description, w - 20)
+    local descLineHeight = 22
+    local descLines = self:wrapText(classData.description, w - 24)
     for i, line in ipairs(descLines) do
         local lineW = self.smallFont:getWidth(line)
-        drawTextWithShadow(line, x + w/2 - lineW/2, y + 125 + (i-1) * 18)
+        drawTextWithShadow(line, x + w/2 - lineW/2, y + 125 + (i - 1) * descLineHeight)
     end
     
-    -- Stats
-    local statsY = y + 180
+    -- Stats (positioned below description with clear separation)
+    local statsY = y + 125 + math.min(#descLines, 3) * descLineHeight + 16
     love.graphics.setColor(0.5, 0.5, 0.5, 1)
     love.graphics.line(x + 20, statsY, x + w - 20, statsY)
     
@@ -758,7 +795,7 @@ function Menu:keypressed(key)
                 self.gameState:setDefaultDifficulty()
                 self.gameState:initFloor(1)
                 self.gameState.bossTestMode = true
-                self.gameState:transitionTo(States.PLAYING)
+                self.gameState:transitionTo(States.PLAYING, true)
                 self.selectedIndex = 1
             elseif self.selectedIndex == 4 then
                 self.gameState:transitionTo(States.SETTINGS)
@@ -894,7 +931,7 @@ function Menu:mousepressed(x, y, button)
             self.gameState:setDefaultDifficulty()
             self.gameState:initFloor(1)
             self.gameState.bossTestMode = true
-            self.gameState:transitionTo(States.PLAYING)
+            self.gameState:transitionTo(States.PLAYING, true)
             self.selectedIndex = 1
         elseif self:isPointInButton(x, y, w/2, h * 0.68, 200, 40) then
             self.gameState:transitionTo(States.SETTINGS)
@@ -903,11 +940,46 @@ function Menu:mousepressed(x, y, button)
             love.event.quit()
         end
     elseif state == States.SETTINGS then
-        if self:isPointInButton(x, y, w/2, h * 0.78, 180, 50) then
-            self.gameState:transitionTo(States.MENU)
-            self.selectedIndex = 2
+        if self.rebindingIndex then return end -- Wait for keypress when rebinding
+        local mgr = _G.settings
+        local L = self:getSettingsLayout(w, h)
+        local barX, barW, y0, gap, gfxY, kbY = L.barX, L.barW, L.y0, L.gap, L.gfxY, L.kbY
+        local rowH = 24
+
+        -- Sliders 1-3: click to set value
+        if mgr then
+            for i = 1, 3 do
+                local sy = (i == 1) and y0 or (i == 2) and (y0 + gap) or (y0 + gap * 2)
+                if self:isPointInRect(x, y, barX, sy, barW, 16) then
+                    local t = math.max(0, math.min(1, (x - barX) / barW))
+                    if i == 1 then mgr:setMusicVolume(t)
+                    elseif i == 2 then mgr:setSFXVolume(t)
+                    else mgr:setScreenShake(t) end
+                    return
+                end
+            end
+            -- Toggles 4-5
+            if self:isPointInRect(x, y, barX, gfxY, barW, rowH) then
+                mgr:toggleFullscreen()
+                return
+            end
+            if self:isPointInRect(x, y, barX, gfxY + gap, barW, rowH) then
+                mgr:toggleVsync()
+                return
+            end
         end
-        
+        -- Keybinds 6-9
+        for i = 1, 4 do
+            if self:isPointInRect(x, y, barX, kbY + (i - 1) * gap, barW, rowH) then
+                self.rebindingIndex = 5 + i
+                return
+            end
+        end
+        -- BACK
+        if self:isPointInButton(x, y, w/2, h * 0.92, 160, 36) then
+            self.gameState:transitionTo(States.MENU)
+            self.selectedIndex = 4
+        end
     elseif state == States.CHARACTER_SELECT then
         -- Check character cards
         local classes = {"ARCHER", "WIZARD", "KNIGHT"}
@@ -976,7 +1048,32 @@ function Menu:mousemoved(x, y)
     local States = self.gameState.States
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
 
-    if state == States.GAME_OVER then
+    if state == States.SETTINGS and not self.rebindingIndex then
+        local L = self:getSettingsLayout(w, h)
+        local barX, barW, y0, gap, gfxY, kbY = L.barX, L.barW, L.y0, L.gap, L.gfxY, L.kbY
+        local rowH = 24
+        if self:isPointInRect(x, y, barX, y0, barW, 16) then
+            self.selectedIndex = 1
+        elseif self:isPointInRect(x, y, barX, y0 + gap, barW, 16) then
+            self.selectedIndex = 2
+        elseif self:isPointInRect(x, y, barX, y0 + gap * 2, barW, 16) then
+            self.selectedIndex = 3
+        elseif self:isPointInRect(x, y, barX, gfxY, barW, rowH) then
+            self.selectedIndex = 4
+        elseif self:isPointInRect(x, y, barX, gfxY + gap, barW, rowH) then
+            self.selectedIndex = 5
+        elseif self:isPointInRect(x, y, barX, kbY, barW, rowH) then
+            self.selectedIndex = 6
+        elseif self:isPointInRect(x, y, barX, kbY + gap, barW, rowH) then
+            self.selectedIndex = 7
+        elseif self:isPointInRect(x, y, barX, kbY + gap * 2, barW, rowH) then
+            self.selectedIndex = 8
+        elseif self:isPointInRect(x, y, barX, kbY + gap * 3, barW, rowH) then
+            self.selectedIndex = 9
+        elseif self:isPointInButton(x, y, w/2, h * 0.92, 160, 36) then
+            self.selectedIndex = SETTINGS_ITEM_COUNT
+        end
+    elseif state == States.GAME_OVER then
         if self:isPointInButton(x, y, w/2, h * 0.6, 180, 50) then
             self.selectedIndex = 1
         elseif self:isPointInButton(x, y, w/2, h * 0.7, 180, 50) then

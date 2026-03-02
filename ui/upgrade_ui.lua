@@ -17,6 +17,39 @@ local rarityGlow = {
   epic = { 0.7, 0.3, 0.9, 0.5 },
 }
 
+-- Metallic frame colors (grey/silver common, green rare, blue epic)
+local metallicColors = {
+  common = { 0.55, 0.52, 0.5 },
+  rare = { 0.25, 0.65, 0.4 },
+  epic = { 0.35, 0.5, 0.9 },
+}
+
+-- Derive upgrade type from tags
+local function getUpgradeType(upgrade)
+  if upgrade.type then return upgrade.type end
+  local tags = upgrade.tags or {}
+  for _, t in ipairs(tags) do
+    if t == "element" or t == "fire" or t == "ice" or t == "lightning" then return "Element" end
+    if t == "projectile" or t == "primary" or t == "multishot" then return "Projectile" end
+  end
+  return "Passive"
+end
+
+-- Derive icon key from upgrade id/tags (for procedural icon drawing)
+local function getUpgradeIconKey(upgrade)
+  if upgrade.icon then return upgrade.icon end
+  local id = upgrade.id or ""
+  if id:find("fleetfoot") or id:find("stamina") then return "boot" end
+  if id:find("fire") then return "flame" end
+  if id:find("ice") then return "snowflake" end
+  if id:find("lightning") then return "bolt" end
+  if id:find("arrow") or id:find("ricochet") or id:find("pierc") then return "arrow" end
+  if id:find("crit") or id:find("hollow") then return "target" end
+  if id:find("xp") or id:find("magnet") then return "magnet" end
+  if id:find("bleed") or id:find("barbed") then return "blood" end
+  return "star"
+end
+
 -- UTF-8-safe truncation (avoids splitting multi-byte chars, prevents getWidth crash)
 local function utf8SafeSub(str, charCount)
   if not str or charCount <= 0 then return "" end
@@ -193,21 +226,44 @@ function UpgradeUI:draw()
   local titleFont = _G.PixelFonts and _G.PixelFonts.uiBody or cardFont
   love.graphics.setFont(cardFont)
   
-  -- Darken background
-  love.graphics.setColor(0, 0, 0, 0.7)
+  -- Darken background (0.6 alpha so forest is visible behind)
+  love.graphics.setColor(0, 0, 0, 0.6)
   love.graphics.rectangle("fill", 0, 0, screenWidth, screenHeight)
   
-  -- Title
-  love.graphics.setFont(titleFont)
-  love.graphics.setColor(1, 0.9, 0.3, 1)
+  -- Ornate banner: "LEVEL UP! CHOOSE AN UPGRADE" with metallic borders
+  local bannerW = 520
+  local bannerH = 56
+  local bannerX = (screenWidth - bannerW) / 2
+  local bannerY = 36
+  -- Dark metallic base
+  love.graphics.setColor(0.12, 0.11, 0.1, 0.95)
+  love.graphics.rectangle("fill", bannerX, bannerY, bannerW, bannerH, 8, 8)
+  -- Outer metallic border (gold/brass)
+  love.graphics.setColor(0.65, 0.55, 0.35, 1)
+  love.graphics.setLineWidth(2)
+  love.graphics.rectangle("line", bannerX, bannerY, bannerW, bannerH, 8, 8)
+  -- Inner highlight
+  love.graphics.setColor(0.85, 0.75, 0.5, 0.4)
+  love.graphics.setLineWidth(1)
+  love.graphics.rectangle("line", bannerX + 2, bannerY + 2, bannerW - 4, bannerH - 4, 6, 6)
+  -- Corner flourishes (small diamonds)
+  local flourishR = 4
+  for _, corner in ipairs({{bannerX+12,bannerY+12},{bannerX+bannerW-12,bannerY+12},{bannerX+12,bannerY+bannerH-12},{bannerX+bannerW-12,bannerY+bannerH-12}}) do
+    local cx, cy = corner[1], corner[2]
+    love.graphics.setColor(0.75, 0.65, 0.4, 0.9)
+    love.graphics.polygon("fill", cx, cy-flourishR, cx+flourishR, cy, cx, cy+flourishR, cx-flourishR, cy)
+  end
+  -- Title text
+  love.graphics.setFont(_G.PixelFonts and _G.PixelFonts.uiLarge or titleFont)
+  love.graphics.setColor(1, 0.92, 0.4, 1)
   local font = love.graphics.getFont()
-  local title = "LEVEL UP! Choose an Upgrade"
+  local title = "LEVEL UP! CHOOSE AN UPGRADE"
   local titleWidth = font:getWidth(title)
-  love.graphics.print(title, screenWidth / 2 - titleWidth / 2, 60)
+  love.graphics.print(title, screenWidth / 2 - titleWidth / 2, bannerY + 14)
   
-  -- Draw upgrade cards
-  local cardWidth = 230
-  local cardHeight = 280
+  -- Draw upgrade cards (larger: 260x320)
+  local cardWidth = 260
+  local cardHeight = 320
   local cardSpacing = 30
   local totalWidth = #self.options * cardWidth + (#self.options - 1) * cardSpacing
   local startX = (screenWidth - totalWidth) / 2
@@ -269,41 +325,44 @@ function UpgradeUI:drawCardFront(upgrade, width, height, isSelected)
   local rarity = upgrade.rarity or "common"
   local color = rarityColors[rarity] or rarityColors.common
   local glow = rarityGlow[rarity] or rarityGlow.common
+  local metallic = metallicColors[rarity] or metallicColors.common
   local t = love.timer.getTime()
+  local upgradeType = getUpgradeType(upgrade)
+  local iconKey = getUpgradeIconKey(upgrade)
 
-  local nameFont = _G.PixelFonts and _G.PixelFonts.uiSmall or love.graphics.getFont()
-  local descFont = _G.PixelFonts and _G.PixelFonts.uiTiny or love.graphics.getFont()
+  local nameFont = _G.PixelFonts and _G.PixelFonts.uiBody or love.graphics.getFont()
+  local descFont = _G.PixelFonts and _G.PixelFonts.uiSmall or love.graphics.getFont()
   local tagFont  = _G.PixelFonts and _G.PixelFonts.uiSmallText or descFont
   
-  -- Selected glow
+  -- Selected glow (metallic rarity-colored)
   if isSelected then
-    love.graphics.setColor(glow[1], glow[2], glow[3], glow[4] + 0.2)
+    love.graphics.setColor(metallic[1], metallic[2], metallic[3], 0.5)
     love.graphics.rectangle("fill", -6, -6, width + 12, height + 12, 10, 10)
   end
   
   -- Card background (subtle inner gradient)
   love.graphics.setColor(0.1, 0.1, 0.14, 0.95)
   love.graphics.rectangle("fill", 0, 0, width, height, 8, 8)
-  -- Lighter top band
-  love.graphics.setColor(0.14, 0.14, 0.2, 0.95)
+  -- Lighter top band (brighter for description area readability)
+  love.graphics.setColor(0.18, 0.18, 0.24, 0.95)
   love.graphics.rectangle("fill", 0, 0, width, height * 0.45, 8, 8)
   love.graphics.rectangle("fill", 0, height * 0.35, width, height * 0.1)
   
-  -- Rarity border
+  -- Metallic rarity border (grey/silver common, green rare, blue epic)
   if isSelected then
     love.graphics.setLineWidth(2.5)
-    love.graphics.setColor(color[1], color[2], color[3], 1)
+    love.graphics.setColor(metallic[1], metallic[2], metallic[3], 1)
   else
     love.graphics.setLineWidth(1.5)
-    love.graphics.setColor(color[1] * 0.6, color[2] * 0.6, color[3] * 0.6, 0.8)
+    love.graphics.setColor(metallic[1] * 0.7, metallic[2] * 0.7, metallic[3] * 0.7, 0.9)
   end
   love.graphics.rectangle("line", 0, 0, width, height, 8, 8)
   love.graphics.setLineWidth(1)
   
-  -- Rarity banner
+  -- Rarity + type banner
   love.graphics.setColor(color[1], color[2], color[3], 0.25)
-  love.graphics.rectangle("fill", 0, 0, width, 22, 8, 8)
-  love.graphics.rectangle("fill", 0, 11, width, 11)
+  love.graphics.rectangle("fill", 0, 0, width, 26, 8, 8)
+  love.graphics.rectangle("fill", 0, 13, width, 13)
   
   -- Rarity text
   love.graphics.setFont(tagFont)
@@ -311,51 +370,34 @@ function UpgradeUI:drawCardFront(upgrade, width, height, isSelected)
   local rarityText = string.upper(rarity)
   local font = love.graphics.getFont()
   local rarityWidth = font:getWidth(rarityText)
-  love.graphics.print(rarityText, width / 2 - rarityWidth / 2, 5)
+  love.graphics.print(rarityText, width / 2 - rarityWidth / 2, 4)
   
-  -- Decorative rarity emblem (diamond shape in the center-top area)
+  -- Type label (Passive / Element / Projectile)
+  love.graphics.setColor(0.5, 0.5, 0.55, 0.9)
+  local typeWidth = font:getWidth(upgradeType)
+  love.graphics.print(upgradeType, width / 2 - typeWidth / 2, 14)
+  
+  -- Icon area (procedural icon by type)
   local emblemCX = width / 2
-  local emblemCY = 56
-  local emblemR = 18
+  local emblemCY = 68
+  local emblemR = 20
   local pulse = 0.5 + 0.3 * math.sin(t * 2.5)
-  -- Emblem glow
   love.graphics.setColor(color[1], color[2], color[3], 0.12 * pulse)
-  love.graphics.circle("fill", emblemCX, emblemCY, emblemR + 8)
-  -- Emblem diamond
-  love.graphics.setColor(color[1] * 0.4, color[2] * 0.4, color[3] * 0.4, 0.6)
-  love.graphics.polygon("fill",
-    emblemCX, emblemCY - emblemR,
-    emblemCX + emblemR * 0.7, emblemCY,
-    emblemCX, emblemCY + emblemR,
-    emblemCX - emblemR * 0.7, emblemCY)
-  -- Emblem inner
-  local ir = emblemR * 0.5
-  love.graphics.setColor(color[1], color[2], color[3], 0.4 * pulse)
-  love.graphics.polygon("fill",
-    emblemCX, emblemCY - ir,
-    emblemCX + ir * 0.7, emblemCY,
-    emblemCX, emblemCY + ir,
-    emblemCX - ir * 0.7, emblemCY)
-  -- Emblem outline
-  love.graphics.setColor(color[1], color[2], color[3], 0.5)
-  love.graphics.setLineWidth(1)
-  love.graphics.polygon("line",
-    emblemCX, emblemCY - emblemR,
-    emblemCX + emblemR * 0.7, emblemCY,
-    emblemCX, emblemCY + emblemR,
-    emblemCX - emblemR * 0.7, emblemCY)
+  love.graphics.circle("fill", emblemCX, emblemCY, emblemR + 6)
+  love.graphics.setColor(metallic[1], metallic[2], metallic[3], 0.7)
+  self:drawUpgradeIcon(iconKey, emblemCX, emblemCY, emblemR)
 
-  -- Upgrade name (below emblem)
+  -- Upgrade name (below icon)
   love.graphics.setFont(nameFont)
   love.graphics.setColor(1, 1, 1, 1)
   font = love.graphics.getFont()
   local name = truncateToWidth(upgrade.name or "Unknown", width - 14, font, "...")
   local nameWidth = font:getWidth(name)
-  love.graphics.print(name, width / 2 - nameWidth / 2, 82)
+  love.graphics.print(name, width / 2 - nameWidth / 2, 98)
   
   -- Separator
   love.graphics.setColor(color[1], color[2], color[3], 0.35)
-  love.graphics.line(12, 100, width - 12, 100)
+  love.graphics.line(12, 118, width - 12, 118)
   
   -- Description
   love.graphics.setFont(descFont)
@@ -365,9 +407,9 @@ function UpgradeUI:drawCardFront(upgrade, width, height, isSelected)
   
   local maxWidth = width - 16
   local lineHeight = font:getHeight() * 2
-  local tagY = height - 24
+  local tagY = height - 28
   local lines = self:wrapText(description, maxWidth)
-  local lineY = 108
+  local lineY = 148
   for _, line in ipairs(lines) do
     if lineY + lineHeight > tagY then break end
     love.graphics.print(line, 8, lineY)
@@ -390,7 +432,7 @@ function UpgradeUI:drawCardFront(upgrade, width, height, isSelected)
   
   -- Decorative bottom accent line
   love.graphics.setColor(color[1], color[2], color[3], 0.2)
-  love.graphics.line(12, height - 26, width - 12, height - 26)
+  love.graphics.line(12, height - 30, width - 12, height - 30)
 
   -- Tags at bottom
   if upgrade.tags and #upgrade.tags > 0 then
@@ -401,8 +443,39 @@ function UpgradeUI:drawCardFront(upgrade, width, height, isSelected)
     tagText = truncateToWidth(tagText, width - 14, font, "...")
     if tagText ~= "" then
       local tagWidth = font:getWidth(tagText)
-      love.graphics.print(tagText, width / 2 - tagWidth / 2, height - 18)
+      love.graphics.print(tagText, width / 2 - tagWidth / 2, height - 22)
     end
+  end
+end
+
+function UpgradeUI:drawUpgradeIcon(iconKey, cx, cy, r)
+  -- Procedural icons: boot, flame, snowflake, bolt, arrow, target, magnet, blood, star
+  if iconKey == "boot" then
+    love.graphics.polygon("fill", cx-r*0.6, cy+r*0.3, cx+r*0.6, cy+r*0.3, cx+r*0.4, cy-r*0.5, cx-r*0.4, cy-r*0.5)
+  elseif iconKey == "flame" then
+    love.graphics.polygon("fill", cx, cy-r, cx+r*0.6, cy+r*0.4, cx+r*0.2, cy+r, cx, cy+r*0.5, cx-r*0.2, cy+r, cx-r*0.6, cy+r*0.4)
+  elseif iconKey == "snowflake" then
+    for i = 0, 5 do
+      local a = i * math.pi / 3
+      love.graphics.line(cx + math.cos(a)*r*0.3, cy + math.sin(a)*r*0.3, cx + math.cos(a)*r, cy + math.sin(a)*r)
+    end
+  elseif iconKey == "bolt" then
+    love.graphics.polygon("fill", cx+r*0.2, cy-r, cx-r*0.4, cy, cx+r*0.1, cy, cx-r*0.2, cy+r, cx+r*0.4, cy, cx-r*0.1, cy)
+  elseif iconKey == "arrow" then
+    love.graphics.polygon("fill", cx-r, cy, cx+r*0.6, cy-r*0.4, cx+r*0.6, cy+r*0.4)
+  elseif iconKey == "target" then
+    love.graphics.circle("line", cx, cy, r*0.8)
+    love.graphics.circle("line", cx, cy, r*0.4)
+    love.graphics.circle("fill", cx, cy, r*0.15)
+  elseif iconKey == "magnet" then
+    love.graphics.rectangle("fill", cx-r*0.5, cy-r*0.6, r, r*0.4, 2, 2)
+    love.graphics.rectangle("fill", cx-r*0.5, cy+r*0.2, r, r*0.4, 2, 2)
+  elseif iconKey == "blood" then
+    love.graphics.circle("fill", cx, cy, r*0.5)
+    love.graphics.polygon("fill", cx-r*0.3, cy+r*0.5, cx+r*0.3, cy+r*0.5, cx, cy+r)
+  else
+    -- star (default): diamond
+    love.graphics.polygon("fill", cx, cy-r, cx+r*0.7, cy, cx, cy+r, cx-r*0.7, cy)
   end
 end
 
@@ -695,8 +768,8 @@ function UpgradeUI:getCardAtPosition(x, y)
   local screenWidth = love.graphics.getWidth()
   local screenHeight = love.graphics.getHeight()
   
-  local cardWidth = 230
-  local cardHeight = 280
+  local cardWidth = 260
+  local cardHeight = 320
   local cardSpacing = 30
   local totalWidth = #self.options * cardWidth + (#self.options - 1) * cardSpacing
   local startX = (screenWidth - totalWidth) / 2

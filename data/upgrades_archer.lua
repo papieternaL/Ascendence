@@ -39,6 +39,7 @@ U.list = {
   },
   {
     id="arch_c_fleetfoot", name="Fleetfoot", rarity="common",
+    type="Passive", icon="boot",
     description="Move 8% faster",
     tags={ "move", "survival" },
     effects={ { kind="stat_mul", stat="move_speed", value=1.08 } }
@@ -106,6 +107,7 @@ U.list = {
   -- Primary element attunements (switchable; picking one resets others) - COMMON (integral to kit)
   {
     id="arch_c_fire_attunement", name="Fire Attunement", rarity="common",
+    type="Element", icon="flame",
     description="Primary shots set enemies on fire, dealing damage over time",
     tags={ "element", "fire", "dot" },
     effects={
@@ -114,14 +116,16 @@ U.list = {
   },
   {
     id="arch_c_ice_attunement", name="Ice Attunement", rarity="common",
-    description="Primary shots freeze enemies (bosses: slow only, no freeze)",
+    type="Element", icon="snowflake",
+    description="Primary shots slow enemies. When slow expires, an ice burst deals damage",
     tags={ "element", "ice", "cc" },
     effects={
-      { kind="proc", trigger="on_primary_hit", chance=1.0, apply={ kind="status_apply", status="freeze", stacks=1, duration=1.5 } }
+      { kind="proc", trigger="on_primary_hit", chance=1.0, apply={ kind="status_apply", status="chill", stacks=1, duration=2.0 } }
     }
   },
   {
     id="arch_c_lightning_attunement", name="Lightning Attunement", rarity="common",
+    type="Element", icon="bolt",
     description="Primary shots chain lightning (2 targets base; +1 per additional pick)",
     tags={ "element", "lightning", "chain" },
     effects={
@@ -135,6 +139,7 @@ U.list = {
   -- =========================
   {
     id="arch_r_ricochet_arrows", name="Ricochet Arrows", rarity="rare",
+    type="Projectile", icon="arrow",
     description="Arrows bounce to 1 additional target after hitting. +1 bounce per pick (stacks)",
     tags={ "projectile", "chaos" },
     effects={ { kind="weapon_mod", mod="ricochet", bounces=1, range=220 } }
@@ -204,15 +209,6 @@ U.list = {
     }
   },
 
-  {
-    id="arch_r_tactical_spacing", name="Tactical Spacing", rarity="rare",
-    description="Deal 25% more damage to distant enemies",
-    tags={ "damage", "positioning" },
-    effects={
-      { kind="proc", trigger="while_target_beyond_range_pct", pct=0.55, apply={ kind="stat_mul", stat="primary_damage", value=1.25 } }
-    }
-  },
-
   -- Element enhancement upgrades (require matching attunement; switching resets)
   {
     id="arch_r_fire_intensity", name="Fire Intensity", rarity="rare",
@@ -244,6 +240,20 @@ U.list = {
     tags={ "element", "ice", "aoe" },
     requires_upgrade = "arch_c_ice_attunement",
     effects={ { kind="element_mod", element="ice", mod="ice_blast_radius_add", value=25 } }
+  },
+  {
+    id="arch_r_ice_blast", name="Ice Blast", rarity="rare",
+    description="When monsters die with chill or freeze, they release an ice blast dealing AOE damage",
+    tags={ "element", "ice", "aoe" },
+    requires_upgrade = "arch_c_ice_attunement",
+    effects={
+      { kind="proc", trigger="on_kill_target_with_status", status="chill", chance=1.0,
+        apply={ kind="ice_blast", radius=70, damage_mul_of_target_maxhp=0.05 }
+      },
+      { kind="proc", trigger="on_kill_target_with_status", status="freeze", chance=1.0,
+        apply={ kind="ice_blast", radius=70, damage_mul_of_target_maxhp=0.05 }
+      }
+    }
   },
   {
     id="arch_r_lightning_reach", name="Lightning Reach", rarity="rare",

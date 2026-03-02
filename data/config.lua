@@ -192,6 +192,15 @@ Config.Retro = {
   pixelScale = 1,
 }
 
+-- Forest Scene (rich environment: tiling bg, asset sheet, particles, camera)
+Config.ForestScene = {
+  grassDirt = "assets/forest/grass_dirt.png",
+  forestSheet = "assets/forest/forest_sheet.png",
+  fungiSheet = "assets/forest/fungi_sheet.png",
+  -- Quad layout in forest sheet: adjust x,y,w,h when sheet is added
+  -- Trees: 64x96 each; bushes: 48x48; rocks: 32x32; roots: 48x48
+}
+
 -- World Size
 Config.World = {
   width = 2400,

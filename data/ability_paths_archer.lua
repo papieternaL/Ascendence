@@ -60,6 +60,21 @@ P.entangle = {
       { kind="ability_mod", ability="entangle", mod="extra_zone_add", value=1 }
     }
   },
+  {
+    id="en_c_double_volley", name="Double Volley", rarity="common",
+    description="Release two volleys at the same time instead of 1",
+    effects={ { kind="ability_mod", ability="entangle", mod="double_volley", value=true } }
+  },
+  {
+    id="en_r_volley_line", name="Volley Line", rarity="rare",
+    description="Arrow Volley becomes 3 smaller circles in a vertical line",
+    effects={ { kind="ability_mod", ability="entangle", mod="volley_line", value=true } }
+  },
+  {
+    id="en_r_explosion_volley", name="Explosion Volley", rarity="rare",
+    description="Arrow Volley arrows deal explosion damage and apply burn on impact",
+    effects={ { kind="ability_mod", ability="entangle", mod="explosion_volley", value=true } }
+  },
 }
 P.arrow_volley = P.entangle
 

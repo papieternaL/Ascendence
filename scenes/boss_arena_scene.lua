@@ -22,6 +22,7 @@ local BarkVolleyAOE = require("entities.bark_volley_aoe")
 local AbilityHUD = require("ui.ability_hud")
 local BuffBar = require("ui.buff_bar")
 local StatsOverlay = require("ui.stats_overlay")
+local ProcEngine = require("systems.proc_engine")
 
 local BossArenaScene = {}
 BossArenaScene.__index = BossArenaScene
@@ -117,9 +118,12 @@ function BossArenaScene:new(player, playerStats, gameState, xpSystem, rarityChar
         barkVolleyAoEs = {},
         barkVolleySpawnTimer = 0,
 
-        -- Mouse aim (for manual Multi Shot)
+        -- Mouse position (fallback for fireMultiShot when no target)
         mouseX = 0,
         mouseY = 0,
+
+        -- Proc engine (for on_kill procs like Ice Blast)
+        procEngine = ProcEngine:new(),
     }
     
     setmetatable(scene, BossArenaScene)
@@ -364,6 +368,11 @@ function BossArenaScene:update(dt)
         return
     end
     
+    -- Run timer for top bar
+    if self.gameState then
+        self.gameState.runTimer = (self.gameState.runTimer or 0) + dt
+    end
+
     -- Update systems
     self.particles:update(dt)
     self.screenShake:update(dt)
@@ -415,6 +424,28 @@ function BossArenaScene:update(dt)
         end
         self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + gain)
     end
+
+    -- Tick status effects on boss and adds (bleed/burn DoT, chill expiry)
+    local function tickStatusOn(entity)
+        if not entity or not entity.isAlive then return end
+        local bleedBase, burnBase = 2, 2
+        if self.playerStats then
+            burnBase = burnBase * (self.playerStats:getElementMod("fire", "burn_damage_mul", 1.0) or 1.0)
+        end
+        local ticks, expiredChillEntity = StatusEffects.update(entity, dt, bleedBase, burnBase)
+        if expiredChillEntity and self.playerStats and self.playerStats.activePrimaryElement == "ice" then
+            local ex, ey = expiredChillEntity:getPosition()
+            self:iceDissolveBlast(ex, ey)
+        end
+        for _, tick in ipairs(ticks) do
+            if tick.entity.isAlive then
+                tick.entity:takeDamage(tick.damage, nil, nil, 0)
+                self:applyFrenzyLifesteal(tick.damage)
+            end
+        end
+    end
+    if self.boss and self.boss.isAlive then tickStatusOn(self.boss) end
+    for _, add in ipairs(self.bossAdds or {}) do tickStatusOn(add) end
     
     -- Update player
     if self.player then
@@ -440,48 +471,74 @@ function BossArenaScene:update(dt)
         
         local playerX, playerY = self.player:getPosition()
 
+        -- Sync mouse position every frame (in case mousemoved was missed, e.g. after transition)
+        local rawMx, rawMy = love.mouse.getPosition()
+        self.mouseX = rawMx
+        self.mouseY = rawMy
+
         -- Drive bow attunement VFX from current element
         self.player.activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
 
-        -- Primary aim: mouse direction (movement and aim decoupled)
-        local mx, my = self.mouseX or playerX, self.mouseY or playerY
-        self.player:aimAt(mx, my)
+        -- Auto-aim at nearest target (boss or adds), matching main game behavior
+        local nearestTarget = self:findNearestBossTargetTo(playerX, playerY, self.attackRange)
+        if nearestTarget then
+            local tx, ty = nearestTarget.getPosition and nearestTarget:getPosition() or nearestTarget.x, nearestTarget.y
+            self.player:aimAt(tx, ty)
 
-        -- Auto-fire primary toward mouse (blocked during typing test - boss is invulnerable)
-        if self.boss and self.boss.isAlive and self.fireCooldown <= 0 and not self.isDashing and not self.typingTestActive then
-            local baseDmg = (self.player.attackDamage or 10) * 1.0
-            local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
-            local ricBounces = (self.playerStats and self.playerStats:getWeaponMod("ricochet_bounces")) or 0
-            local ricRange = (self.playerStats and self.playerStats:getWeaponMod("ricochet_range")) or 220
-            local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
-            local activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
+            -- Auto-fire primary at target (blocked during typing test - boss is invulnerable)
+            if self.fireCooldown <= 0 and not self.isDashing and not self.typingTestActive then
+                local baseDmg = (self.player.attackDamage or 10) * 1.0
+                local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
+                local ricBounces = (self.playerStats and self.playerStats:getWeaponMod("ricochet_bounces")) or 0
+                local ricRange = (self.playerStats and self.playerStats:getWeaponMod("ricochet_range")) or 220
+                local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
+                local activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
 
-            -- Target point: mouse position, or min distance along aim direction if too close
-            local dx = mx - sx
-            local dy = my - sy
-            local dist = math.sqrt(dx * dx + dy * dy)
-            local tx, ty
-            if dist < 50 then
-                tx = sx + math.cos(self.player.bowAngle) * 400
-                ty = sy + math.sin(self.player.bowAngle) * 400
-            else
-                dist = math.min(dist, 600)
-                local inv = 1 / dist
-                tx = sx + dx * inv * dist
-                ty = sy + dy * inv * dist
+                local arrow = Arrow:new(sx, sy, tx, ty, {
+                    damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140,
+                    ricochetBounces = ricBounces, ricochetRange = ricRange,
+                    iceAttuned = activeElement == "ice",
+                    element = activeElement,
+                })
+                table.insert(self.arrows, arrow)
+                if _G.audio then _G.audio:playSFX("shoot_arrow") end
+                if self.player.playAttackAnimation then self.player:playAttackAnimation() end
+
+                -- Bonus projectiles from weapon mods (matches main game)
+                local bonusProj = (self.playerStats and self.playerStats:getWeaponMod("bonus_projectiles")) or 0
+                if bonusProj > 0 then
+                    local spreadDeg = (self.playerStats and self.playerStats.weaponMods and self.playerStats.weaponMods.projectile_spread) or 10
+                    local spreadRad = math.rad(spreadDeg)
+                    local baseAngle = math.atan2(ty - sy, tx - sx)
+                    for p = 1, bonusProj do
+                        local offset = spreadRad * p * (p % 2 == 0 and 1 or -1)
+                        local bx = sx + math.cos(baseAngle + offset) * 10
+                        local by = sy + math.sin(baseAngle + offset) * 10
+                        local btx = sx + math.cos(baseAngle + offset) * 300
+                        local bty = sy + math.sin(baseAngle + offset) * 300
+                        local bonusArrow = Arrow:new(bx, by, btx, bty, {
+                            damage = baseDmg * 0.7, pierce = pierce, kind = "primary", knockback = 100,
+                            ricochetBounces = ricBounces, ricochetRange = ricRange,
+                            iceAttuned = activeElement == "ice",
+                            element = activeElement,
+                        })
+                        table.insert(self.arrows, bonusArrow)
+                        if _G.audio then _G.audio:playSFX("shoot_arrow") end
+                    end
+                end
+
+                self.fireCooldown = self.fireRate
+                if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
             end
+        end
 
-            local arrow = Arrow:new(sx, sy, tx, ty, {
-                damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140,
-                ricochetBounces = ricBounces, ricochetRange = ricRange,
-                iceAttuned = activeElement == "ice",
-                element = activeElement,
-            })
-            table.insert(self.arrows, arrow)
-            if _G.audio then _G.audio:playSFX("shoot_arrow") end
-            self.fireCooldown = self.fireRate
-            if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
-            if self.player.playAttackAnimation then self.player:playAttackAnimation() end
+        -- Multi Shot (Q): auto-cast at nearest target when off cooldown (matches main game)
+        if self.player and self.player:isAbilityReady("multi_shot") and not self.isDashing and not self.typingTestActive then
+            local msTarget = self:findNearestBossTargetTo(playerX, playerY, self.attackRange)
+            if msTarget then
+                local tx, ty = msTarget.getPosition and msTarget:getPosition() or msTarget.x, msTarget.y
+                self:fireMultiShot(tx, ty)
+            end
         end
 
         -- Auto-cast Arrow Volley (targets boss, blocked during typing test)
@@ -501,10 +558,25 @@ function BossArenaScene:update(dt)
                     local baseDmg = self.playerStats and self.playerStats:get("primary_damage") or 25
                     local damageMul = self.playerStats:getAbilityValue("arrow_volley", "damage_mul", 1.0)
                     local damage = baseDmg * 1.5 * damageMul
+                    local doubleVolley = self.playerStats and self.playerStats:getAbilityMod("entangle", "double_volley")
+                    local volleyLine = self.playerStats and self.playerStats:getAbilityMod("entangle", "volley_line")
 
-                    -- Spawn falling-arrow volley (impact-timed damage)
-                    local volley = ArrowVolley:new(bx, by, damage, 80, 0)
-                    table.insert(self.arrowVolleys, { volley = volley, targetBoss = true })
+                    local function spawnVolleyAt(vx, vy, vdmg, vradius)
+                        local v = ArrowVolley:new(vx, vy, vdmg, vradius, 0)
+                        table.insert(self.arrowVolleys, { volley = v, targetBoss = true })
+                    end
+
+                    if volleyLine then
+                        local lineRadius, lineDamage = 40, damage * 0.6
+                        for _, oy in ipairs({ by - 60, by, by + 60 }) do
+                            spawnVolleyAt(bx, oy, lineDamage, lineRadius)
+                        end
+                    elseif doubleVolley then
+                        spawnVolleyAt(bx, by, damage, 80)
+                        spawnVolleyAt(bx + 35, by, damage, 80)
+                    else
+                        spawnVolleyAt(bx, by, damage, 80)
+                    end
 
                     if _G.audio then _G.audio:playSFX("shoot_arrow") end
                     self.screenShake:add(3, 0.15)
@@ -558,6 +630,9 @@ function BossArenaScene:update(dt)
                 local bx, by = self.boss:getPosition()
                 self.boss:takeDamage(dmg)
                 self:applyFrenzyLifesteal(dmg)
+                if self.playerStats and self.playerStats:getAbilityMod("entangle", "explosion_volley") then
+                    StatusEffects.apply(self.boss, "burn", 1, 2.5)
+                end
                 self.particles:createExplosion(bx, by, {1, 0.8, 0.2})
                 if self.damageNumbers then
                     self.damageNumbers:add(bx, by - 30, dmg, { isCrit = false })
@@ -989,6 +1064,10 @@ function BossArenaScene:update(dt)
                                 local died = add:takeDamage(dmg, ax, ay, arrow.knockback)
                                 self:applyFrenzyLifesteal(dmg)
                                 if died then
+                                    local killActions = self.procEngine:onKill(self.playerStats, { isCrit = isCrit, target = add })
+                                    for _, action in ipairs(killActions) do
+                                        self:executeAction(action)
+                                    end
                                     self.particles:createExplosion(adx, ady, {0.6, 0.3, 0.8})
                                     self.screenShake:add(4, 0.12)
                                     self.xpSystem:spawnOrb(adx, ady, 25 + math.random(0, 15))
@@ -1515,6 +1594,58 @@ function BossArenaScene:iceDissolveBlast(x, y)
     end
 end
 
+-- Ice blast on death (AOE when enemy with chill dies)
+function BossArenaScene:iceBlastOnDeath(target, radius, damageMultOfMaxHP)
+    local tx, ty = target:getPosition()
+    local damage = (target.maxHealth or 50) * (damageMultOfMaxHP or 0.05)
+    local radiusAdd = self.playerStats and self.playerStats:getElementMod("ice", "ice_blast_radius_add", 0) or 0
+    radius = (radius or 70) + radiusAdd
+    -- Damage boss and adds in radius
+    for _, add in ipairs(self.bossAdds or {}) do
+        if add.isAlive and add.getPosition and add.getSize then
+            local ax, ay = add:getPosition()
+            local dx = ax - tx
+            local dy = ay - ty
+            if math.sqrt(dx * dx + dy * dy) <= radius then
+                add:takeDamage(damage, tx, ty, 80)
+                self:applyFrenzyLifesteal(damage)
+                if self.damageNumbers then
+                    self.damageNumbers:add(ax, ay - add:getSize(), damage, { isCrit = false })
+                end
+            end
+        end
+    end
+    if self.boss and self.boss.isAlive then
+        local bx, by = self.boss:getPosition()
+        local dx = bx - tx
+        local dy = by - ty
+        if math.sqrt(dx * dx + dy * dy) <= radius then
+            local died = self.boss:takeDamage(damage, tx, ty, 80)
+            self:applyFrenzyLifesteal(damage)
+            if self.damageNumbers then
+                self.damageNumbers:add(bx, by - self.boss:getSize(), damage, { isCrit = false })
+            end
+        end
+    end
+    self.particles:createIceBlast(tx, ty, radius)
+    self.screenShake:add(5, 0.12)
+    JuiceManager.freezeTime(0.04)
+    if _G.triggerScreenFlash then
+        _G.triggerScreenFlash({0.6, 0.9, 1.0, 0.25}, 0.08)
+    end
+end
+
+-- Execute proc action (ice_blast, aoe_explosion)
+function BossArenaScene:executeAction(action)
+    local apply = action.apply
+    if not apply then return end
+    if apply.kind == "ice_blast" and action.target then
+        self:iceBlastOnDeath(action.target, apply.radius or 70, apply.damage_mul_of_target_maxhp or 0.05)
+    elseif apply.kind == "aoe_explosion" and action.target then
+        -- Hemorrhage: would need hemorrhageExplosion helper; skip for boss arena (no bleed on adds typically)
+    end
+end
+
 -- Find nearest boss or add to a point (for ricochet retarget)
 function BossArenaScene:findNearestBossTargetTo(x, y, maxRange, excludeSet)
     local best, bestDist = nil, maxRange
@@ -1597,12 +1728,6 @@ function BossArenaScene:keypressed(key)
         return true  -- Consume input
     end
     
-    -- Manual Multi Shot (Q) - blocked during typing test and when rooted
-    if key == "q" and self.player and not self.typingTestActive and not (self.player.isRooted) and not (self.statsOverlay and self.statsOverlay:isVisible()) then
-        self:fireMultiShot()
-        return true
-    end
-
     -- Manual abilities (blocked during typing test)
     if key == "r" and self.player and self.player:isAbilityReady("frenzy") and self.frenzyCharge >= self.frenzyChargeMax and not self.typingTestActive then
         self.player:useAbility("frenzy", self.playerStats)
@@ -1642,9 +1767,10 @@ function BossArenaScene:keypressed(key)
 end
 
 ---------------------------------------------------------------------------
--- HELPER: fire Multi Shot (3-arrow cone toward mouse)
+-- HELPER: fire Multi Shot (3-arrow cone toward target)
+-- targetX/targetY: auto-aim target coords (falls back to mouse if nil)
 ---------------------------------------------------------------------------
-function BossArenaScene:fireMultiShot()
+function BossArenaScene:fireMultiShot(targetX, targetY)
     if not self.player or not self.player:isAbilityReady("multi_shot") or self.isDashing then return end
     local cfg = Config.Abilities and Config.Abilities.multiShot or {}
     local arrowCount = cfg.arrowCount or 3
@@ -1657,7 +1783,7 @@ function BossArenaScene:fireMultiShot()
     local knockback = cfg.knockback or 100
 
     local px, py = self.player:getPosition()
-    local mx, my = self.mouseX or px, self.mouseY or py
+    local mx, my = targetX or self.mouseX or px, targetY or self.mouseY or py
     local dx = mx - px
     local dy = my - py
     local dist = math.sqrt(dx * dx + dy * dy)
