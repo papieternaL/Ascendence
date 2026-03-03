@@ -381,6 +381,18 @@ function Particles:draw()
     for _, p in ipairs(self.particles) do
         local t = p.age / p.lifetime
         local alpha = (p.baseAlpha or 1) * (1 - t)
+        local glowAlpha = alpha * 0.14
+        local glowSize = math.max(2, (p.size or 2) * 2)
+        love.graphics.setBlendMode("add", "alphamultiply")
+        love.graphics.setColor(p.color[1], p.color[2], p.color[3], glowAlpha)
+        love.graphics.rectangle(
+            "fill",
+            math.floor(p.x - glowSize / 2),
+            math.floor(p.y - glowSize / 2),
+            glowSize,
+            glowSize
+        )
+        love.graphics.setBlendMode("alpha")
         love.graphics.setColor(p.color[1], p.color[2], p.color[3], alpha)
         if p.image then
             -- Sprite-based particle (explosion)

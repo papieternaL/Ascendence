@@ -89,6 +89,7 @@ end
 
 function Arrow:draw()
     local alpha = 1 - (self.age / self.lifetime) * 0.3
+    local t = love.timer.getTime()
 
     -- Tint/scale by arrow kind
     local r, g, b = 1, 1, 1
@@ -109,6 +110,19 @@ function Arrow:draw()
         r, g, b = 0.4, 0.85, 1.0
         alpha = alpha * 0.7
     end
+
+    -- Add a soft forward trail so projectiles read clearly in motion.
+    local trailLen = (self.kind == "multi_shot") and 18 or 14
+    local tx = self.x - math.cos(self.angle) * trailLen
+    local ty = self.y - math.sin(self.angle) * trailLen
+    love.graphics.setBlendMode("add", "alphamultiply")
+    love.graphics.setColor(r, g, b, alpha * 0.18)
+    love.graphics.setLineWidth((self.kind == "multi_shot") and 4 or 3)
+    love.graphics.line(self.x, self.y, tx, ty)
+    love.graphics.setLineWidth(1)
+    love.graphics.setColor(r, g, b, alpha * 0.10)
+    love.graphics.circle("fill", self.x, self.y, (self.kind == "multi_shot") and 10 or 8)
+    love.graphics.setBlendMode("alpha")
 
     love.graphics.setColor(r, g, b, alpha)
 
@@ -146,10 +160,10 @@ function Arrow:draw()
     end
 
     -- Elemental aura VFX (Fire/Ice/Lightning attunements)
-    local t = love.timer.getTime()
     if self.element == "lightning" then
         local pulse = 0.5 + 0.35 * math.sin(t * 18 + self.x * 0.1)
         -- Outer electric glow
+        love.graphics.setBlendMode("add", "alphamultiply")
         love.graphics.setColor(0.4, 0.7, 1.0, pulse * alpha * 0.6)
         love.graphics.circle("fill", self.x, self.y, 14)
         -- Inner bright core
@@ -164,10 +178,12 @@ function Arrow:draw()
             love.graphics.setColor(0.8, 0.95, 1.0, alpha * 0.9)
             love.graphics.circle("fill", sx, sy, 2)
         end
+        love.graphics.setBlendMode("alpha")
 
     elseif self.element == "fire" then
         local flicker = 0.5 + 0.35 * math.sin(t * 14 + self.y * 0.15)
         -- Outer fire glow
+        love.graphics.setBlendMode("add", "alphamultiply")
         love.graphics.setColor(1.0, 0.4, 0.1, flicker * alpha * 0.55)
         love.graphics.circle("fill", self.x, self.y, 14)
         -- Inner bright ember
@@ -178,10 +194,12 @@ function Arrow:draw()
         local trailY = self.y - math.sin(self.angle) * 10
         love.graphics.setColor(1.0, 0.5, 0.1, alpha * 0.5 * flicker)
         love.graphics.circle("fill", trailX, trailY, 4)
+        love.graphics.setBlendMode("alpha")
 
     elseif self.element == "ice" then
         local shimmer = 0.5 + 0.3 * math.sin(t * 10 + self.x * 0.12)
         -- Outer frost glow
+        love.graphics.setBlendMode("add", "alphamultiply")
         love.graphics.setColor(0.5, 0.85, 1.0, shimmer * alpha * 0.55)
         love.graphics.circle("fill", self.x, self.y, 14)
         -- Inner cold core
@@ -196,6 +214,7 @@ function Arrow:draw()
             love.graphics.setColor(0.85, 0.95, 1.0, alpha * 0.7 * shimmer)
             love.graphics.rectangle("fill", cx - 1.5, cy - 1.5, 3, 3)
         end
+        love.graphics.setBlendMode("alpha")
     end
 
     love.graphics.setColor(1, 1, 1, 1)

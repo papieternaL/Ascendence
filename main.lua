@@ -332,7 +332,12 @@ function drawTopBar()
     local barY = TOP_BAR_PAD
     local barH = TOP_BAR_H
 
-    -- No dark bar background (removed per plan)
+    -- Floating glass strip for stronger HUD separation.
+    love.graphics.setColor(0.02, 0.03, 0.05, 0.18)
+    love.graphics.rectangle("fill", 10, barY - 2, w - 20, barH + 4, 10, 10)
+    love.graphics.setColor(0.32, 0.36, 0.42, 0.18)
+    love.graphics.rectangle("line", 10, barY - 2, w - 20, barH + 4, 10, 10)
+    love.graphics.setColor(1, 1, 1, 1)
 
     -- Left: level with gem icon
     love.graphics.setFont(hudFonts.small)
@@ -364,9 +369,11 @@ function drawTopBar()
     -- Right: QUIT with skull
     local btnX = w - QUIT_BTN_W - TOP_BAR_PAD
     local btnY = barY + (barH - QUIT_BTN_H) / 2
-    love.graphics.setColor(0.2, 0.15, 0.18, 0.95)
+    love.graphics.setColor(0.08, 0.08, 0.11, 0.95)
     love.graphics.rectangle("fill", btnX, btnY, QUIT_BTN_W, QUIT_BTN_H, 6, 6)
-    love.graphics.setColor(0.5, 0.45, 0.5, 0.8)
+    love.graphics.setColor(0.20, 0.18, 0.22, 0.7)
+    love.graphics.rectangle("fill", btnX + 2, btnY + 2, QUIT_BTN_W - 4, 8, 5, 5)
+    love.graphics.setColor(0.58, 0.50, 0.58, 0.8)
     love.graphics.rectangle("line", btnX, btnY, QUIT_BTN_W, QUIT_BTN_H, 6, 6)
     love.graphics.setColor(0.9, 0.85, 0.8, 0.95)
     love.graphics.setFont(hudFonts.small)
@@ -438,17 +445,23 @@ function drawBottomHUD(player)
     local panelX = (w - panelW) / 2
     local panelY = h - panelH - 8
 
-    -- Minimal panel background (no black bar; subtle alpha per plan)
-    love.graphics.setColor(0.04, 0.04, 0.08, 0.18)
+    -- Richer layered panel for a more premium HUD feel.
+    love.graphics.setColor(0.01, 0.01, 0.03, 0.18)
+    love.graphics.rectangle("fill", panelX + 8, panelY + 8, panelW, panelH, 10, 10)
+    love.graphics.setColor(0.04, 0.05, 0.08, 0.34)
     love.graphics.rectangle("fill", panelX, panelY, panelW, panelH, 10, 10)
+    love.graphics.setColor(0.10, 0.11, 0.15, 0.18)
+    love.graphics.rectangle("fill", panelX + 2, panelY + 2, panelW - 4, 18, 8, 8)
     -- Panel top accent line (warm gold, Hades-style)
-    love.graphics.setColor(0.75, 0.55, 0.25, 0.4)
+    love.graphics.setColor(0.90, 0.68, 0.28, 0.34)
     love.graphics.setLineWidth(1)
     love.graphics.line(panelX + 20, panelY, panelX + panelW - 20, panelY)
     -- Panel border (subtle)
-    love.graphics.setColor(0.35, 0.28, 0.18, 0.35)
+    love.graphics.setColor(0.42, 0.34, 0.22, 0.42)
     love.graphics.setLineWidth(1.5)
     love.graphics.rectangle("line", panelX, panelY, panelW, panelH, 10, 10)
+    love.graphics.setColor(0.72, 0.58, 0.34, 0.10)
+    love.graphics.rectangle("line", panelX + 2, panelY + 2, panelW - 4, panelH - 4, 8, 8)
     love.graphics.setLineWidth(1)
 
     -- Health bar with red crystal on left (Hades-style)
@@ -478,6 +491,10 @@ function drawBottomHUD(player)
     -- Bar fill (deep red → bright red gradient feel)
     local fillW = (healthBarWidth - 2) * healthPercent
     if fillW > 0 then
+        love.graphics.setBlendMode("add", "alphamultiply")
+        love.graphics.setColor(0.85, 0.18, 0.16, 0.14)
+        love.graphics.rectangle("fill", healthBarX - 1, healthBarY - 1, fillW + 2, healthBarHeight + 2, 3, 3)
+        love.graphics.setBlendMode("alpha")
         love.graphics.setColor(0.7, 0.12, 0.12, 1)
         love.graphics.rectangle("fill", healthBarX + 1, healthBarY + 1, fillW, healthBarHeight - 2, 2, 2)
         -- Brighter top-half highlight
@@ -574,9 +591,13 @@ function drawAbilityTooltip(ability, anchorX, anchorY)
     tipX = math.max(4, math.min(love.graphics.getWidth() - tipW - 4, tipX))
 
     -- Background
+    love.graphics.setColor(0.01, 0.01, 0.03, 0.18)
+    love.graphics.rectangle("fill", tipX + 6, tipY + 6, tipW, tipH, 6, 6)
     love.graphics.setColor(0.06, 0.06, 0.1, 0.94)
     love.graphics.rectangle("fill", tipX, tipY, tipW, tipH, 6, 6)
-    love.graphics.setColor(0.45, 0.4, 0.3, 0.6)
+    love.graphics.setColor(0.18, 0.18, 0.24, 0.28)
+    love.graphics.rectangle("fill", tipX + 2, tipY + 2, tipW - 4, 12, 5, 5)
+    love.graphics.setColor(0.55, 0.48, 0.36, 0.6)
     love.graphics.setLineWidth(1)
     love.graphics.rectangle("line", tipX, tipY, tipW, tipH, 6, 6)
 
@@ -640,17 +661,21 @@ function drawAbilityDiamond(ability, key, cx, cy, r)
     -- Outer glow when ready (pulsing)
     if isReady then
         local pulse = 0.25 + 0.15 * math.sin(t * 3)
+        love.graphics.setBlendMode("add", "alphamultiply")
         love.graphics.setColor(accent[1], accent[2], accent[3], pulse)
         drawDiamond("fill", cx, cy, r + 6, r + 6)
+        love.graphics.setBlendMode("alpha")
     end
 
     -- Diamond background
     if isReady then
-        love.graphics.setColor(0.1, 0.12, 0.18, 0.95)
+        love.graphics.setColor(0.11, 0.13, 0.20, 0.96)
     else
-        love.graphics.setColor(0.06, 0.06, 0.09, 0.95)
+        love.graphics.setColor(0.05, 0.05, 0.08, 0.96)
     end
     drawDiamond("fill", cx, cy, r, r)
+    love.graphics.setColor(1, 1, 1, 0.04)
+    drawDiamond("fill", cx, cy - 3, r - 4, r - 10)
 
     -- Cooldown fill (dark overlay sweeping from bottom)
     if not isPlaceholder and not isReady then
@@ -685,6 +710,10 @@ function drawAbilityDiamond(ability, key, cx, cy, r)
 
     -- Cooldown / charge text inside diamond
     if hasCharge then
+        love.graphics.setBlendMode("add", "alphamultiply")
+        love.graphics.setColor(1, 0.9, 0.5, 0.18)
+        love.graphics.circle("fill", cx, cy, r - 4)
+        love.graphics.setBlendMode("alpha")
         love.graphics.setColor(1, 0.9, 0.5, 1)
         love.graphics.setFont(hudFonts.tiny)
         local c = ability.charge or 0
