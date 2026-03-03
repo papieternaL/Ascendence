@@ -157,18 +157,20 @@ function Menu:update(dt)
             self.selectedIndex = 2
         elseif self:isPointInRect(mx, my, barX, y0 + gap * 2, barW, 16) then
             self.selectedIndex = 3
-        elseif self:isPointInRect(mx, my, barX, gfxY, barW, rowH) then
+        elseif self:isPointInRect(mx, my, barX, gfxY, barW, 16) then
             self.selectedIndex = 4
         elseif self:isPointInRect(mx, my, barX, gfxY + gap, barW, rowH) then
             self.selectedIndex = 5
-        elseif self:isPointInRect(mx, my, barX, kbY, barW, rowH) then
+        elseif self:isPointInRect(mx, my, barX, gfxY + gap * 2, barW, rowH) then
             self.selectedIndex = 6
-        elseif self:isPointInRect(mx, my, barX, kbY + gap, barW, rowH) then
+        elseif self:isPointInRect(mx, my, barX, kbY, barW, rowH) then
             self.selectedIndex = 7
-        elseif self:isPointInRect(mx, my, barX, kbY + gap * 2, barW, rowH) then
+        elseif self:isPointInRect(mx, my, barX, kbY + gap, barW, rowH) then
             self.selectedIndex = 8
-        elseif self:isPointInRect(mx, my, barX, kbY + gap * 3, barW, rowH) then
+        elseif self:isPointInRect(mx, my, barX, kbY + gap * 2, barW, rowH) then
             self.selectedIndex = 9
+        elseif self:isPointInRect(mx, my, barX, kbY + gap * 3, barW, rowH) then
+            self.selectedIndex = 10
         elseif self:isPointInButton(mx, my, L.backCx, L.backCy, 160, 36) then
             self.selectedIndex = SETTINGS_ITEM_COUNT
         end
@@ -345,14 +347,15 @@ end
 -- 1: Music Volume (slider)
 -- 2: Sound Volume (slider)
 -- 3: Screen Shake (slider)
--- 4: Fullscreen (toggle)
--- 5: VSync (toggle)
--- 6: Dash keybind
--- 7: Multi Shot keybind
--- 8: Arrow Volley keybind
--- 9: Frenzy keybind
--- 10: BACK button
-local SETTINGS_ITEM_COUNT = 10
+-- 4: Brightness (slider)
+-- 5: Fullscreen (toggle)
+-- 6: VSync (toggle)
+-- 7: Dash keybind
+-- 8: Multi Shot keybind
+-- 9: Arrow Volley keybind
+-- 10: Frenzy keybind
+-- 11: BACK button
+local SETTINGS_ITEM_COUNT = 11
 
 function Menu:getSettingsFrameRect(w, h)
     local frameW = math.min(640, w - 160)
@@ -369,7 +372,7 @@ function Menu:getSettingsLayout(w, h)
     local y0 = frameY + 86
     local gap = 42
     local gfxY = y0 + gap * 3 + 30
-    local kbY = gfxY + gap * 2 + 30
+    local kbY = gfxY + gap * 3 + 30
     local backCx = frameX + frameW * 0.5
     local backCy = frameY + frameH - 34
     return {
@@ -417,6 +420,7 @@ function Menu:drawSettings()
     local music = s and s.audio and s.audio.musicVolume or 0.35
     local sfx = s and s.audio and s.audio.sfxVolume or 0.5
     local shake = s and s.graphics and s.graphics.screenShake or 1.0
+    local brightness = s and s.graphics and s.graphics.brightness or 0.58
     local fullscreen = s and s.graphics and s.graphics.fullscreen or false
     local vsync = s and s.graphics and s.graphics.vsync or false
 
@@ -434,8 +438,9 @@ function Menu:drawSettings()
     love.graphics.setFont(self.smallFont)
     love.graphics.setColor(Palette.section)
     love.graphics.print("GRAPHICS", barX - 160, gfxY - 20)
-    self:drawToggle("Fullscreen", fullscreen, barX, gfxY, barW, self.selectedIndex == 4)
-    self:drawToggle("VSync", vsync, barX, gfxY + gap, barW, self.selectedIndex == 5)
+    self:drawSlider("Brightness", brightness, barX, gfxY, barW, self.selectedIndex == 4)
+    self:drawToggle("Fullscreen", fullscreen, barX, gfxY + gap, barW, self.selectedIndex == 5)
+    self:drawToggle("VSync", vsync, barX, gfxY + gap * 2, barW, self.selectedIndex == 6)
 
     -- Section: Keybinds
     love.graphics.setFont(self.smallFont)
@@ -446,8 +451,8 @@ function Menu:drawSettings()
     local keybindLabels = {"Dash", "Multi Shot", "Arrow Volley", "Frenzy"}
     for i, action in ipairs(keybindActions) do
         local key = mgr and mgr:getKeybind(action) or action
-        local isSelected = self.selectedIndex == 5 + i
-        local isBinding = self.rebindingIndex == 5 + i
+        local isSelected = self.selectedIndex == 6 + i
+        local isBinding = self.rebindingIndex == 6 + i
         self:drawKeybindRow(keybindLabels[i], key, barX, kbY + (i - 1) * gap, barW, isSelected, isBinding)
     end
 
@@ -982,7 +987,7 @@ function Menu:keypressed(key)
         if self.rebindingIndex then
             if key ~= "escape" then
                 local keybindActions = {"dash", "multi_shot", "arrow_volley", "frenzy"}
-                local actionIdx = self.rebindingIndex - 5
+                local actionIdx = self.rebindingIndex - 6
                 if actionIdx >= 1 and actionIdx <= #keybindActions and mgr then
                     mgr:setKeybind(keybindActions[actionIdx], key)
                 end
@@ -1007,14 +1012,18 @@ function Menu:keypressed(key)
                     mgr:setSFXVolume((s.audio.sfxVolume or 0.5) + step * dir)
                 elseif self.selectedIndex == 3 then
                     mgr:setScreenShake((s.graphics.screenShake or 1.0) + step * dir)
+                elseif self.selectedIndex == 4 then
+                    mgr:setBrightness((s.graphics.brightness or 0.58) + step * dir)
                 end
             end
         elseif key == "return" or key == "space" then
             if self.selectedIndex == 4 and mgr then
-                mgr:toggleFullscreen()
+                -- Brightness is adjusted by left/right only.
             elseif self.selectedIndex == 5 and mgr then
+                mgr:toggleFullscreen()
+            elseif self.selectedIndex == 6 and mgr then
                 mgr:toggleVsync()
-            elseif self.selectedIndex >= 6 and self.selectedIndex <= 9 then
+            elseif self.selectedIndex >= 7 and self.selectedIndex <= 10 then
                 self.rebindingIndex = self.selectedIndex
             elseif self.selectedIndex == SETTINGS_ITEM_COUNT then
                 self.rebindingIndex = nil
@@ -1116,32 +1125,42 @@ function Menu:mousepressed(x, y, button)
         local barX, barW, y0, gap, gfxY, kbY = L.barX, L.barW, L.y0, L.gap, L.gfxY, L.kbY
         local rowH = 24
 
-        -- Sliders 1-3: click to set value
+        -- Sliders 1-4: click to set value
         if mgr then
-            for i = 1, 3 do
-                local sy = (i == 1) and y0 or (i == 2) and (y0 + gap) or (y0 + gap * 2)
+            for i = 1, 4 do
+                local sy
+                if i == 1 then
+                    sy = y0
+                elseif i == 2 then
+                    sy = y0 + gap
+                elseif i == 3 then
+                    sy = y0 + gap * 2
+                else
+                    sy = gfxY
+                end
                 if self:isPointInRect(x, y, barX, sy, barW, 16) then
                     local t = math.max(0, math.min(1, (x - barX) / barW))
                     if i == 1 then mgr:setMusicVolume(t)
                     elseif i == 2 then mgr:setSFXVolume(t)
-                    else mgr:setScreenShake(t) end
+                    elseif i == 3 then mgr:setScreenShake(t)
+                    else mgr:setBrightness(t) end
                     return
                 end
             end
-            -- Toggles 4-5
-            if self:isPointInRect(x, y, barX, gfxY, barW, rowH) then
+            -- Toggles 5-6
+            if self:isPointInRect(x, y, barX, gfxY + gap, barW, rowH) then
                 mgr:toggleFullscreen()
                 return
             end
-            if self:isPointInRect(x, y, barX, gfxY + gap, barW, rowH) then
+            if self:isPointInRect(x, y, barX, gfxY + gap * 2, barW, rowH) then
                 mgr:toggleVsync()
                 return
             end
         end
-        -- Keybinds 6-9
+        -- Keybinds 7-10
         for i = 1, 4 do
             if self:isPointInRect(x, y, barX, kbY + (i - 1) * gap, barW, rowH) then
-                self.rebindingIndex = 5 + i
+                self.rebindingIndex = 6 + i
                 return
             end
         end
@@ -1228,18 +1247,20 @@ function Menu:mousemoved(x, y)
             self.selectedIndex = 2
         elseif self:isPointInRect(x, y, barX, y0 + gap * 2, barW, 16) then
             self.selectedIndex = 3
-        elseif self:isPointInRect(x, y, barX, gfxY, barW, rowH) then
+        elseif self:isPointInRect(x, y, barX, gfxY, barW, 16) then
             self.selectedIndex = 4
         elseif self:isPointInRect(x, y, barX, gfxY + gap, barW, rowH) then
             self.selectedIndex = 5
-        elseif self:isPointInRect(x, y, barX, kbY, barW, rowH) then
+        elseif self:isPointInRect(x, y, barX, gfxY + gap * 2, barW, rowH) then
             self.selectedIndex = 6
-        elseif self:isPointInRect(x, y, barX, kbY + gap, barW, rowH) then
+        elseif self:isPointInRect(x, y, barX, kbY, barW, rowH) then
             self.selectedIndex = 7
-        elseif self:isPointInRect(x, y, barX, kbY + gap * 2, barW, rowH) then
+        elseif self:isPointInRect(x, y, barX, kbY + gap, barW, rowH) then
             self.selectedIndex = 8
-        elseif self:isPointInRect(x, y, barX, kbY + gap * 3, barW, rowH) then
+        elseif self:isPointInRect(x, y, barX, kbY + gap * 2, barW, rowH) then
             self.selectedIndex = 9
+        elseif self:isPointInRect(x, y, barX, kbY + gap * 3, barW, rowH) then
+            self.selectedIndex = 10
         elseif self:isPointInButton(x, y, L.backCx, L.backCy, 160, 36) then
             self.selectedIndex = SETTINGS_ITEM_COUNT
         end

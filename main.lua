@@ -35,6 +35,27 @@ local prevState = nil
 -- Pre-loaded fonts for HUD (avoid creating every frame)
 local hudFonts = {}
 
+local function getBrightnessSetting()
+    local graphics = _G.GameSettings and _G.GameSettings.graphics or nil
+    return graphics and graphics.brightness or 0.58
+end
+
+local function drawBrightnessOverlay(w, h)
+    local brightness = getBrightnessSetting()
+    local delta = brightness - 0.5
+    if math.abs(delta) < 0.01 then
+        return
+    end
+
+    if delta > 0 then
+        love.graphics.setColor(1.0, 0.99, 0.96, math.min(0.24, delta * 0.45))
+    else
+        love.graphics.setColor(0, 0, 0, math.min(0.35, (-delta) * 0.60))
+    end
+    love.graphics.rectangle("fill", 0, 0, w, h)
+    love.graphics.setColor(1, 1, 1, 1)
+end
+
 function love.load()
     -- Set up window
     love.window.setTitle("ASCENDENCE")
@@ -206,6 +227,7 @@ function love.draw()
     if state == States.MENU or state == States.SETTINGS or state == States.CHARACTER_SELECT or 
        state == States.BIOME_SELECT or state == States.GAME_OVER or state == States.VICTORY then
         menu:draw()
+        drawBrightnessOverlay(winW, winH)
         
         -- Draw transition overlay
         if gameState.transitionAlpha > 0 then
@@ -237,6 +259,8 @@ function love.draw()
             tutorialScene:draw()
         end
     end
+
+    drawBrightnessOverlay(winW, winH)
 
     -- Draw transition overlay for gameplay states
     if gameState.transitionAlpha > 0 then

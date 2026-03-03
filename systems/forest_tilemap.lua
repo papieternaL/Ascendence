@@ -268,21 +268,21 @@ function ForestTilemap:draw()
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.draw(img, quad, -tile, -tile)
 
-        -- Color-grade overlay to push deep forest tones closer to reference.
-        love.graphics.setColor(0.10, 0.28, 0.20, 0.22)
+        -- Slightly brighter grade to improve readability.
+        love.graphics.setColor(0.16, 0.34, 0.24, 0.20)
         love.graphics.rectangle("fill", 0, 0, worldW, worldH)
     else
         for y = 0, tilesY do
             for x = 0, tilesX do
                 local n = seeded01(x, y)
                 if n < 0.50 then
-                    love.graphics.setColor(0.14, 0.31, 0.19, 1)
+                    love.graphics.setColor(0.17, 0.36, 0.22, 1)
                 elseif n < 0.75 then
-                    love.graphics.setColor(0.16, 0.35, 0.22, 1)
+                    love.graphics.setColor(0.19, 0.39, 0.25, 1)
                 elseif n < 0.92 then
-                    love.graphics.setColor(0.18, 0.38, 0.24, 1)
+                    love.graphics.setColor(0.21, 0.42, 0.27, 1)
                 else
-                    love.graphics.setColor(0.12, 0.27, 0.18, 1)
+                    love.graphics.setColor(0.15, 0.31, 0.20, 1)
                 end
                 love.graphics.rectangle("fill", x * tile, y * tile, tile, tile)
             end
@@ -344,16 +344,48 @@ local function drawProceduralLargeBlocker(blk)
 
     love.graphics.setColor(0.05, 0.06, 0.06, 0.4)
     love.graphics.ellipse("fill", x, y + 4, r * 1.05, 6)
-    love.graphics.setColor(0.42, 0.44, 0.46, 1)
-    love.graphics.circle("fill", x, y, r)
-    love.graphics.setColor(0.32, 0.34, 0.36, 1)
-    love.graphics.circle("line", x, y, r)
     if isMountain then
-        love.graphics.setColor(0.65, 0.66, 0.68, 0.9)
-        love.graphics.circle("fill", x - r * 0.25, y - r * 0.35, r * 0.35)
+        love.graphics.setColor(0.31, 0.34, 0.36, 0.96)
+        love.graphics.polygon("fill",
+            x - r * 0.95, y + r * 0.35,
+            x - r * 0.42, y - r * 0.68,
+            x + r * 0.06, y - r * 0.92,
+            x + r * 0.72, y - r * 0.34,
+            x + r * 0.96, y + r * 0.28
+        )
+        love.graphics.setColor(0.45, 0.48, 0.51, 0.88)
+        love.graphics.polygon("fill",
+            x - r * 0.18, y - r * 0.46,
+            x + r * 0.10, y - r * 0.78,
+            x + r * 0.42, y - r * 0.28,
+            x + r * 0.10, y - r * 0.12
+        )
     else
-        love.graphics.setColor(0.52, 0.54, 0.56, 0.8)
-        love.graphics.circle("fill", x - r * 0.2, y - r * 0.25, r * 0.3)
+        love.graphics.setColor(0.38, 0.41, 0.43, 0.96)
+        love.graphics.polygon("fill",
+            x - r * 0.92, y - r * 0.10,
+            x - r * 0.54, y - r * 0.76,
+            x + r * 0.22, y - r * 0.68,
+            x + r * 0.88, y - r * 0.12,
+            x + r * 0.66, y + r * 0.56,
+            x - r * 0.26, y + r * 0.78
+        )
+        love.graphics.setColor(0.54, 0.57, 0.59, 0.76)
+        love.graphics.polygon("fill",
+            x - r * 0.16, y - r * 0.34,
+            x + r * 0.18, y - r * 0.54,
+            x + r * 0.46, y - r * 0.10,
+            x + r * 0.06, y + r * 0.06
+        )
+    end
+    if isMountain then
+        love.graphics.setColor(0.22, 0.25, 0.27, 0.8)
+        love.graphics.line(x - r * 0.48, y + r * 0.18, x - r * 0.06, y - r * 0.50)
+        love.graphics.line(x - r * 0.06, y - r * 0.50, x + r * 0.40, y - r * 0.02)
+    else
+        love.graphics.setColor(0.24, 0.27, 0.29, 0.82)
+        love.graphics.line(x - r * 0.40, y + r * 0.28, x + r * 0.16, y - r * 0.24)
+        love.graphics.line(x - r * 0.02, y + r * 0.50, x + r * 0.44, y + r * 0.04)
     end
 end
 
@@ -477,13 +509,13 @@ end
 function ForestTilemap:drawScreenOverlay()
     local w, h = love.graphics.getDimensions()
 
-    -- Soft vignette to match the reference's focused center lighting.
-    local cx, cy = w * 0.5, h * 0.52
-    for i = 9, 1, -1 do
-        local radius = (w * 0.68) * (i / 9)
-        love.graphics.setColor(0.02, 0.04, 0.05, 0.018 * i)
-        love.graphics.circle("fill", cx, cy, radius)
-    end
+    -- Soft edge shading without visible concentric rings.
+    love.graphics.setColor(0.03, 0.05, 0.06, 0.08)
+    love.graphics.rectangle("fill", 0, 0, w, 28)
+    love.graphics.rectangle("fill", 0, h - 32, w, 32)
+    love.graphics.setColor(0.03, 0.05, 0.06, 0.05)
+    love.graphics.rectangle("fill", 0, 0, 18, h)
+    love.graphics.rectangle("fill", w - 18, 0, 18, h)
 
     -- Glowing specks
     local t = love.timer.getTime()

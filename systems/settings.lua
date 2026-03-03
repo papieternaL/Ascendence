@@ -13,6 +13,7 @@ local DEFAULTS = {
     },
     graphics = {
         screenShake = 1.0,
+        brightness = 0.58,
         fullscreen = false,
         vsync = true,
     },
@@ -113,6 +114,7 @@ function Settings:load()
         self.values.audio.musicVolume = clamp(tonumber(loaded.audio and loaded.audio.musicVolume) or self.values.audio.musicVolume, 0, 1)
         self.values.audio.sfxVolume = clamp(tonumber(loaded.audio and loaded.audio.sfxVolume) or self.values.audio.sfxVolume, 0, 1)
         self.values.graphics.screenShake = clamp(tonumber(loaded.graphics and loaded.graphics.screenShake) or self.values.graphics.screenShake, 0, 1)
+        self.values.graphics.brightness = clamp(tonumber(loaded.graphics and loaded.graphics.brightness) or self.values.graphics.brightness, 0, 1)
         if loaded.graphics then
             if loaded.graphics.fullscreen ~= nil then self.values.graphics.fullscreen = loaded.graphics.fullscreen end
             if loaded.graphics.vsync ~= nil then self.values.graphics.vsync = loaded.graphics.vsync end
@@ -146,6 +148,12 @@ end
 
 function Settings:setScreenShake(v)
     self.values.graphics.screenShake = clamp(v, 0, 1)
+    self:apply()
+    self:save()
+end
+
+function Settings:setBrightness(v)
+    self.values.graphics.brightness = clamp(v, 0, 1)
     self:apply()
     self:save()
 end
