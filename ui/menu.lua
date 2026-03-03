@@ -169,7 +169,7 @@ function Menu:update(dt)
             self.selectedIndex = 8
         elseif self:isPointInRect(mx, my, barX, kbY + gap * 3, barW, rowH) then
             self.selectedIndex = 9
-        elseif self:isPointInButton(mx, my, w/2, h * 0.92, 160, 36) then
+        elseif self:isPointInButton(mx, my, L.backCx, L.backCy, 160, 36) then
             self.selectedIndex = SETTINGS_ITEM_COUNT
         end
     end
@@ -354,14 +354,38 @@ end
 -- 10: BACK button
 local SETTINGS_ITEM_COUNT = 10
 
+function Menu:getSettingsFrameRect(w, h)
+    local frameW = math.min(640, w - 160)
+    local frameH = math.min(640, h - 80)
+    local frameX = w * 0.5 - frameW * 0.5
+    local frameY = h * 0.5 - frameH * 0.5
+    return frameX, frameY, frameW, frameH
+end
+
 function Menu:getSettingsLayout(w, h)
-    local barX = w/2 - 100
+    local frameX, frameY, frameW, frameH = self:getSettingsFrameRect(w, h)
+    local barX = frameX + 220
     local barW = 220
-    local y0 = h * 0.20
-    local gap = 38
-    local gfxY = y0 + gap * 3 + 16
-    local kbY = gfxY + gap * 2 + 16
-    return { barX = barX, barW = barW, y0 = y0, gap = gap, gfxY = gfxY, kbY = kbY }
+    local y0 = frameY + 86
+    local gap = 42
+    local gfxY = y0 + gap * 3 + 30
+    local kbY = gfxY + gap * 2 + 30
+    local backCx = frameX + frameW * 0.5
+    local backCy = frameY + frameH - 34
+    return {
+        frameX = frameX,
+        frameY = frameY,
+        frameW = frameW,
+        frameH = frameH,
+        barX = barX,
+        barW = barW,
+        y0 = y0,
+        gap = gap,
+        gfxY = gfxY,
+        kbY = kbY,
+        backCx = backCx,
+        backCy = backCy,
+    }
 end
 
 function Menu:drawSettings()
@@ -369,8 +393,9 @@ function Menu:drawSettings()
     local v = self.visual
 
     -- Settings frame image if available (fallback to procedural panel)
-    local frameW, frameH = 640, 640
-    local frameX, frameY = w * 0.5 - frameW * 0.5, h * 0.5 - frameH * 0.5
+    local L = self:getSettingsLayout(w, h)
+    local frameX, frameY = L.frameX, L.frameY
+    local frameW, frameH = L.frameW, L.frameH
     if v.settingsFrameImage then
         local fw, fh = v.settingsFrameImage:getWidth(), v.settingsFrameImage:getHeight()
         love.graphics.setColor(1, 1, 1, 1)
@@ -395,7 +420,6 @@ function Menu:drawSettings()
     local fullscreen = s and s.graphics and s.graphics.fullscreen or false
     local vsync = s and s.graphics and s.graphics.vsync or false
 
-    local L = self:getSettingsLayout(w, h)
     local barX, barW, y0, gap, gfxY, kbY = L.barX, L.barW, L.y0, L.gap, L.gfxY, L.kbY
 
     -- Section: Audio (header Y offset -20 to avoid overlap with first item)
@@ -431,20 +455,20 @@ function Menu:drawSettings()
     if v.backButtonImage then
         local img = v.backButtonImage
         local iw, ih = img:getWidth(), img:getHeight()
-        local bx, by = w * 0.5 - iw * 0.5, h * 0.90 - ih * 0.5
+        local bx, by = L.backCx - iw * 0.5, L.backCy - ih * 0.5
         love.graphics.setColor(1, 1, 1, 1)
         love.graphics.draw(img, bx, by)
         love.graphics.setColor(Palette.title)
         drawTextWithShadow("BACK", w * 0.5 - self.bodyFont:getWidth("BACK") * 0.5, by + ih * 0.25)
     else
-        self:drawButton("BACK", w/2, h * 0.92, 160, 36, self.selectedIndex == SETTINGS_ITEM_COUNT)
+        self:drawButton("BACK", L.backCx, L.backCy, 160, 36, self.selectedIndex == SETTINGS_ITEM_COUNT)
     end
 
     love.graphics.setFont(self.smallFont)
     love.graphics.setColor(Palette.subtitle)
     local hint = self.rebindingIndex and "Press any key to bind..." or "UP/DOWN: select  LEFT/RIGHT: adjust  ENTER: toggle/rebind"
     local hw = self.smallFont:getWidth(hint)
-    drawTextWithShadow(hint, w/2 - hw/2, h * 0.97)
+    drawTextWithShadow(hint, w/2 - hw/2, frameY + frameH + 14)
 end
 
 function Menu:drawToggle(label, value, x, y, width, isSelected)
@@ -1094,7 +1118,7 @@ function Menu:mousepressed(x, y, button)
             end
         end
         -- BACK
-        if self:isPointInButton(x, y, w/2, h * 0.92, 160, 36) then
+        if self:isPointInButton(x, y, L.backCx, L.backCy, 160, 36) then
             self.gameState:transitionTo(States.MENU)
             self.selectedIndex = 4
         end
@@ -1188,7 +1212,7 @@ function Menu:mousemoved(x, y)
             self.selectedIndex = 8
         elseif self:isPointInRect(x, y, barX, kbY + gap * 3, barW, rowH) then
             self.selectedIndex = 9
-        elseif self:isPointInButton(x, y, w/2, h * 0.92, 160, 36) then
+        elseif self:isPointInButton(x, y, L.backCx, L.backCy, 160, 36) then
             self.selectedIndex = SETTINGS_ITEM_COUNT
         end
     elseif state == States.GAME_OVER then

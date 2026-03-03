@@ -17,12 +17,53 @@ local Config = require("data.config")
 local TutorialScene = {}
 TutorialScene.__index = TutorialScene
 
+local function fitText(font, text, maxWidth)
+    text = tostring(text or "")
+    if not font or font:getWidth(text) <= maxWidth then
+        return text
+    end
+
+    local trimmed = text
+    while #trimmed > 0 and font:getWidth(trimmed .. "...") > maxWidth do
+        trimmed = trimmed:sub(1, -2)
+    end
+
+    if trimmed == "" then
+        return "..."
+    end
+    return trimmed .. "..."
+end
+
+local function wrapText(font, text, maxWidth)
+    local lines = {}
+    local current = ""
+    for word in tostring(text or ""):gmatch("%S+") do
+        local test = current == "" and word or (current .. " " .. word)
+        if not font or font:getWidth(test) <= maxWidth then
+            current = test
+        else
+            if current ~= "" then
+                table.insert(lines, current)
+            end
+            current = word
+        end
+    end
+    if current ~= "" then
+        table.insert(lines, current)
+    end
+    if #lines == 0 then
+        lines[1] = ""
+    end
+    return lines
+end
+
 -- Tutorial pacing (slower so player can observe)
 local MIN_PHASE_DURATION = 6
 local APPROACH_DISTANCE = 200
 local DASH_PHASE_REQUIRED = 2
 local PRACTICE_WAVE_KILLS = 3
 local BARK_VOLLEY_SPAWN_INTERVAL = 2.8
+local PHASE_COMPLETE_HOLD = 0.85
 
 -- Phase definitions
 local PHASES = {
@@ -131,6 +172,7 @@ function TutorialScene:new(gameState)
         currentPhase = 1,
         phaseTimer = 0,
         phaseComplete = false,
+        phaseAdvanceTimer = 0,
         killCount = 0,
         movedDirs = {},
         abilityFiredThisPhase = false,
@@ -174,6 +216,7 @@ function TutorialScene:startPhase(idx)
     self.currentPhase = idx
     self.phaseTimer = 0
     self.phaseComplete = false
+    self.phaseAdvanceTimer = 0
     self.killCount = 0
     self.abilityFiredThisPhase = false
     self.keyPressedThisPhase = false
@@ -481,6 +524,16 @@ function TutorialScene:update(dt)
 
     -- Check phase completion
     self:checkPhaseCondition()
+
+    if self.phaseComplete and self.phaseAdvanceTimer > 0 then
+        self.phaseAdvanceTimer = math.max(0, self.phaseAdvanceTimer - dt)
+        if self.phaseAdvanceTimer <= 0 then
+            local next = self.currentPhase + 1
+            if next <= #PHASES then
+                self:startPhase(next)
+            end
+        end
+    end
 end
 
 function TutorialScene:checkPhaseCondition()
@@ -525,10 +578,7 @@ function TutorialScene:completePhase()
         self:transitionToGame()
         return
     end
-    local next = self.currentPhase + 1
-    if next <= #PHASES then
-        self:startPhase(next)
-    end
+    self.phaseAdvanceTimer = PHASE_COMPLETE_HOLD
 end
 
 -- Shared transition logic (complete phase or skip)
@@ -600,15 +650,29 @@ function TutorialScene:drawTutorialHUD()
     local phase = PHASES[self.currentPhase]
     if not phase then return end
 
-    local titleFont = _G.PixelFonts and _G.PixelFonts.header or love.graphics.getFont()
-    local bodyFont = _G.PixelFonts and _G.PixelFonts.uiSmall or love.graphics.getFont()
+    local titleFont = _G.PixelFonts and (_G.PixelFonts.uiLarge or _G.PixelFonts.header) or love.graphics.getFont()
+    local bodyFont = _G.PixelFonts and (_G.PixelFonts.uiSmall or _G.PixelFonts.body) or love.graphics.getFont()
     local hintFont = _G.PixelFonts and _G.PixelFonts.uiTiny or bodyFont
 
     -- Panel in play area (center-lower, not at top)
     local panelW = 600
-    local panelH = 100
+    local panelH = 110
     local panelX = (w - panelW) / 2
     local panelY = h * 0.35
+    local innerPad = 12
+    local topRowY = panelY + 8
+    local titleY = panelY + 24
+    local bodyY = panelY + 54
+    local hintY = panelY + 84
+    local skipText = "TAB TO SKIP"
+    local counter = string.format("PHASE %d/%d", self.currentPhase, #PHASES)
+    local leftW = hintFont:getWidth(counter)
+    local rightW = hintFont:getWidth(skipText)
+    local titleMaxW = panelW - innerPad * 2 - leftW - rightW - 28
+    local titleText = fitText(titleFont, phase.title, titleMaxW)
+    local bodyLines = wrapText(bodyFont, phase.body, panelW - innerPad * 2 - 20)
+    local bodyText = fitText(bodyFont, bodyLines[1], panelW - innerPad * 2 - 20)
+    local hintText = fitText(hintFont, phase.hint, panelW - innerPad * 2 - 20)
 
     love.graphics.setColor(0.04, 0.04, 0.08, 0.9)
     love.graphics.rectangle("fill", panelX, panelY, panelW, panelH, 8, 8)
@@ -620,38 +684,37 @@ function TutorialScene:drawTutorialHUD()
     -- Skip hint (for returning players)
     love.graphics.setFont(hintFont)
     love.graphics.setColor(0.5, 0.6, 0.7, 0.7)
-    love.graphics.print("Press Tab to skip tutorial", panelX + panelW - hintFont:getWidth("Press Tab to skip tutorial") - 10, panelY + 6)
+    love.graphics.print(skipText, panelX + panelW - rightW - innerPad, topRowY)
 
     -- Phase counter
     love.graphics.setFont(hintFont)
     love.graphics.setColor(0.5, 0.5, 0.5, 0.8)
-    local counter = string.format("PHASE %d/%d", self.currentPhase, #PHASES)
-    love.graphics.print(counter, panelX + 10, panelY + 6)
+    love.graphics.print(counter, panelX + innerPad, topRowY)
 
     -- Title
     love.graphics.setFont(titleFont)
     love.graphics.setColor(1, 0.9, 0.6, 1)
-    local tw = titleFont:getWidth(phase.title)
-    love.graphics.print(phase.title, w / 2 - tw / 2, panelY + 8)
+    local tw = titleFont:getWidth(titleText)
+    love.graphics.print(titleText, w / 2 - tw / 2, titleY)
 
     -- Body text
     love.graphics.setFont(bodyFont)
     love.graphics.setColor(0.85, 0.85, 0.85, 1)
-    local bw = bodyFont:getWidth(phase.body)
-    love.graphics.print(phase.body, w / 2 - bw / 2, panelY + 42)
+    local bw = bodyFont:getWidth(bodyText)
+    love.graphics.print(bodyText, w / 2 - bw / 2, bodyY)
 
     -- Hint (pulsing)
     love.graphics.setFont(hintFont)
     local pulse = 0.6 + 0.4 * math.sin(love.timer.getTime() * 3)
     love.graphics.setColor(0.4, 0.8, 1.0, pulse)
-    local hw = hintFont:getWidth(phase.hint)
-    love.graphics.print(phase.hint, w / 2 - hw / 2, panelY + 70)
+    local hw = hintFont:getWidth(hintText)
+    love.graphics.print(hintText, w / 2 - hw / 2, hintY)
 
     -- Begin button (complete phase only)
     if phase.id == "complete" then
         local btnW, btnH = 180, 44
         local btnX = (w - btnW) / 2
-        local btnY = panelY + panelH + 24
+        local btnY = panelY + panelH + 18
         local hover = self:isPointInBeginButton(love.mouse.getX(), love.mouse.getY())
         love.graphics.setColor(0.15, 0.35, 0.2, 0.95)
         love.graphics.rectangle("fill", btnX, btnY, btnW, btnH, 8, 8)
@@ -670,17 +733,101 @@ function TutorialScene:drawTutorialHUD()
         self:drawAbilityHighlight(phase.highlight)
     end
 
+    if phase.id ~= "complete" then
+        self:drawTaskTracker(panelX, panelY + panelH + 14)
+    end
+
     love.graphics.setColor(1, 1, 1, 1)
+end
+
+function TutorialScene:isCurrentTaskComplete()
+    local phase = PHASES[self.currentPhase]
+    if not phase then return false end
+
+    if phase.condition == "move_all_dirs" then
+        return self.movedDirs["w"] and self.movedDirs["a"] and self.movedDirs["s"] and self.movedDirs["d"]
+    elseif phase.condition == "approached_dummy" then
+        return self.approachedDummy
+    elseif phase.condition == "ability_fired" then
+        return self.abilityFiredThisPhase
+    elseif phase.condition == "dash_count" then
+        return self.dashCount >= DASH_PHASE_REQUIRED
+    elseif phase.condition == "press_key" then
+        return self.keyPressedThisPhase
+    elseif phase.condition == "practice_wave" then
+        return self.killCount >= PRACTICE_WAVE_KILLS
+    end
+
+    return false
+end
+
+function TutorialScene:getTaskLabel()
+    local phase = PHASES[self.currentPhase]
+    if not phase then
+        return "Objective"
+    end
+
+    if phase.condition == "move_all_dirs" then
+        return "Move in all directions"
+    elseif phase.condition == "approached_dummy" then
+        return "Enter attack range"
+    elseif phase.condition == "ability_fired" then
+        return "Let it auto-cast"
+    elseif phase.condition == "dash_count" then
+        return "Dash through danger"
+    elseif phase.condition == "press_key" then
+        return "Use the shown key"
+    elseif phase.condition == "practice_wave" then
+        return "Clear the wave"
+    end
+
+    return phase.title or "Objective"
+end
+
+function TutorialScene:drawTaskTracker(x, y)
+    local trackerW = 300
+    local trackerH = 56
+    local trackerX = x + 150
+    local complete = self:isCurrentTaskComplete() or self.phaseComplete
+    local progressText = complete and "1/1" or "0/1"
+    local titleFont = _G.PixelFonts and _G.PixelFonts.uiSmall or love.graphics.getFont()
+    local valueFont = (_G.PixelFonts and (_G.PixelFonts.uiBody or _G.PixelFonts.uiSmall)) or titleFont
+    local taskLabel = fitText(titleFont, self:getTaskLabel(), trackerW - 88)
+
+    love.graphics.setColor(0.03, 0.05, 0.10, 0.92)
+    love.graphics.rectangle("fill", trackerX, y, trackerW, trackerH, 8, 8)
+    if complete then
+        love.graphics.setColor(0.35, 0.9, 0.45, 0.9)
+    else
+        love.graphics.setColor(0.45, 0.65, 1.0, 0.55)
+    end
+    love.graphics.setLineWidth(1.5)
+    love.graphics.rectangle("line", trackerX, y, trackerW, trackerH, 8, 8)
+    love.graphics.setLineWidth(1)
+
+    love.graphics.setFont(titleFont)
+    love.graphics.setColor(0.82, 0.88, 0.98, 0.95)
+    love.graphics.print("TASK", trackerX + 14, y + 8)
+    love.graphics.setColor(1, 1, 1, 0.82)
+    love.graphics.print(taskLabel, trackerX + 14, y + 28)
+
+    love.graphics.setFont(valueFont)
+    if complete then
+        love.graphics.setColor(0.45, 1.0, 0.55, 1)
+    else
+        love.graphics.setColor(1, 0.92, 0.62, 1)
+    end
+    love.graphics.print(progressText, trackerX + trackerW - valueFont:getWidth(progressText) - 14, y + 18)
 end
 
 function TutorialScene:getBeginButtonRect()
     local w = love.graphics.getWidth()
     local h = love.graphics.getHeight()
-    local panelW, panelH = 600, 100
+    local panelW, panelH = 600, 110
     local panelY = h * 0.35
     local btnW, btnH = 180, 44
     local btnX = (w - btnW) / 2
-    local btnY = panelY + panelH + 24
+    local btnY = panelY + panelH + 18
     return btnX, btnY, btnW, btnH
 end
 

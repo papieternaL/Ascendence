@@ -55,18 +55,18 @@ function love.load()
         return f
     end
 
-    hudFonts.tiny   = loadFont(FONT_PATH, 12)
-    hudFonts.small  = loadFont(FONT_PATH, 15)
-    hudFonts.body   = loadFont(FONT_PATH, 18)
-    hudFonts.header = loadFont(FONT_PATH_BOLD, 28)
-    hudFonts.title  = loadFont(FONT_PATH_BOLD, 42)
+    hudFonts.tiny   = loadFont(FONT_PATH, 11)
+    hudFonts.small  = loadFont(FONT_PATH, 14)
+    hudFonts.body   = loadFont(FONT_PATH, 16)
+    hudFonts.header = loadFont(FONT_PATH_BOLD, 24)
+    hudFonts.title  = loadFont(FONT_PATH_BOLD, 36)
     hudFonts.dmgNormal = loadFont(FONT_PATH, 14)
     hudFonts.dmgCrit   = loadFont(FONT_PATH_BOLD, 20)
-    hudFonts.uiTiny      = loadFont(FONT_PATH, 11)
-    hudFonts.uiSmall     = loadFont(FONT_PATH, 14)
-    hudFonts.uiBody      = loadFont(FONT_PATH, 17)
+    hudFonts.uiTiny      = loadFont(FONT_PATH, 10)
+    hudFonts.uiSmall     = loadFont(FONT_PATH, 12)
+    hudFonts.uiBody      = loadFont(FONT_PATH, 15)
     hudFonts.uiSmallText = loadFont(FONT_PATH, 10)
-    hudFonts.uiLarge     = loadFont(FONT_PATH_BOLD, 34)
+    hudFonts.uiLarge     = loadFont(FONT_PATH_BOLD, 28)
 
     -- Expose fonts globally so other modules can use them
     _G.PixelFonts = hudFonts

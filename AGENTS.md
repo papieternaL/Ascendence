@@ -237,6 +237,13 @@ Input → Player.update() → Movement
 10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
+- 2026-03-03: **Settings/tutorial/stats layout cleanup + tutorial task tracker**:
+  - **Settings layout anchored to frame**: `ui/menu.lua` now positions slider rows, graphics toggles, keybind rows, and BACK using the settings frame bounds instead of loose screen percentages, so the title and controls stay inside the panel.
+  - **Tutorial task tracker**: `scenes/tutorial_scene.lua` now shows a separate small task window under the tutorial panel with a binary progress state (`0/1` -> `1/1`) for the active objective.
+  - **Tutorial completion hold**: tutorial phases now pause briefly after completion before advancing, so players can actually see the tracker flip to `1/1`.
+  - **Stats overlay spacing pass**: `ui/stats_overlay.lua` now uses tighter column sizing, safer header alignment, and truncation for long entries so labels and upgrade names stay inside their columns.
+  - **Follow-up overlap reduction**: `main.lua` HUD font sizes were reduced slightly, `scenes/tutorial_scene.lua` now uses constrained title/body/hint rows with truncation, and `ui/ability_hud.lua` no longer leaks temporary font changes into later UI draws.
+  - Files: ui/menu.lua, scenes/tutorial_scene.lua, ui/stats_overlay.lua, AGENTS.md.
 - 2026-03-02: **Typography + color palette pass (menu/HUD readability and style)**:
   - Updated global UI font paths in `main.lua` to a squarer, more retro-futuristic set (`Kenney Future Square` + `Kenney Bold`) to better match the requested reference style.
   - Refined `ui/menu.lua` with a centralized palette (gold title accents + cool cyan highlights) and applied it across menu title, subtitle, slider/toggle states, section labels, and back button text.

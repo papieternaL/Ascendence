@@ -48,6 +48,8 @@ end
 
 function AbilityHUD:draw(player, xpSystem)
     if not player or not player.abilities then return end
+
+    local previousFont = love.graphics.getFont()
     
     local screenWidth = love.graphics.getWidth()
     local screenHeight = love.graphics.getHeight()
@@ -191,12 +193,12 @@ function AbilityHUD:draw(player, xpSystem)
             if not isReady and not ability.charge then
                 local cdText = string.format("%.1f", ability.currentCooldown or 0)
                 love.graphics.setColor(1, 1, 1, 0.9)
-                love.graphics.setNewFont(14)
-                local cdFont = love.graphics.getFont()
+                local cdFont = (_G.PixelFonts and _G.PixelFonts.small) or previousFont
+                love.graphics.setFont(cdFont)
                 local cdWidth = cdFont:getWidth(cdText)
                 local cdHeight = cdFont:getHeight()
                 love.graphics.print(cdText, x - cdWidth / 2, y + 8)
-                love.graphics.setNewFont(12)  -- Reset
+                love.graphics.setFont(previousFont)
             end
         end
     end
@@ -222,17 +224,18 @@ function AbilityHUD:draw(player, xpSystem)
         
         -- Level number
         love.graphics.setColor(1, 1, 1, 1)
-        love.graphics.setNewFont(24)
-        local levelFont = love.graphics.getFont()
+        local levelFont = (_G.PixelFonts and (_G.PixelFonts.header or _G.PixelFonts.body)) or previousFont
+        love.graphics.setFont(levelFont)
         local levelText = tostring(xpSystem.level or 1)
         local levelWidth = levelFont:getWidth(levelText)
         local levelHeight = levelFont:getHeight()
         love.graphics.print(levelText, levelBadgeX - levelWidth / 2, levelBadgeY - levelHeight / 2)
-        love.graphics.setNewFont(12)  -- Reset
+        love.graphics.setFont(previousFont)
     end
     
     love.graphics.setLineWidth(1)
     love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.setFont(previousFont)
 end
 
 return AbilityHUD
