@@ -2,6 +2,17 @@
 local Menu = {}
 Menu.__index = Menu
 
+local Palette = {
+    title = {0.95, 0.80, 0.52, 1},
+    subtitle = {0.76, 0.70, 0.62, 0.95},
+    text = {0.90, 0.92, 0.96, 1},
+    section = {0.72, 0.64, 0.50, 0.9},
+    panelBg = {0.06, 0.08, 0.14, 0.96},
+    panelBorder = {0.42, 0.50, 0.68, 1},
+    sliderFill = {0.45, 0.92, 0.95, 1},
+    sliderFillSelected = {1.0, 0.82, 0.46, 1},
+}
+
 function Menu:new(gameState)
     local menu = {
         gameState = gameState,
@@ -20,6 +31,12 @@ function Menu:new(gameState)
         smallFont = nil,
         -- Keybind rebinding state
         rebindingIndex = nil,
+        -- Visual layer assets for cosmic-style menus
+        visual = {
+            bgPanX = 0,
+            bgPanY = 0,
+            bgRot = 0,
+        },
     }
     setmetatable(menu, Menu)
     menu:init()
@@ -27,8 +44,8 @@ function Menu:new(gameState)
 end
 
 function Menu:init()
-    local fontNarrow = "assets/Other/Fonts/Kenney Future Narrow.ttf"
-    local fontBold   = "assets/Other/Fonts/Kenney Future.ttf"
+    local fontNarrow = "assets/Other/Fonts/Kenney Future Square.ttf"
+    local fontBold   = "assets/Other/Fonts/Kenney Bold.ttf"
     local function loadFont(path, size)
         local ok, f = pcall(love.graphics.newFont, path, size)
         if ok then
@@ -39,10 +56,10 @@ function Menu:init()
         f:setFilter("linear", "linear")
         return f
     end
-    self.titleFont  = loadFont(fontBold, 48)
-    self.headerFont = loadFont(fontBold, 30)
-    self.bodyFont   = loadFont(fontNarrow, 18)
-    self.smallFont  = loadFont(fontNarrow, 14)
+    self.titleFont  = loadFont(fontBold, 50)
+    self.headerFont = loadFont(fontBold, 32)
+    self.bodyFont   = loadFont(fontNarrow, 20)
+    self.smallFont  = loadFont(fontNarrow, 15)
     
     -- Initialize floating particles
     for i = 1, 30 do
@@ -54,6 +71,20 @@ function Menu:init()
             alpha = math.random() * 0.5 + 0.2
         })
     end
+
+    -- Optional menu art pass assets (falls back to procedural if missing)
+    local function safeImage(path)
+        if love.filesystem.getInfo(path) then
+            return love.graphics.newImage(path)
+        end
+        return nil
+    end
+
+    self.visual.background = safeImage("assets/ui/backgrounds/cosmic_space_ripple.png")
+    self.visual.titleImage = safeImage("assets/ui/menu/title_ascendence.png")
+    self.visual.menuButtonImage = safeImage("assets/ui/menu/button_main.png")
+    self.visual.settingsFrameImage = safeImage("assets/ui/settings/settings_frame.png")
+    self.visual.backButtonImage = safeImage("assets/ui/settings/button_back.png")
 end
 
 -- Helper: draw text with subtle shadow for readability
@@ -80,6 +111,11 @@ end
 function Menu:update(dt)
     -- Title bobbing animation
     self.titleBob = math.sin(love.timer.getTime() * self.titleBobSpeed) * 5
+
+    -- Subtle cosmic drift so menu layers feel alive and integrated.
+    self.visual.bgPanX = self.visual.bgPanX + dt * 3.0
+    self.visual.bgPanY = self.visual.bgPanY + dt * 1.4
+    self.visual.bgRot = self.visual.bgRot + dt * 0.05
     
     -- Update particles
     self.particleTime = self.particleTime + dt
@@ -143,6 +179,9 @@ function Menu:draw()
     local state = self.gameState:getState()
     local States = self.gameState.States
     
+    -- First operation: shared background for all menu-family states.
+    self:drawBackground()
+
     -- Draw appropriate screen
     if state == States.MENU then
         self:drawMainMenu()
@@ -167,31 +206,52 @@ end
 
 function Menu:drawBackground()
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
-    
-    -- Dark gradient background
-    love.graphics.setColor(0.02, 0.02, 0.05, 1)
-    love.graphics.rectangle("fill", 0, 0, w, h)
+
+    -- Preferred cosmic sheet if available.
+    local bg = self.visual.background
+    if bg then
+        local bw, bh = bg:getWidth(), bg:getHeight()
+        local sx = (w / bw) * 1.08
+        local sy = (h / bh) * 1.08
+
+        love.graphics.push()
+        love.graphics.translate(w * 0.5, h * 0.5)
+        love.graphics.rotate(math.sin(self.visual.bgRot) * 0.012)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(
+            bg,
+            -w * 0.5 - (self.visual.bgPanX % 22),
+            -h * 0.5 - (self.visual.bgPanY % 14),
+            0,
+            sx,
+            sy
+        )
+        love.graphics.pop()
+    else
+        -- Dark gradient fallback
+        love.graphics.setColor(0.02, 0.02, 0.05, 1)
+        love.graphics.rectangle("fill", 0, 0, w, h)
+    end
     
     -- Radial gradient overlay
     for i = 10, 1, -1 do
         local alpha = 0.02 * i
         local radius = (w * 0.4) * (i / 10)
-        love.graphics.setColor(0.1, 0.05, 0.15, alpha)
+        love.graphics.setColor(0.08, 0.12, 0.18, alpha)
         love.graphics.circle("fill", w/2, h/2, radius)
     end
     
     -- Floating ember particles
     for i, p in ipairs(self.particles) do
         local glow = (math.sin(self.particleTime * 2 + i) + 1) / 2
-        love.graphics.setColor(1, 0.6 + glow * 0.3, 0.2, p.alpha * (0.5 + glow * 0.5))
+        love.graphics.setColor(0.45 + glow * 0.25, 0.95, 0.92, p.alpha * (0.45 + glow * 0.45))
         love.graphics.circle("fill", p.x, p.y, p.size)
     end
 end
 
 function Menu:drawMainMenu()
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
-    
-    self:drawBackground()
+    local v = self.visual
     
     -- Title
     love.graphics.setFont(self.titleFont)
@@ -200,31 +260,62 @@ function Menu:drawMainMenu()
     
     -- Title glow
     for i = 3, 1, -1 do
-        love.graphics.setColor(0.8, 0.4, 0.1, 0.1 * i)
+        love.graphics.setColor(0.95, 0.75, 0.45, 0.1 * i)
         love.graphics.print(title, w/2 - titleW/2 - i, h * 0.25 + self.titleBob - i)
     end
     
-    -- Main title
-    love.graphics.setColor(1, 0.85, 0.6, 1)
-    drawTextWithShadow(title, w/2 - titleW/2, h * 0.25 + self.titleBob)
+    -- Main title image (fallback to text)
+    if v.titleImage then
+        local img = v.titleImage
+        local tw, th = img:getWidth(), img:getHeight()
+        local x = w * 0.5 - tw * 0.5
+        local y = h * 0.20 + self.titleBob
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(img, x, y)
+    else
+        love.graphics.setColor(Palette.title)
+        drawTextWithShadow(title, w/2 - titleW/2, h * 0.25 + self.titleBob)
+    end
     
     -- Subtitle
     love.graphics.setFont(self.bodyFont)
     local subtitle = "A Descent Into Darkness"
     local subW = self.bodyFont:getWidth(subtitle)
-    love.graphics.setColor(0.7, 0.6, 0.5, 0.9)
+    love.graphics.setColor(Palette.subtitle)
     drawTextWithShadow(subtitle, w/2 - subW/2, h * 0.25 + 60 + self.titleBob)
     
     -- Menu buttons
-    self:drawButton("BEGIN TRIAL", w/2, h * 0.50, 200, 40, self.selectedIndex == 1)
-    self:drawButton("TUTORIAL", w/2, h * 0.56, 200, 40, self.selectedIndex == 2)
-    self:drawButton("BOSS TEST", w/2, h * 0.62, 200, 40, self.selectedIndex == 3)
-    self:drawButton("SETTINGS", w/2, h * 0.68, 200, 40, self.selectedIndex == 4)
-    self:drawButton("QUIT", w/2, h * 0.74, 200, 40, self.selectedIndex == 5)
+    local labels = {"BEGIN TRIAL", "TUTORIAL", "BOSS TEST", "SETTINGS", "QUIT"}
+    local startY = h * 0.50
+    local stepY = h * 0.06
+    for i, label in ipairs(labels) do
+        local y = startY + (i - 1) * stepY
+        local selected = self.selectedIndex == i
+        if v.menuButtonImage then
+            local img = v.menuButtonImage
+            local iw, ih = img:getWidth(), img:getHeight()
+            local x = w * 0.5 - iw * 0.5
+            love.graphics.setColor(1, 1, 1, selected and 1 or 0.95)
+            love.graphics.draw(img, x, y - ih * 0.5)
+
+            if selected then
+                love.graphics.setBlendMode("add", "alphamultiply")
+                love.graphics.setColor(0.60, 1.0, 0.95, 0.16)
+                love.graphics.rectangle("fill", x, y - ih * 0.5, iw, ih, 10, 10)
+                love.graphics.setBlendMode("alpha")
+            end
+
+            love.graphics.setFont(self.bodyFont)
+            love.graphics.setColor(Palette.title)
+            drawTextWithShadow(label, w * 0.5 - self.bodyFont:getWidth(label) * 0.5, y - self.bodyFont:getHeight() * 0.32)
+        else
+            self:drawButton(label, w/2, y, 200, 40, selected)
+        end
+    end
     
     -- Instructions
     love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(0.65, 0.6, 0.55, 0.9)
+    love.graphics.setColor(Palette.subtitle)
     local instr = "Press ENTER or Click to Continue"
     local instrW = self.smallFont:getWidth(instr)
     drawTextWithShadow(instr, w/2 - instrW/2, h * 0.85)
@@ -232,18 +323,18 @@ end
 
 function Menu:drawSlider(label, value, x, y, width, isSelected)
     local clamped = math.max(0, math.min(1, value or 0))
-    love.graphics.setColor(0.2, 0.2, 0.26, 0.95)
+    love.graphics.setColor(0.16, 0.18, 0.24, 0.95)
     love.graphics.rectangle("fill", x, y, width, 16, 6, 6)
 
     local fillW = math.floor((width - 4) * clamped)
     if isSelected then
-        love.graphics.setColor(0.95, 0.75, 0.35, 1)
+        love.graphics.setColor(Palette.sliderFillSelected)
     else
-        love.graphics.setColor(0.65, 0.72, 0.95, 1)
+        love.graphics.setColor(Palette.sliderFill)
     end
     love.graphics.rectangle("fill", x + 2, y + 2, fillW, 12, 5, 5)
 
-    love.graphics.setColor(0.9, 0.9, 0.95, 1)
+    love.graphics.setColor(Palette.text)
     love.graphics.setFont(self.bodyFont)
     drawTextWithShadow(label, x - 220, y - 7)
     love.graphics.setFont(self.smallFont)
@@ -275,12 +366,26 @@ end
 
 function Menu:drawSettings()
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
-    self:drawBackground()
+    local v = self.visual
+
+    -- Settings frame image if available (fallback to procedural panel)
+    local frameW, frameH = 640, 640
+    local frameX, frameY = w * 0.5 - frameW * 0.5, h * 0.5 - frameH * 0.5
+    if v.settingsFrameImage then
+        local fw, fh = v.settingsFrameImage:getWidth(), v.settingsFrameImage:getHeight()
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(v.settingsFrameImage, frameX, frameY, 0, frameW / fw, frameH / fh)
+    else
+        love.graphics.setColor(Palette.panelBg)
+        love.graphics.rectangle("fill", frameX, frameY, frameW, frameH, 16, 16)
+        love.graphics.setColor(Palette.panelBorder)
+        love.graphics.rectangle("line", frameX, frameY, frameW, frameH, 16, 16)
+    end
 
     love.graphics.setFont(self.headerFont)
-    love.graphics.setColor(1, 0.9, 0.7, 1)
+    love.graphics.setColor(Palette.title)
     local title = "SETTINGS"
-    drawTextWithShadow(title, w/2 - self.headerFont:getWidth(title)/2, h * 0.08)
+    drawTextWithShadow(title, w/2 - self.headerFont:getWidth(title)/2, frameY + 30)
 
     local mgr = _G.settings
     local s = mgr and mgr:get() or nil
@@ -295,7 +400,7 @@ function Menu:drawSettings()
 
     -- Section: Audio (header Y offset -20 to avoid overlap with first item)
     love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(0.6, 0.55, 0.45, 0.8)
+    love.graphics.setColor(Palette.section)
     love.graphics.print("AUDIO", barX - 160, y0 - 20)
     self:drawSlider("Music", music, barX, y0, barW, self.selectedIndex == 1)
     self:drawSlider("Sound", sfx, barX, y0 + gap, barW, self.selectedIndex == 2)
@@ -303,14 +408,14 @@ function Menu:drawSettings()
 
     -- Section: Graphics
     love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(0.6, 0.55, 0.45, 0.8)
+    love.graphics.setColor(Palette.section)
     love.graphics.print("GRAPHICS", barX - 160, gfxY - 20)
     self:drawToggle("Fullscreen", fullscreen, barX, gfxY, barW, self.selectedIndex == 4)
     self:drawToggle("VSync", vsync, barX, gfxY + gap, barW, self.selectedIndex == 5)
 
     -- Section: Keybinds
     love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(0.6, 0.55, 0.45, 0.8)
+    love.graphics.setColor(Palette.section)
     love.graphics.print("KEYBINDS", barX - 160, kbY - 20)
 
     local keybindActions = {"dash", "multi_shot", "arrow_volley", "frenzy"}
@@ -323,24 +428,34 @@ function Menu:drawSettings()
     end
 
     -- Back button
-    self:drawButton("BACK", w/2, h * 0.92, 160, 36, self.selectedIndex == SETTINGS_ITEM_COUNT)
+    if v.backButtonImage then
+        local img = v.backButtonImage
+        local iw, ih = img:getWidth(), img:getHeight()
+        local bx, by = w * 0.5 - iw * 0.5, h * 0.90 - ih * 0.5
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(img, bx, by)
+        love.graphics.setColor(Palette.title)
+        drawTextWithShadow("BACK", w * 0.5 - self.bodyFont:getWidth("BACK") * 0.5, by + ih * 0.25)
+    else
+        self:drawButton("BACK", w/2, h * 0.92, 160, 36, self.selectedIndex == SETTINGS_ITEM_COUNT)
+    end
 
     love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(0.6, 0.58, 0.52, 0.8)
+    love.graphics.setColor(Palette.subtitle)
     local hint = self.rebindingIndex and "Press any key to bind..." or "UP/DOWN: select  LEFT/RIGHT: adjust  ENTER: toggle/rebind"
     local hw = self.smallFont:getWidth(hint)
     drawTextWithShadow(hint, w/2 - hw/2, h * 0.97)
 end
 
 function Menu:drawToggle(label, value, x, y, width, isSelected)
-    love.graphics.setColor(0.9, 0.9, 0.95, 1)
+    love.graphics.setColor(Palette.text)
     local f = self.smallFont or love.graphics.getFont()
     love.graphics.setFont(f)
     love.graphics.print(label, x - 160, y - 3)
     local valText = value and "ON" or "OFF"
     local valColor = value and {0.4, 0.9, 0.5} or {0.6, 0.4, 0.4}
     if isSelected then
-        love.graphics.setColor(1, 0.9, 0.5, 1)
+        love.graphics.setColor(Palette.title)
     else
         love.graphics.setColor(valColor[1], valColor[2], valColor[3], 1)
     end
@@ -350,12 +465,12 @@ end
 function Menu:drawKeybindRow(label, key, x, y, width, isSelected, isBinding)
     local f = self.smallFont or love.graphics.getFont()
     love.graphics.setFont(f)
-    love.graphics.setColor(0.9, 0.9, 0.95, 1)
+    love.graphics.setColor(Palette.text)
     love.graphics.print(label, x - 160, y - 3)
 
     local displayKey = isBinding and "..." or string.upper(key or "?")
     if isSelected then
-        love.graphics.setColor(1, 0.9, 0.5, 1)
+        love.graphics.setColor(Palette.title)
     else
         love.graphics.setColor(0.7, 0.75, 0.85, 1)
     end
@@ -773,7 +888,10 @@ function Menu:keypressed(key)
     local States = self.gameState.States
     
     if state == States.MENU then
-        if key == "up" or key == "down" then
+        if key == "s" then
+            self.gameState:transitionTo(States.SETTINGS)
+            self.selectedIndex = 1
+        elseif key == "up" or key == "down" then
             if key == "up" then
                 self.selectedIndex = self.selectedIndex - 1
                 if self.selectedIndex < 1 then self.selectedIndex = 5 end
@@ -851,7 +969,7 @@ function Menu:keypressed(key)
                 self.gameState:transitionTo(States.MENU)
                 self.selectedIndex = 4
             end
-        elseif key == "escape" then
+        elseif key == "escape" or key == "backspace" then
             self.rebindingIndex = nil
             self.gameState:transitionTo(States.MENU)
             self.selectedIndex = 4
@@ -1122,4 +1240,3 @@ function Menu:mousemoved(x, y)
 end
 
 return Menu
-

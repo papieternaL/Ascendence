@@ -431,6 +431,11 @@ function GameScene:update(dt)
         self.upgradeUI:update(dt)
     end
 
+    -- Keep forest ambience/particles moving even during modal pauses.
+    if self.forestTilemap and self.forestTilemap.update then
+        self.forestTilemap:update(dt)
+    end
+
     -- Pause gameplay while stats overlay is open
     self.isPaused = ((self.statsOverlay and self.statsOverlay:isVisible()) or false) or self.pauseMenuVisible
     
@@ -2102,6 +2107,11 @@ function GameScene:draw()
     -- Detach camera before drawing HUD (HUD is in screen space)
     if self.camera then
         self.camera:detach()
+    end
+
+    -- Screen-space ambience pass for richer forest presentation.
+    if self.forestTilemap and self.forestTilemap.drawScreenOverlay then
+        self.forestTilemap:drawScreenOverlay()
     end
     
     -- Draw HUD (not affected by screen shake or camera)

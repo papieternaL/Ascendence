@@ -16,8 +16,8 @@ local JuiceManager = require("systems.juice_manager")
 -- local gameCanvas
 
 -- Pre-loaded fonts (shared globally via _G)
-local FONT_PATH = "assets/Other/Fonts/Kenney Future Narrow.ttf"
-local FONT_PATH_BOLD = "assets/Other/Fonts/Kenney Future.ttf"
+local FONT_PATH = "assets/Other/Fonts/Kenney Future Square.ttf"
+local FONT_PATH_BOLD = "assets/Other/Fonts/Kenney Bold.ttf"
 
 -- Screen flash system (game_scene can trigger via _G.triggerScreenFlash)
 local screenFlash = { timer = 0, duration = 0, color = {1, 1, 1, 0} }
