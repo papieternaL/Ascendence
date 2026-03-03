@@ -243,6 +243,7 @@ Input → Player.update() → Movement
   - **Tutorial completion hold**: tutorial phases now pause briefly after completion before advancing, so players can actually see the tracker flip to `1/1`.
   - **Stats overlay spacing pass**: `ui/stats_overlay.lua` now uses tighter column sizing, safer header alignment, and truncation for long entries so labels and upgrade names stay inside their columns.
   - **Follow-up overlap reduction**: `main.lua` HUD font sizes were reduced slightly, `scenes/tutorial_scene.lua` now uses constrained title/body/hint rows with truncation, and `ui/ability_hud.lua` no longer leaks temporary font changes into later UI draws.
+  - **Menu + level-up card containment pass**: `ui/menu.lua` now constrains biome and character card text inside their cards, with larger card bounds and updated hitboxes; `ui/upgrade_ui.lua` now uses tighter description spacing and line limits so level-up descriptions/previews stay inside the upgrade cards.
   - Files: ui/menu.lua, scenes/tutorial_scene.lua, ui/stats_overlay.lua, AGENTS.md.
 - 2026-03-02: **Typography + color palette pass (menu/HUD readability and style)**:
   - Updated global UI font paths in `main.lua` to a squarer, more retro-futuristic set (`Kenney Future Square` + `Kenney Bold`) to better match the requested reference style.

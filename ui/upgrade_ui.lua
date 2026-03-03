@@ -283,7 +283,7 @@ function UpgradeUI:draw()
   love.graphics.setFont(instrFont)
   love.graphics.setColor(0.6, 0.6, 0.6, 1)
   local instructions = "[A/D or Arrow Keys] Navigate   [Enter] Select   [Click] Select"
-  local instrWidth = font:getWidth(instructions)
+  local instrWidth = instrFont:getWidth(instructions)
   love.graphics.print(instructions, screenWidth / 2 - instrWidth / 2, screenHeight - 50)
   
   love.graphics.setColor(1, 1, 1, 1)
@@ -405,14 +405,19 @@ function UpgradeUI:drawCardFront(upgrade, width, height, isSelected)
   love.graphics.setColor(0.78, 0.78, 0.78, 1)
   local description = self:getUpgradeDescription(upgrade)
   
-  local maxWidth = width - 16
-  local lineHeight = font:getHeight() * 2
+  local textX = 10
+  local maxWidth = width - 20
+  local lineHeight = font:getHeight() + 4
   local tagY = height - 28
   local lines = self:wrapText(description, maxWidth)
   local lineY = 148
-  for _, line in ipairs(lines) do
-    if lineY + lineHeight > tagY then break end
-    love.graphics.print(line, 8, lineY)
+  local maxLines = math.max(1, math.floor((tagY - lineY) / lineHeight))
+  for i, line in ipairs(lines) do
+    if i > maxLines then break end
+    if i == maxLines and #lines > maxLines then
+      line = truncateToWidth(line, maxWidth, font, "...")
+    end
+    love.graphics.print(line, textX, lineY)
     lineY = lineY + lineHeight
   end
   
@@ -422,9 +427,13 @@ function UpgradeUI:drawCardFront(upgrade, width, height, isSelected)
     if preview and preview ~= "" then
       love.graphics.setColor(0.4, 0.9, 0.5, 1)
       local previewLines = self:wrapText(preview, maxWidth)
-      for _, line in ipairs(previewLines) do
-        if lineY + lineHeight > tagY then break end
-        love.graphics.print(line, 8, lineY)
+      local remainingLines = math.max(0, math.floor((tagY - lineY) / lineHeight))
+      for i, line in ipairs(previewLines) do
+        if i > remainingLines then break end
+        if i == remainingLines and #previewLines > remainingLines then
+          line = truncateToWidth(line, maxWidth, font, "...")
+        end
+        love.graphics.print(line, textX, lineY)
         lineY = lineY + lineHeight
       end
     end

@@ -521,9 +521,9 @@ function Menu:drawCharacterSelect()
     
     -- Character cards
     local classes = {"ARCHER", "WIZARD", "KNIGHT"}
-    local cardWidth = 180
-    local cardHeight = 280
-    local spacing = 30
+    local cardWidth = 200
+    local cardHeight = 300
+    local spacing = 24
     local totalWidth = #classes * cardWidth + (#classes - 1) * spacing
     local startX = w/2 - totalWidth/2
     
@@ -575,23 +575,28 @@ function Menu:drawHeroCard(classData, x, y, w, h, isSelected)
     love.graphics.circle("fill", x + w/2 - 8, iconY - 8, 8)
     
     -- Class name
-    love.graphics.setFont(self.headerFont)
-    local nameW = self.headerFont:getWidth(classData.name)
+    love.graphics.setFont(self.bodyFont)
+    local nameW = self.bodyFont:getWidth(classData.name)
     love.graphics.setColor(1, 1, 1, 1)
     drawTextWithShadow(classData.name, x + w/2 - nameW/2, y + 90)
     
-    -- Description (increased line height to prevent overlap)
+    -- Description constrained to a few lines so stats stay inside the card.
     love.graphics.setFont(self.smallFont)
     love.graphics.setColor(0.78, 0.78, 0.75, 0.95)
-    local descLineHeight = 22
+    local descLineHeight = 18
     local descLines = self:wrapText(classData.description, w - 24)
+    local maxDescLines = 4
     for i, line in ipairs(descLines) do
+        if i > maxDescLines then break end
+        if i == maxDescLines and #descLines > maxDescLines then
+            line = line:gsub("%s+$", "") .. "..."
+        end
         local lineW = self.smallFont:getWidth(line)
         drawTextWithShadow(line, x + w/2 - lineW/2, y + 125 + (i - 1) * descLineHeight)
     end
     
     -- Stats (positioned below description with clear separation)
-    local statsY = y + 125 + math.min(#descLines, 3) * descLineHeight + 16
+    local statsY = y + 125 + math.min(#descLines, maxDescLines) * descLineHeight + 14
     love.graphics.setColor(0.5, 0.5, 0.5, 1)
     love.graphics.line(x + 20, statsY, x + w - 20, statsY)
     
@@ -629,9 +634,9 @@ function Menu:drawBiomeSelect()
     
     -- Biome cards
     local biomes = {"DEEPWOOD", "GREY_HALLS", "ASH_CRAG"}
-    local cardWidth = 200
-    local cardHeight = 150
-    local spacing = 40
+    local cardWidth = 220
+    local cardHeight = 170
+    local spacing = 28
     local totalWidth = #biomes * cardWidth + (#biomes - 1) * spacing
     local startX = w/2 - totalWidth/2
     
@@ -674,24 +679,47 @@ function Menu:drawBiomeCard(biomeData, x, y, w, h, isSelected)
     love.graphics.rectangle("line", x, y, w, h, 8, 8)
     love.graphics.setLineWidth(1)
     
-    -- Biome name
-    love.graphics.setFont(self.headerFont)
-    local nameW = self.headerFont:getWidth(biomeData.name)
+    -- Biome name kept inside the card instead of using the oversized header font.
+    local displayName = tostring(biomeData.name or "")
+    local words = {}
+    for word in displayName:gmatch("%S+") do
+        words[#words + 1] = word
+    end
+    if #words == 0 then
+        words[1] = displayName
+    end
+
+    love.graphics.setFont(self.bodyFont)
     love.graphics.setColor(biomeData.accentColor[1], biomeData.accentColor[2], biomeData.accentColor[3], 1)
-    drawTextWithShadow(biomeData.name, x + w/2 - nameW/2, y + 20)
-    
+    local nameLines = {}
+    if #words >= 2 then
+        nameLines[1] = words[1]
+        nameLines[2] = table.concat(words, " ", 2)
+    else
+        nameLines[1] = displayName
+    end
+
+    local nameY = y + 18
+    local nameLineH = self.bodyFont:getHeight() - 2
+    for i, line in ipairs(nameLines) do
+        local nameW = self.bodyFont:getWidth(line)
+        drawTextWithShadow(line, x + w/2 - nameW/2, nameY + (i - 1) * nameLineH)
+    end
+
     -- Subtitle
     love.graphics.setFont(self.smallFont)
+    local subtitleY = nameY + (#nameLines * nameLineH) + 8
     local subW = self.smallFont:getWidth(biomeData.subtitle)
     love.graphics.setColor(0.7, 0.7, 0.7, 0.8)
-    love.graphics.print(biomeData.subtitle, x + w/2 - subW/2, y + 55)
+    love.graphics.print(biomeData.subtitle, x + w/2 - subW/2, subtitleY)
     
     -- Description
     love.graphics.setColor(0.72, 0.72, 0.68, 0.95)
-    local descLines = self:wrapText(biomeData.description, w - 20)
+    local descLines = self:wrapText(biomeData.description, w - 24)
+    local descY = subtitleY + self.smallFont:getHeight() + 12
     for i, line in ipairs(descLines) do
         local lineW = self.smallFont:getWidth(line)
-        drawTextWithShadow(line, x + w/2 - lineW/2, y + 85 + (i-1) * 18)
+        drawTextWithShadow(line, x + w/2 - lineW/2, descY + (i-1) * 18)
     end
 end
 
@@ -1125,9 +1153,9 @@ function Menu:mousepressed(x, y, button)
     elseif state == States.CHARACTER_SELECT then
         -- Check character cards
         local classes = {"ARCHER", "WIZARD", "KNIGHT"}
-        local cardWidth = 180
-        local cardHeight = 280
-        local spacing = 30
+        local cardWidth = 200
+        local cardHeight = 300
+        local spacing = 24
         local totalWidth = #classes * cardWidth + (#classes - 1) * spacing
         local startX = w/2 - totalWidth/2
         
@@ -1146,9 +1174,9 @@ function Menu:mousepressed(x, y, button)
     elseif state == States.BIOME_SELECT then
         -- Check biome cards
         local biomes = {"DEEPWOOD", "GREY_HALLS", "ASH_CRAG"}
-        local cardWidth = 200
-        local cardHeight = 150
-        local spacing = 40
+        local cardWidth = 220
+        local cardHeight = 170
+        local spacing = 28
         local totalWidth = #biomes * cardWidth + (#biomes - 1) * spacing
         local startX = w/2 - totalWidth/2
         
@@ -1227,9 +1255,9 @@ function Menu:mousemoved(x, y)
         end
     elseif state == States.CHARACTER_SELECT then
         local classes = {"ARCHER", "WIZARD", "KNIGHT"}
-        local cardWidth = 180
-        local cardHeight = 280
-        local spacing = 30
+        local cardWidth = 200
+        local cardHeight = 300
+        local spacing = 24
         local totalWidth = #classes * cardWidth + (#classes - 1) * spacing
         local startX = w/2 - totalWidth/2
         
@@ -1245,9 +1273,9 @@ function Menu:mousemoved(x, y)
         
     elseif state == States.BIOME_SELECT then
         local biomes = {"DEEPWOOD", "GREY_HALLS", "ASH_CRAG"}
-        local cardWidth = 200
-        local cardHeight = 150
-        local spacing = 40
+        local cardWidth = 220
+        local cardHeight = 170
+        local spacing = 28
         local totalWidth = #biomes * cardWidth + (#biomes - 1) * spacing
         local startX = w/2 - totalWidth/2
         
