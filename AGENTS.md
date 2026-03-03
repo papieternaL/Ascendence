@@ -237,6 +237,23 @@ Input → Player.update() → Movement
 10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
+- 2026-03-02: **Typography + color palette pass (menu/HUD readability and style)**:
+  - Updated global UI font paths in `main.lua` to a squarer, more retro-futuristic set (`Kenney Future Square` + `Kenney Bold`) to better match the requested reference style.
+  - Refined `ui/menu.lua` with a centralized palette (gold title accents + cool cyan highlights) and applied it across menu title, subtitle, slider/toggle states, section labels, and back button text.
+  - Updated menu particle and radial background tinting toward cooler cosmic hues while keeping existing fallback rendering behavior.
+  - Files: main.lua, ui/menu.lua, AGENTS.md.
+- 2026-03-02: **Forest map HD-style art pass scaffold (asset-first + richer fallback)**:
+  - Upgraded `systems/forest_tilemap.lua` to an **asset-first renderer** with safe fallback: supports optional `grass_dirt`, `forest_sheet`, and sprite quads (trees/bushes/rocks/root clumps) while preserving procedural drawing when assets are missing.
+  - Added richer floor rendering for closer-to-reference look: deeper green grading, micro ground detail (leaf specks + glow flecks), denser prop distribution, and improved world texture tiling behavior.
+  - Added subtle screen-space ambience via `drawScreenOverlay()` (vignette + glowing firefly specks) and wired updates so ambience animates continuously.
+  - Integrated overlay into gameplay draw flow and ambience update into `GameScene:update` for consistent visual polish during normal play and modal pauses.
+  - Files: systems/forest_tilemap.lua, scenes/game_scene.lua, AGENTS.md.
+- 2026-03-02: **Menu visual pass: cosmic backdrop + image-driven chrome + quick state shortcuts**:
+  - Added optional image-driven menu visuals in `ui/menu.lua` with safe fallbacks: cosmic background (`assets/ui/backgrounds/cosmic_space_ripple.png`), title, menu button, settings frame, and back button art if present.
+  - Menu background now applies subtle continuous drift/rotation and additive highlight accents for selected buttons.
+  - `Menu:draw()` now renders the shared background first for menu-family states, then overlays state-specific UI.
+  - Added shortcut parity requested for quick navigation: `S` opens Settings from Main Menu; `Backspace` returns to Main Menu from Settings (Escape still works).
+  - Files: ui/menu.lua, AGENTS.md.
 - 2026-02-15: **Ice attunement rework + Arrow Volley upgrades + Tactical Spacing removed**:
   - **Tactical Spacing removed**: "Deal 25% more damage to distant enemies" upgrade deleted.
   - **Ice Attunement rework**: Base effect now applies chill (slow) instead of freeze; when chill expires, ice burst deals AOE damage at entity position. StatusEffects.update returns expiredChillEntity for chill-expiry handling.
@@ -528,4 +545,3 @@ Input → Player.update() → Movement
   - Abilities auto-cast when ready (Power Shot/Entangle); dash remains manual.
   - Ultimate (Frenzy) is user-activated on `R` once fully charged.
   - Level-up UI no longer selects on Space; gameplay inputs are swallowed while the upgrade modal is open.
-
