@@ -140,10 +140,17 @@ function EnemySpawner:getRandomSpawnPosition()
   local player = self.game_scene.player
   local camera = self.game_scene.camera
   
-  local cam_left = camera.x - love.graphics.getWidth() / 2
-  local cam_right = camera.x + love.graphics.getWidth() / 2
-  local cam_top = camera.y - love.graphics.getHeight() / 2
-  local cam_bottom = camera.y + love.graphics.getHeight() / 2
+  local viewportW, viewportH
+  if camera and camera.getViewportSize then
+    viewportW, viewportH = camera:getViewportSize()
+  else
+    viewportW, viewportH = love.graphics.getWidth(), love.graphics.getHeight()
+  end
+
+  local cam_left = camera.x
+  local cam_right = camera.x + viewportW
+  local cam_top = camera.y
+  local cam_bottom = camera.y + viewportH
   
   local side = math.random(1, 4)
   local x, y

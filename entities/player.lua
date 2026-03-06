@@ -333,24 +333,6 @@ function Player:draw()
         end
     end
 
-    -- Draw health bar above player
-    local barWidth = 40
-    local barHeight = 6
-    local barX = self.x - barWidth / 2
-    local barY = drawY - self.size - 15
-    
-    -- Background (red)
-    love.graphics.setColor(0.3, 0.1, 0.1, 1)
-    love.graphics.rectangle("fill", barX, barY, barWidth, barHeight)
-    
-    -- Health (green)
-    local healthPercent = self.health / self.maxHealth
-    love.graphics.setColor(0.2, 0.8, 0.2, 1)
-    love.graphics.rectangle("fill", barX, barY, barWidth * healthPercent, barHeight)
-    
-    -- Border
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.rectangle("line", barX, barY, barWidth, barHeight)
 end
 
 function Player:triggerBowRecoil()

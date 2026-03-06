@@ -197,18 +197,26 @@ Config.ForestScene = {
   grassDirt = "assets/forest/grass_dirt.png",
   forestSheet = "assets/forest/forest_sheet.png",
   fungiSheet = "assets/forest/fungi_sheet.png",
+  winluTreeSheet = "assets/forest/Winlu exterior remaster/Fantasy_Tileset_Green_Edition_upgrade/characters/!$Big_Trees_green_NoShadow.png",
+  winluDecorSheet = "assets/forest/Winlu exterior remaster/Fantasy_Tileset_Green_Edition_upgrade/tilesets/Fantasy_Outside_D_green_NoShadow.png",
+  winluFloorSheet = "assets/forest/Winlu exterior remaster/Fantasy_Tileset_Green_Edition_upgrade/tilesets/Fantasy_Outside_A2_green.png",
   -- Quad layout in forest sheet: adjust x,y,w,h when sheet is added
   -- Trees: 64x96 each; bushes: 48x48; rocks: 32x32; roots: 48x48
 }
 
 -- World Size
 Config.World = {
-  width = 2400,
-  height = 1600,
+  width = 2640,
+  height = 1760,
+  enemyScale = 1.18,
+  playerMoveSpeedScale = 1.05,
+  enemyMoveSpeedScale = 1.05,
   camera = {
     bottomThresholdStart = 0.65,
     bottomThresholdEnd = 0.88,
     maxDownwardOffset = 0.25,
+    zoom = 0.90,
+    followBiasY = -24,
   },
 }
 

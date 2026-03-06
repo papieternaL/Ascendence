@@ -7,7 +7,7 @@ PlayerStats.__index = PlayerStats
 -- Element upgrade IDs (switching element removes the other elements' upgrades)
 PlayerStats.elementUpgradeIds = {
   fire = { "arch_c_fire_attunement", "arch_r_fire_intensity" },
-  ice = { "arch_c_ice_attunement", "arch_r_ice_depth", "arch_r_freeze_spread", "arch_r_ice_blast_radius", "arch_r_ice_blast" },
+  ice = { "arch_c_ice_attunement", "arch_r_ice_depth", "arch_r_freeze_spread", "arch_r_ice_blast" },
   lightning = { "arch_c_lightning_attunement", "arch_r_lightning_reach" },
 }
 
@@ -46,7 +46,7 @@ function PlayerStats:new(baseOverrides)
     multipliers = {},  -- from stat_mul effects
     weaponMods = {},  -- from weapon_mod effects
     buffs = {},  -- active buffs with duration/charges
-    acquiredUpgrades = {},  -- { [upgradeId] = true }
+    acquiredUpgrades = {},  -- { [upgradeId] = count }
     acquiredUpgradeLog = {}, -- ordered list: { {id,name,rarity,tags,effects,at}, ... }
     activePrimaryElement = nil,  -- "fire" | "ice" | "lightning"
   }, PlayerStats)
@@ -68,6 +68,92 @@ end
 
 function PlayerStats:getBase(stat)
   return self.base[stat] or 0
+end
+
+local function copyTable(value)
+  if type(value) ~= "table" then
+    return value
+  end
+  local out = {}
+  for k, v in pairs(value) do
+    out[k] = copyTable(v)
+  end
+  return out
+end
+
+local function mergeBuffStats(existingStats, incomingStats)
+  existingStats = existingStats or {}
+  incomingStats = incomingStats or {}
+  local byStat = {}
+
+  for _, statMod in ipairs(existingStats) do
+    byStat[statMod.stat] = copyTable(statMod)
+  end
+
+  for _, statMod in ipairs(incomingStats) do
+    local current = byStat[statMod.stat]
+    if current then
+      if statMod.add then
+        current.add = (current.add or 0) + statMod.add
+      end
+      if statMod.mul then
+        current.mul = (current.mul or 1.0) * statMod.mul
+      end
+    else
+      byStat[statMod.stat] = copyTable(statMod)
+    end
+  end
+
+  local merged = {}
+  for _, statMod in pairs(byStat) do
+    merged[#merged + 1] = statMod
+  end
+  return merged
+end
+
+local function tryMergeProc(procList, effect)
+  local apply = effect.apply
+  if not apply then
+    return false
+  end
+
+  for _, existing in ipairs(procList) do
+    local existingApply = existing.apply
+    if existing.trigger == effect.trigger and existingApply and existingApply.kind == apply.kind then
+      if apply.kind == "status_apply" and existingApply.status == apply.status then
+        if apply.status == "burn" or apply.status == "bleed" then
+          existingApply.stacks = (existingApply.stacks or 1) + (apply.stacks or 1)
+        else
+          existingApply.duration = (existingApply.duration or 0) + (apply.duration or 0) * 0.5
+          existingApply.stacks = math.max(existingApply.stacks or 1, apply.stacks or 1)
+        end
+        return true
+      end
+
+      if apply.kind == "chain_damage" and existingApply.element == apply.element then
+        existingApply.damage_mul = (existingApply.damage_mul or 0) + math.max(0.08, (apply.damage_mul or 0) * 0.3)
+        existingApply.range = math.max(existingApply.range or 0, apply.range or 0)
+        return true
+      end
+
+      if apply.kind == "buff" and existingApply.name == apply.name then
+        existingApply.duration = (existingApply.duration or 0) + (apply.duration or 0) * 0.35
+        existingApply.stats = mergeBuffStats(existingApply.stats, apply.stats)
+        if apply.charges then
+          existingApply.charges = (existingApply.charges or 0) + apply.charges
+        end
+        return true
+      end
+
+      if apply.kind == "ice_blast" and existing.status == effect.status then
+        existingApply.radius = (existingApply.radius or 70) + 12
+        existingApply.damage_mul_of_target_maxhp = (existingApply.damage_mul_of_target_maxhp or 0.05) + 0.02
+        return true
+      end
+    end
+  end
+
+  return false
 end
 
 -- Get the final computed value for a stat
@@ -140,8 +226,6 @@ function PlayerStats:applyUpgrade(upgrade)
     self:recomputeFromUpgrades()
   end
 
-  self.acquiredUpgrades[upgrade.id] = true
-
   -- Record for run-stats UI (ordered history)
   local at = nil
   if love and love.timer and love.timer.getTime then
@@ -156,24 +240,24 @@ function PlayerStats:applyUpgrade(upgrade)
     at = at,
   }
 
-  if elementForUpgrade == self.activePrimaryElement or not elementForUpgrade then
-    for _, effect in ipairs(upgrade.effects or {}) do
-      self:applyEffect(effect)
-    end
-  else
-    self:recomputeFromUpgrades()
+  if elementForUpgrade and not self.activePrimaryElement then
+    self.activePrimaryElement = elementForUpgrade
   end
+
+  self:recomputeFromUpgrades()
 
   return true
 end
 
 -- Recompute all stats from acquired upgrades (used after element switch)
 function PlayerStats:recomputeFromUpgrades()
+  self.acquiredUpgrades = {}
   self.additive = {}
   self.multipliers = {}
   self.weaponMods = {}
   self.elementMods = {}
   for _, entry in ipairs(self.acquiredUpgradeLog) do
+    self.acquiredUpgrades[entry.id] = (self.acquiredUpgrades[entry.id] or 0) + 1
     for _, effect in ipairs(entry.effects or {}) do
       self:applyEffect(effect)
     end
@@ -204,25 +288,10 @@ function PlayerStats:applyEffect(effect)
   elseif effect.kind == "proc" then
     -- Store proc effects for the combat system to check
     self.weaponMods.procs = self.weaponMods.procs or {}
-    -- Attunement procs: only one per element/status to avoid duplicate chain/burn/freeze on repeat picks
-    local apply = effect.apply
-    if effect.trigger == "on_primary_hit" and apply then
-      local key = nil
-      if apply.kind == "chain_damage" and apply.element then key = "chain_" .. (apply.element or "") end
-      if apply.kind == "status_apply" and (apply.status == "burn" or apply.status == "freeze") then key = "status_" .. (apply.status or "") end
-      if key then
-        for _, p in ipairs(self.weaponMods.procs) do
-          local pa = p.apply
-          if p.trigger == effect.trigger and pa then
-            local pk = nil
-            if pa.kind == "chain_damage" and pa.element then pk = "chain_" .. pa.element end
-            if pa.kind == "status_apply" and (pa.status == "burn" or pa.status == "freeze") then pk = "status_" .. pa.status end
-            if pk == key then return end -- already have this attunement proc
-          end
-        end
-      end
+    if tryMergeProc(self.weaponMods.procs, effect) then
+      return
     end
-    table.insert(self.weaponMods.procs, effect)
+    table.insert(self.weaponMods.procs, copyTable(effect))
 
   elseif effect.kind == "ability_mod" then
     -- Store ability modifications keyed by ability name
@@ -235,9 +304,13 @@ function PlayerStats:applyEffect(effect)
     -- Element-specific modifiers (only active when activePrimaryElement matches)
     self.elementMods = self.elementMods or {}
     self.elementMods[effect.element] = self.elementMods[effect.element] or {}
-    -- Mods ending with _add stack additively; others overwrite
+    local current = self.elementMods[effect.element][effect.mod]
     if effect.mod and effect.mod:match("_add$") then
-      self.elementMods[effect.element][effect.mod] = (self.elementMods[effect.element][effect.mod] or 0) + (effect.value or 0)
+      self.elementMods[effect.element][effect.mod] = (current or 0) + (effect.value or 0)
+    elseif type(effect.value) == "number" and effect.mod and effect.mod:match("_mul$") then
+      self.elementMods[effect.element][effect.mod] = (current or 1.0) * effect.value
+    elseif type(effect.value) == "boolean" then
+      self.elementMods[effect.element][effect.mod] = current or effect.value
     else
       self.elementMods[effect.element][effect.mod] = effect.value
     end
@@ -373,14 +446,14 @@ end
 
 -- Check if player has a specific upgrade
 function PlayerStats:hasUpgrade(upgradeId)
-  return self.acquiredUpgrades[upgradeId] == true
+  return (self.acquiredUpgrades[upgradeId] or 0) > 0
 end
 
 -- Get count of acquired upgrades by rarity
 function PlayerStats:getUpgradeCount()
   local count = { common = 0, rare = 0, epic = 0, total = 0 }
-  for id, _ in pairs(self.acquiredUpgrades) do
-    count.total = count.total + 1
+  for _, amount in pairs(self.acquiredUpgrades) do
+    count.total = count.total + amount
     -- Would need access to upgrade data to count by rarity
   end
   return count

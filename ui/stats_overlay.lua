@@ -44,6 +44,7 @@ function StatsOverlay:new()
     fontTitle = nil,
     fontBody = nil,
     fontSmall = nil,
+    fontTiny = nil,
   }, StatsOverlay)
   return o
 end
@@ -84,15 +85,24 @@ local function ensureFonts(self)
     self.fontTitle = loadUI(22)
     self.fontBody = loadUI(15)
     self.fontSmall = loadUI(13)
+    self.fontTiny = loadUI(11)
   end
 end
 
 local function drawPanel(x, y, w, h)
-  love.graphics.setColor(0, 0, 0, 0.78)
-  love.graphics.rectangle("fill", x, y, w, h, 10, 10)
-  love.graphics.setColor(0.6, 0.75, 1, 0.4)
+  love.graphics.setColor(0, 0, 0, 0.28)
+  love.graphics.rectangle("fill", x + 8, y + 8, w, h, 18, 18)
+  love.graphics.setColor(0.03, 0.05, 0.08, 0.94)
+  love.graphics.rectangle("fill", x, y, w, h, 18, 18)
+  love.graphics.setColor(0.06, 0.1, 0.16, 0.8)
+  love.graphics.rectangle("fill", x + 4, y + 4, w - 8, 52, 14, 14)
+  love.graphics.setColor(0.24, 0.34, 0.48, 0.3)
+  love.graphics.rectangle("fill", x + 4, y + 62, w - 8, h - 66, 14, 14)
+  love.graphics.setColor(0.55, 0.78, 1, 0.45)
   love.graphics.setLineWidth(2)
-  love.graphics.rectangle("line", x, y, w, h, 10, 10)
+  love.graphics.rectangle("line", x, y, w, h, 18, 18)
+  love.graphics.setColor(0.95, 0.8, 0.46, 0.22)
+  love.graphics.rectangle("line", x + 5, y + 5, w - 10, h - 10, 14, 14)
   love.graphics.setLineWidth(1)
   love.graphics.setColor(1, 1, 1, 1)
 end
@@ -146,39 +156,59 @@ function StatsOverlay:draw(playerStats, xpSystem, player)
 
   local sw, sh = love.graphics.getWidth(), love.graphics.getHeight()
   local pad = 24
-  local panelW = math.min(900, sw - pad * 2)
-  local panelH = math.min(560, sh - pad * 2)
+  local panelW = math.min(960, sw - pad * 2)
+  local panelH = math.min(600, sh - pad * 2)
   local x = (sw - panelW) / 2
   local y = (sh - panelH) / 2
 
   drawPanel(x, y, panelW, panelH)
 
+  love.graphics.setBlendMode("add", "alphamultiply")
+  love.graphics.setColor(0.1, 0.7, 1.0, 0.08)
+  love.graphics.ellipse("fill", x + panelW * 0.28, y + 40, 120, 26)
+  love.graphics.ellipse("fill", x + panelW * 0.72, y + 40, 120, 26)
+  love.graphics.setBlendMode("alpha")
+
   love.graphics.setFont(self.fontTitle)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.print("CHARACTER", x + 16, y + 12)
+  love.graphics.setColor(0.96, 0.98, 1, 1)
+  love.graphics.print("RUN PROFILE", x + 22, y + 14)
+
+  love.graphics.setFont(self.fontTiny)
+  love.graphics.setColor(0.9, 0.8, 0.56, 0.95)
+  love.graphics.print("TAB", x + 24, y + 42)
+  love.graphics.setColor(0.75, 0.84, 0.98, 0.82)
+  love.graphics.print("Run Stats / Upgrades", x + 56, y + 42)
 
   love.graphics.setFont(self.fontSmall)
-  love.graphics.setColor(1, 1, 1, 0.75)
+  love.graphics.setColor(0.82, 0.9, 1, 0.75)
   local levelText = xpSystem and ("Level " .. tostring(xpSystem.level)) or ""
-  local closeText = levelText .. "  (Press Tab to close)"
-  love.graphics.print(closeText, x + panelW - self.fontSmall:getWidth(closeText) - 16, y + 18)
+  local closeText = levelText .. "  Press Tab to close"
+  love.graphics.print(closeText, x + panelW - self.fontSmall:getWidth(closeText) - 22, y + 20)
 
-  local contentY = y + 56
-  local colGap = 24
-  local col1W = 240
-  local col2W = 250
+  local contentY = y + 82
+  local colGap = 28
+  local col1W = 250
+  local col2W = 260
   local col3W = panelW - col1W - col2W - colGap * 2 - 32
 
   local col1X = x + 16
   local col2X = col1X + col1W + colGap
   local col3X = col2X + col2W + colGap
 
-  love.graphics.setFont(self.fontBody)
-  love.graphics.setColor(0.5, 0.8, 1, 1)
-  love.graphics.print("STATS", col1X, contentY)
+  local function drawSectionHeader(title, sx, sy, color)
+    love.graphics.setColor(0.04, 0.07, 0.11, 0.82)
+    love.graphics.rectangle("fill", sx - 10, sy - 8, 182, 24, 8, 8)
+    love.graphics.setColor(color[1], color[2], color[3], 0.22)
+    love.graphics.rectangle("fill", sx - 10, sy - 8, 182, 10, 8, 8)
+    love.graphics.setColor(color[1], color[2], color[3], 0.95)
+    love.graphics.setFont(self.fontBody)
+    love.graphics.print(title, sx, sy - 2)
+  end
+
+  drawSectionHeader("STATS", col1X, contentY, {0.48, 0.84, 1.0})
 
   local lineY = contentY + 24
-  local lineH = 18
+  local lineH = 19
   local statBaseX = col1X + 108
   local statArrowX = col1X + 144
   local statCurrentX = col1X + 172
@@ -224,9 +254,7 @@ function StatsOverlay:draw(playerStats, xpSystem, player)
   end
 
   lineY = lineY + 12
-  love.graphics.setFont(self.fontBody)
-  love.graphics.setColor(0.5, 0.8, 1, 1)
-  love.graphics.print("WEAPON MODS", col1X, lineY)
+  drawSectionHeader("WEAPON MODS", col1X, lineY, {0.48, 0.84, 1.0})
   lineY = lineY + 24
 
   love.graphics.setFont(self.fontSmall)
@@ -276,15 +304,13 @@ function StatsOverlay:draw(playerStats, xpSystem, player)
         love.graphics.setColor(r, g, b, 1)
         local name = buff.display_name or buff.name or "Buff"
         local timeStr = buff.duration and string.format(" (%.1fs)", buff.duration) or ""
-        love.graphics.print("  " .. fitText(self.fontSmall, name .. timeStr, col1W - 12), col1X, lineY)
+        love.graphics.print("  " .. fitText(self.fontSmall, name .. timeStr, col1W - 16), col1X, lineY)
         lineY = lineY + lineH
       end
     end
   end
 
-  love.graphics.setFont(self.fontBody)
-  love.graphics.setColor(1, 0.7, 0.3, 1)
-  love.graphics.print("ABILITY UPGRADES", col2X, contentY)
+  drawSectionHeader("ABILITY UPGRADES", col2X, contentY, {1.0, 0.72, 0.32})
 
   local upgrades = (playerStats.getUpgradeLog and playerStats:getUpgradeLog()) or {}
   local grouped = groupAbilityUpgrades(upgrades)
@@ -293,7 +319,7 @@ function StatsOverlay:draw(playerStats, xpSystem, player)
   local abilityLineH = 16
 
   love.graphics.setFont(self.fontSmall)
-  love.graphics.setColor(0.9, 0.6, 0.2, 1)
+  love.graphics.setColor(1.0, 0.84, 0.48, 1)
   love.graphics.print("Multi Shot [Q]", col2X, abilityY)
   abilityY = abilityY + 18
   if #grouped.multi_shot == 0 then
@@ -310,7 +336,7 @@ function StatsOverlay:draw(playerStats, xpSystem, player)
   end
 
   abilityY = abilityY + 8
-  love.graphics.setColor(0.9, 0.6, 0.2, 1)
+  love.graphics.setColor(1.0, 0.84, 0.48, 1)
   love.graphics.print("Arrow Volley [E]", col2X, abilityY)
   abilityY = abilityY + 18
   if #grouped.arrow_volley == 0 then
@@ -327,7 +353,7 @@ function StatsOverlay:draw(playerStats, xpSystem, player)
   end
 
   abilityY = abilityY + 8
-  love.graphics.setColor(0.9, 0.6, 0.2, 1)
+  love.graphics.setColor(1.0, 0.84, 0.48, 1)
   love.graphics.print("Frenzy [R]", col2X, abilityY)
   abilityY = abilityY + 18
   if #grouped.frenzy == 0 then
@@ -343,13 +369,11 @@ function StatsOverlay:draw(playerStats, xpSystem, player)
     end
   end
 
-  love.graphics.setFont(self.fontBody)
-  love.graphics.setColor(0.5, 1, 0.5, 1)
-  love.graphics.print("STAT UPGRADES", col3X, contentY)
+  drawSectionHeader("STAT UPGRADES", col3X, contentY, {0.42, 1.0, 0.62})
 
   local total = #grouped.other
   love.graphics.setFont(self.fontSmall)
-  love.graphics.setColor(1, 1, 1, 0.7)
+  love.graphics.setColor(0.84, 0.92, 1.0, 0.72)
   love.graphics.print(("Total: %d (Up/Down to scroll)"):format(total), col3X, contentY + 18)
 
   local listY = contentY + 40
@@ -369,6 +393,10 @@ function StatsOverlay:draw(playerStats, xpSystem, player)
     for i = startIdx, endIdx do
       local u = grouped.other[i]
       local r, g, b = rarityColor(u.rarity)
+      if i == startIdx then
+        love.graphics.setColor(0.08, 0.12, 0.18, 0.88)
+        love.graphics.rectangle("fill", col3X - 8, yy - 2, col3W - 2, abilityLineH + 3, 6, 6)
+      end
       love.graphics.setColor(r, g, b, 1)
       love.graphics.print(fitText(self.fontSmall, u.name or u.id or "Unknown", col3W - 8), col3X, yy)
       yy = yy + abilityLineH

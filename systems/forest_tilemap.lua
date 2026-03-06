@@ -21,6 +21,12 @@ local function distSq(x1, y1, x2, y2)
     return dx * dx + dy * dy
 end
 
+local function inEllipse(x, y, cx, cy, rx, ry)
+    local dx = (x - cx) / rx
+    local dy = (y - cy) / ry
+    return dx * dx + dy * dy <= 1
+end
+
 local function canPlace(list, x, y, minDist)
     local minDistSq = minDist * minDist
     for _, item in ipairs(list) do
@@ -51,9 +57,14 @@ function ForestTilemap:new()
         smallTrees = {},
         bushes = {},
         rocks = {},
+        decorProps = {},
         largeBlockers = {}, -- LOS blockers: { x, y, radius, type }
+        treeBlockers = {},
+        collisionBlockers = {},
 
-        -- Small floor accents to break up flat color when no texture exists.
+        -- Layered world-space ground dressing.
+        macroPatches = {},
+        storyDecals = {},
         groundDecor = {},
 
         -- Optional art-driven assets.
@@ -62,9 +73,17 @@ function ForestTilemap:new()
             forestSheet = nil,
             fungiSheet = nil,
             forestQuads = nil,
+            winluTreeSheet = nil,
+            winluDecorSheet = nil,
+            winluFloorSheet = nil,
+            spriteEntries = {},
+            floorTileKeys = {},
+            floorAccentKeys = {},
+            floorPatternW = 48,
+            floorPatternH = 48,
         },
 
-        -- Subtle screen-space ambience (fireflies + vignette).
+        -- Legacy overlay ambience. Kept empty; world-space ambience reads better.
         ambientSpecks = {},
     }
     setmetatable(tilemap, ForestTilemap)
@@ -75,6 +94,20 @@ end
 
 function ForestTilemap:loadAssets()
     local forestCfg = Config.ForestScene or {}
+    self.assets.spriteEntries = {}
+    self.assets.floorTileKeys = {}
+    self.assets.floorAccentKeys = {}
+    self.assets.floorPatternW = 48
+    self.assets.floorPatternH = 48
+
+    local function registerSprite(key, image, quad)
+        if key and image and quad then
+            self.assets.spriteEntries[key] = {
+                image = image,
+                quad = quad,
+            }
+        end
+    end
 
     self.assets.grassDirt = safeImage(forestCfg.grassDirt or "assets/forest/grass_dirt.png")
     if self.assets.grassDirt then
@@ -97,24 +130,90 @@ function ForestTilemap:loadAssets()
             mossy_rock_b = love.graphics.newQuad(32, 144, 32, 32, iw, ih),
             root_clump = love.graphics.newQuad(64, 144, 48, 48, iw, ih),
         }
+        for key, quad in pairs(self.assets.forestQuads) do
+            registerSprite(key, self.assets.forestSheet, quad)
+        end
     end
 
     self.assets.fungiSheet = safeImage(forestCfg.fungiSheet or "assets/forest/fungi_sheet.png")
+
+    self.assets.winluTreeSheet = safeImage(
+        forestCfg.winluTreeSheet
+            or "assets/forest/Winlu exterior remaster/Fantasy_Tileset_Green_Edition_upgrade/characters/!$Big_Trees_green_NoShadow.png"
+    )
+    if self.assets.winluTreeSheet then
+        local iw, ih = self.assets.winluTreeSheet:getDimensions()
+        local cellW, cellH = 192, 288
+        local treeKeys = {
+            "winlu_tree_1",
+            "winlu_tree_2",
+            "winlu_tree_3",
+            "winlu_tree_4",
+            "winlu_tree_5",
+            "winlu_tree_6",
+        }
+        local index = 1
+        for row = 0, 1 do
+            for col = 0, 2 do
+                local key = treeKeys[index]
+                if key then
+                    registerSprite(
+                        key,
+                        self.assets.winluTreeSheet,
+                        love.graphics.newQuad(col * cellW, row * cellH, cellW, cellH, iw, ih)
+                    )
+                    index = index + 1
+                end
+            end
+        end
+    end
+
+    self.assets.winluDecorSheet = safeImage(
+        forestCfg.winluDecorSheet
+            or "assets/forest/Winlu exterior remaster/Fantasy_Tileset_Green_Edition_upgrade/tilesets/Fantasy_Outside_D_green_NoShadow.png"
+    )
+    if self.assets.winluDecorSheet then
+        local iw, ih = self.assets.winluDecorSheet:getDimensions()
+        local tile = 48
+        local rockCoords = {
+            winlu_rock_1 = { 8, 4 },
+            winlu_rock_2 = { 9, 4 },
+            winlu_rock_3 = { 8, 5 },
+            winlu_rock_4 = { 9, 5 },
+        }
+        for key, coord in pairs(rockCoords) do
+            registerSprite(
+                key,
+                self.assets.winluDecorSheet,
+                love.graphics.newQuad(coord[1] * tile, coord[2] * tile, tile, tile, iw, ih)
+            )
+        end
+    end
+
+    self.assets.winluFloorSheet = safeImage(
+        forestCfg.winluFloorSheet
+            or "assets/forest/Winlu exterior remaster/Fantasy_Tileset_Green_Edition_upgrade/tilesets/Fantasy_Outside_A5_green.png"
+    )
+    if self.assets.winluFloorSheet then
+        local iw, ih = self.assets.winluFloorSheet:getDimensions()
+        local patchX = 240
+        local patchY = 96
+        local patchW = 96
+        local patchH = 96
+        local floorKey = "winlu_floor_base"
+        registerSprite(
+            floorKey,
+            self.assets.winluFloorSheet,
+            love.graphics.newQuad(patchX, patchY, patchW, patchH, iw, ih)
+        )
+        self.assets.floorTileKeys[1] = floorKey
+        self.assets.floorPatternW = patchW
+        self.assets.floorPatternH = patchH
+    end
 end
 
 function ForestTilemap:initAmbientSpecks()
     self.ambientSpecks = {}
-    local w, h = love.graphics.getDimensions()
-    for i = 1, 55 do
-        self.ambientSpecks[#self.ambientSpecks + 1] = {
-            x = math.random() * w,
-            y = math.random() * h,
-            speed = 6 + math.random() * 14,
-            phase = math.random() * math.pi * 2,
-            size = 0.8 + math.random() * 1.6,
-            hue = (math.random() < 0.5) and "cyan" or "lime",
-        }
-    end
 end
 
 function ForestTilemap:generate()
@@ -122,19 +221,107 @@ function ForestTilemap:generate()
 
     local worldW, worldH = worldSize()
     local centerX, centerY = worldW * 0.5, worldH * 0.5
-    local centerSoftRadiusSq = 180 * 180
+    local centerPlayRx = 250
+    local centerPlayRy = 180
+    local laneHalfW = 82
+    local laneHalfH = 74
+    local laneReachX = math.floor(worldW * 0.34)
+    local laneReachY = math.floor(worldH * 0.32)
+    local clusterAnchors = {
+        { x = 170, y = 170, rx = 160, ry = 120 },
+        { x = worldW - 170, y = 170, rx = 160, ry = 120 },
+        { x = 170, y = worldH - 170, rx = 160, ry = 120 },
+        { x = worldW - 170, y = worldH - 170, rx = 160, ry = 120 },
+        { x = worldW * 0.5, y = 135, rx = 220, ry = 90 },
+        { x = worldW * 0.5, y = worldH - 135, rx = 220, ry = 90 },
+        { x = 125, y = worldH * 0.5, rx = 95, ry = 170 },
+        { x = worldW - 125, y = worldH * 0.5, rx = 95, ry = 170 },
+    }
+
+    local function isReservedGameplaySpace(x, y, padding)
+        padding = padding or 0
+        if inEllipse(x, y, centerX, centerY, centerPlayRx + padding, centerPlayRy + padding) then
+            return true
+        end
+        if math.abs(x - centerX) <= (laneHalfW + padding) and math.abs(y - centerY) <= (laneReachY + padding) then
+            return true
+        end
+        if math.abs(y - centerY) <= (laneHalfH + padding) and math.abs(x - centerX) <= (laneReachX + padding) then
+            return true
+        end
+        return false
+    end
+
+    local function edgeWeight(x, y)
+        local nearestEdge = math.min(x, y, worldW - x, worldH - y)
+        if nearestEdge < 120 then
+            return 1.0
+        elseif nearestEdge < 220 then
+            return 0.7
+        end
+        return 0.35
+    end
+
+    local function nearClusterAnchor(x, y)
+        for _, anchor in ipairs(clusterAnchors) do
+            if inEllipse(x, y, anchor.x, anchor.y, anchor.rx, anchor.ry) then
+                return true
+            end
+        end
+        return false
+    end
 
     self.trees = {}
     self.smallTrees = {}
     self.bushes = {}
     self.rocks = {}
+    self.decorProps = {}
     self.largeBlockers = {}
+    self.treeBlockers = {}
+    self.collisionBlockers = {}
+    self.macroPatches = {}
+    self.storyDecals = {}
     self.groundDecor = {}
 
-    local treeTypes = { "pine_tree_1", "pine_tree_2", "oak_tree_3", "oak_tree_4", "dead_tree_5" }
+    local usingWinluTrees = self.assets.winluTreeSheet ~= nil
+    local usingWinluDecor = self.assets.winluDecorSheet ~= nil
+    local usingWinluFloor = self.assets.winluFloorSheet ~= nil
+    local treeTypes = {
+        { key = "pine_tree_1", ox = 32, oy = 96, scale = 1.0, smallScale = 0.72, collisionRadius = 14, collisionOffsetY = -10 },
+        { key = "pine_tree_2", ox = 32, oy = 96, scale = 1.0, smallScale = 0.72, collisionRadius = 14, collisionOffsetY = -10 },
+        { key = "oak_tree_3", ox = 32, oy = 96, scale = 1.0, smallScale = 0.72, collisionRadius = 18, collisionOffsetY = -12 },
+        { key = "oak_tree_4", ox = 32, oy = 96, scale = 1.0, smallScale = 0.72, collisionRadius = 18, collisionOffsetY = -12 },
+        { key = "dead_tree_5", ox = 32, oy = 96, scale = 1.0, smallScale = 0.72, collisionRadius = 12, collisionOffsetY = -10 },
+    }
+    if usingWinluTrees then
+        treeTypes = {
+            -- Match the provided reference: one tall pine + one rounded tree.
+            { key = "winlu_tree_3", ox = 96, oy = 288, scale = 0.40, smallScale = 0.23, collisionRadius = 14, collisionOffsetY = -10 },
+            { key = "winlu_tree_4", ox = 96, oy = 288, scale = 0.36, smallScale = 0.21, collisionRadius = 18, collisionOffsetY = -12 },
+        }
+    end
     local bushTypes = { "bush_1", "bush_2", "bush_3" }
-    local rockTypes = { "mossy_rock_a", "mossy_rock_b" }
-
+    local rockTypes = {
+        { key = "mossy_rock_a", ox = 16, oy = 32, scale = 1.0, blockerScale = 1.4 },
+        { key = "mossy_rock_b", ox = 16, oy = 32, scale = 1.0, blockerScale = 1.4 },
+    }
+    local blockerRockTypes = rockTypes
+    if usingWinluDecor then
+        rockTypes = {
+            -- Keep only safe decorative rock sprites; exclude the cave/hole tile.
+            { key = "winlu_rock_4", ox = 24, oy = 48, scale = 0.88, blockerScale = 2.30 },
+            { key = "winlu_rock_4", ox = 24, oy = 48, scale = 0.76, blockerScale = 2.30 },
+        }
+        blockerRockTypes = {
+            -- Use one consistent blocker sprite so collision can match the visible footprint.
+            { key = "winlu_rock_3", ox = 24, oy = 48, scale = 0.84, blockerScale = 2.35, blockerRadius = 40, collisionOffsetY = -18, drawOffsetY = 14 },
+        }
+    end
+    local treeCount = usingWinluTrees and 7 or 18
+    local smallTreeCount = usingWinluTrees and 10 or 20
+    local bushCount = usingWinluDecor and 14 or 34
+    local rockCount = usingWinluDecor and 18 or 24
+    local largeBlockerCount = usingWinluDecor and 7 or 8
     local function addScattered(list, count, minDist, margin, makeItem)
         local tries = count * 20
         while #list < count and tries > 0 do
@@ -142,8 +329,16 @@ function ForestTilemap:generate()
             local x = math.random(margin, worldW - margin)
             local y = math.random(margin, worldH - margin)
 
-            local inCenter = distSq(x, y, centerX, centerY) < centerSoftRadiusSq
-            if inCenter and math.random() < 0.65 then
+            if isReservedGameplaySpace(x, y, minDist * 0.35) then
+                goto continue
+            end
+
+            local favoredZone = nearClusterAnchor(x, y)
+            local weight = edgeWeight(x, y)
+            if favoredZone then
+                weight = math.min(1.0, weight + 0.35)
+            end
+            if math.random() > weight then
                 goto continue
             end
 
@@ -154,11 +349,18 @@ function ForestTilemap:generate()
         end
     end
 
-    addScattered(self.trees, 18, 108, 70, function(x, y)
+    addScattered(self.trees, treeCount, 150, 110, function(x, y)
+        local spriteDef = treeTypes[math.random(1, #treeTypes)]
         return {
             x = x,
             y = y,
-            sprite = treeTypes[math.random(1, #treeTypes)],
+            sprite = spriteDef.key,
+            spriteOx = spriteDef.ox,
+            spriteOy = spriteDef.oy,
+            spriteScale = spriteDef.scale,
+            spriteSmallScale = spriteDef.smallScale,
+            collisionRadius = spriteDef.collisionRadius,
+            collisionOffsetY = spriteDef.collisionOffsetY,
             trunkW = 7 + math.random(0, 3),
             trunkH = 16 + math.random(0, 6),
             crownR = 18 + math.random(0, 10),
@@ -166,11 +368,16 @@ function ForestTilemap:generate()
         }
     end)
 
-    addScattered(self.smallTrees, 20, 78, 60, function(x, y)
+    addScattered(self.smallTrees, smallTreeCount, 118, 100, function(x, y)
+        local spriteDef = treeTypes[math.random(1, #treeTypes)]
         return {
             x = x,
             y = y,
-            sprite = treeTypes[math.random(1, #treeTypes)],
+            sprite = spriteDef.key,
+            spriteOx = spriteDef.ox,
+            spriteOy = spriteDef.oy,
+            spriteScale = spriteDef.scale,
+            spriteSmallScale = spriteDef.smallScale,
             trunkW = 5 + math.random(0, 2),
             trunkH = 10 + math.random(0, 4),
             crownR = 12 + math.random(0, 7),
@@ -178,21 +385,26 @@ function ForestTilemap:generate()
         }
     end)
 
-    addScattered(self.bushes, 34, 48, 40, function(x, y)
+    addScattered(self.bushes, bushCount, 90, 80, function(x, y)
         return {
             x = x,
             y = y,
             sprite = bushTypes[math.random(1, #bushTypes)],
             radius = 8 + math.random(0, 7),
+            drawOffsetY = 5,
             swayOffset = math.random() * math.pi * 2,
         }
     end)
 
-    addScattered(self.rocks, 24, 52, 45, function(x, y)
+    addScattered(self.rocks, rockCount, 90, 80, function(x, y)
+        local spriteDef = rockTypes[math.random(1, #rockTypes)]
         return {
             x = x,
             y = y,
-            sprite = rockTypes[math.random(1, #rockTypes)],
+            sprite = spriteDef.key,
+            spriteOx = spriteDef.ox,
+            spriteOy = spriteDef.oy,
+            spriteScale = spriteDef.scale,
             rx = 7 + math.random(0, 7),
             ry = 5 + math.random(0, 5),
             tint = 0.52 + math.random() * 0.08,
@@ -204,10 +416,39 @@ function ForestTilemap:generate()
     for _, r in ipairs(self.rocks) do table.insert(allProps, r) end
     for _, b in ipairs(self.bushes) do table.insert(allProps, b) end
     for _, st in ipairs(self.smallTrees) do table.insert(allProps, st) end
-    addScattered(self.largeBlockers, 8, 200, 100, function(x, y)
-        local radius = 28 + math.random(0, 20)
+    local blockerAnchors = {
+        { x = centerX - 420, y = centerY - 250 },
+        { x = centerX + 420, y = centerY - 250 },
+        { x = centerX - 420, y = centerY + 250 },
+        { x = centerX + 420, y = centerY + 250 },
+        { x = centerX, y = centerY - 330 },
+        { x = centerX, y = centerY + 330 },
+        { x = centerX - 560, y = centerY },
+        { x = centerX + 560, y = centerY },
+    }
+    local blockerIndex = 1
+    addScattered(self.largeBlockers, largeBlockerCount, 260, 150, function(x, y)
+        local anchor = blockerAnchors[blockerIndex]
+        if anchor then
+            x = anchor.x + math.random(-70, 70)
+            y = anchor.y + math.random(-55, 55)
+            blockerIndex = blockerIndex + 1
+        end
+        local spriteDef = blockerRockTypes[math.random(1, #blockerRockTypes)]
+        local radius = spriteDef.blockerRadius or (28 + math.random(0, 20))
         local typ = math.random() < 0.5 and "large_rock" or "mountain"
-        return { x = x, y = y, radius = radius, type = typ, sprite = "root_clump" }
+        local collisionOffsetY = spriteDef.collisionOffsetY or 0
+        return {
+            x = x,
+            y = y + collisionOffsetY,
+            radius = radius,
+            type = typ,
+            sprite = spriteDef.key,
+            spriteOx = spriteDef.ox,
+            spriteOy = spriteDef.oy,
+            spriteScale = spriteDef.blockerScale,
+            drawY = y + (spriteDef.drawOffsetY or 8),
+        }
     end)
 
     local filtered = {}
@@ -225,13 +466,110 @@ function ForestTilemap:generate()
     end
     self.largeBlockers = filtered
 
+    for _, tree in ipairs(self.trees) do
+        if tree.collisionRadius and tree.collisionRadius > 0 then
+            self.treeBlockers[#self.treeBlockers + 1] = {
+                x = tree.x,
+                y = tree.y + (tree.collisionOffsetY or -10),
+                radius = tree.collisionRadius,
+                type = "tree",
+            }
+        end
+    end
+
+    for _, blk in ipairs(self.largeBlockers) do
+        self.collisionBlockers[#self.collisionBlockers + 1] = blk
+    end
+    for _, blk in ipairs(self.treeBlockers) do
+        self.collisionBlockers[#self.collisionBlockers + 1] = blk
+    end
+
+    local function addMacroPatch(kind, count, marginX, marginY, minRX, maxRX, minRY, maxRY)
+        for i = 1, count do
+            local x = math.random(marginX, worldW - marginX)
+            local y = math.random(marginY, worldH - marginY)
+            if kind == "clearing" then
+                x = centerX + math.random(-260, 260)
+                y = centerY + math.random(-180, 180)
+            end
+            self.macroPatches[#self.macroPatches + 1] = {
+                kind = kind,
+                x = x,
+                y = y,
+                rx = math.random(minRX, maxRX),
+                ry = math.random(minRY, maxRY),
+            }
+        end
+    end
+
+    addMacroPatch("clearing", 4, 140, 120, 100, 200, 70, 120)
+
+    self.macroPatches[#self.macroPatches + 1] = {
+        kind = "playfield",
+        x = centerX,
+        y = centerY,
+        rx = centerPlayRx + 38,
+        ry = centerPlayRy + 28,
+    }
+    self.macroPatches[#self.macroPatches + 1] = {
+        kind = "lane",
+        x = centerX,
+        y = centerY,
+        rx = laneHalfW + 18,
+        ry = laneReachY + 24,
+    }
+    self.macroPatches[#self.macroPatches + 1] = {
+        kind = "lane",
+        x = centerX,
+        y = centerY,
+        rx = laneReachX + 22,
+        ry = laneHalfH + 18,
+    }
+
+    local function addStoryDecal(kind, x, y, radius)
+        self.storyDecals[#self.storyDecals + 1] = {
+            kind = kind,
+            x = x,
+            y = y,
+            radius = radius,
+            phase = math.random() * math.pi * 2,
+        }
+    end
+
+    for _, blk in ipairs(self.largeBlockers) do
+        addStoryDecal("pebbles", blk.x + math.random(-28, 28), (blk.drawY or blk.y) + math.random(18, 34), 14 + math.random() * 8)
+    end
+    for _, tree in ipairs(self.trees) do
+        if math.random() < 0.6 then
+            addStoryDecal("needle_bed", tree.x + math.random(-8, 8), tree.y + math.random(4, 14), 18 + math.random() * 10)
+        end
+    end
+
     -- Tiny clumps/specks to emulate richer floor painting.
-    local decorCount = math.floor((worldW * worldH) / (96 * 96))
+    local decorCount
+    if usingWinluFloor then
+        decorCount = math.floor((worldW * worldH) / (220 * 220))
+    else
+        decorCount = math.floor((worldW * worldH) / (96 * 96))
+    end
     for i = 1, decorCount do
+        local kind
+        if usingWinluFloor then
+            local roll = math.random()
+            if roll < 0.05 then
+                kind = "flower"
+            elseif roll < 0.10 then
+                kind = "tuft"
+            else
+                kind = "leaf"
+            end
+        else
+            kind = "leaf"
+        end
         self.groundDecor[#self.groundDecor + 1] = {
             x = math.random(0, worldW),
             y = math.random(0, worldH),
-            kind = (math.random() < 0.75) and "leaf" or "glow",
+            kind = kind,
             size = 1 + math.random() * 2.8,
             phase = math.random() * math.pi * 2,
         }
@@ -241,12 +579,41 @@ function ForestTilemap:generate()
 end
 
 function ForestTilemap:update(dt)
-    for _, s in ipairs(self.ambientSpecks) do
-        s.y = s.y + s.speed * dt
-        s.x = s.x + math.sin(love.timer.getTime() * 0.7 + s.phase) * 5 * dt
-        if s.y > love.graphics.getHeight() + 5 then
-            s.y = -5
-            s.x = math.random() * love.graphics.getWidth()
+    return
+end
+
+local function drawGroundShadow(x, y, rx, ry, alpha)
+    return
+end
+
+local function drawMacroPatch(patch)
+    if patch.kind == "playfield" then
+        love.graphics.setColor(0.44, 0.68, 0.40, 0.05)
+    elseif patch.kind == "lane" then
+        love.graphics.setColor(0.42, 0.64, 0.38, 0.035)
+    elseif patch.kind == "clearing" then
+        love.graphics.setColor(0.48, 0.70, 0.44, 0.03)
+    else
+        return
+    end
+    love.graphics.ellipse("fill", patch.x, patch.y, patch.rx, patch.ry)
+end
+
+local function drawStoryDecal(decal)
+    if decal.kind == "pebbles" then
+        love.graphics.setColor(0.28, 0.33, 0.29, 0.34)
+        for i = 1, 4 do
+            local a = decal.phase + i * 1.37
+            local rr = decal.radius * (0.35 + i * 0.12)
+            love.graphics.circle("fill", decal.x + math.cos(a) * rr, decal.y + math.sin(a) * rr * 0.45, 1 + (i % 2))
+        end
+    elseif decal.kind == "needle_bed" then
+        love.graphics.setColor(0.22, 0.32, 0.18, 0.22)
+        love.graphics.ellipse("fill", decal.x, decal.y, decal.radius, decal.radius * 0.42)
+        love.graphics.setColor(0.30, 0.40, 0.22, 0.18)
+        for i = -2, 2 do
+            local x = decal.x + i * (decal.radius * 0.18)
+            love.graphics.line(x, decal.y + decal.radius * 0.18, x - 2, decal.y - decal.radius * 0.16)
         end
     end
 end
@@ -261,7 +628,13 @@ function ForestTilemap:draw()
     local tilesX = math.ceil(worldW / tile)
     local tilesY = math.ceil(worldH / tile)
 
-    if self.assets.grassDirt then
+    if self.assets.floorTileKeys and #self.assets.floorTileKeys > 0 then
+        -- Use a seamless grass field instead of repeating transition/autotile edges.
+        love.graphics.setColor(0.33, 0.62, 0.36, 1)
+        love.graphics.rectangle("fill", 0, 0, worldW, worldH)
+        love.graphics.setColor(0.18, 0.36, 0.20, 0.05)
+        love.graphics.rectangle("fill", 0, 0, worldW, worldH)
+    elseif self.assets.grassDirt then
         local img = self.assets.grassDirt
         local iw, ih = img:getDimensions()
         local quad = love.graphics.newQuad(0, 0, worldW + tile * 2, worldH + tile * 2, iw, ih)
@@ -289,16 +662,34 @@ function ForestTilemap:draw()
         end
     end
 
+    -- Large-value composition pass to break up the flat green field.
+    for _, patch in ipairs(self.macroPatches or {}) do
+        drawMacroPatch(patch)
+    end
+
+    for _, decal in ipairs(self.storyDecals or {}) do
+        drawStoryDecal(decal)
+    end
+
     -- Ground micro-detail pass.
-    local t = love.timer.getTime()
     for _, d in ipairs(self.groundDecor) do
         if d.kind == "leaf" then
             love.graphics.setColor(0.42, 0.62, 0.37, 0.24)
             love.graphics.rectangle("fill", d.x, d.y, d.size * 1.4, d.size * 0.8)
-        else
-            local pulse = 0.15 + 0.08 * math.sin(t * 2.2 + d.phase)
-            love.graphics.setColor(0.45, 0.95, 0.85, pulse)
-            love.graphics.circle("fill", d.x, d.y, d.size * 0.45)
+        elseif d.kind == "flower" then
+            love.graphics.setColor(0.92, 0.84, 0.62, 0.28)
+            love.graphics.circle("fill", d.x, d.y, d.size * 0.28)
+            love.graphics.setColor(0.84, 0.94, 1.0, 0.22)
+            love.graphics.circle("fill", d.x - d.size * 0.5, d.y, d.size * 0.22)
+            love.graphics.circle("fill", d.x + d.size * 0.5, d.y, d.size * 0.22)
+            love.graphics.circle("fill", d.x, d.y - d.size * 0.45, d.size * 0.20)
+            love.graphics.circle("fill", d.x, d.y + d.size * 0.45, d.size * 0.20)
+        elseif d.kind == "tuft" then
+            love.graphics.setColor(0.26, 0.48, 0.24, 0.26)
+            love.graphics.setLineWidth(1)
+            love.graphics.line(d.x, d.y + d.size * 0.5, d.x - d.size * 0.35, d.y - d.size * 0.5)
+            love.graphics.line(d.x, d.y + d.size * 0.5, d.x, d.y - d.size * 0.6)
+            love.graphics.line(d.x, d.y + d.size * 0.5, d.x + d.size * 0.35, d.y - d.size * 0.5)
         end
     end
 
@@ -310,9 +701,6 @@ local function drawProceduralTree(tree, small)
     local sway = math.sin(t * (small and 0.9 or 0.6) + tree.swayOffset) * (small and 0.8 or 1.2)
     local trunkX = tree.x + sway
     local baseY = tree.y
-
-    love.graphics.setColor(0.06, 0.10, 0.06, 0.35)
-    love.graphics.ellipse("fill", trunkX, baseY + 2, tree.crownR * 0.72, 4)
 
     love.graphics.setColor(0.34, 0.23, 0.14, 1)
     love.graphics.rectangle("fill", trunkX - tree.trunkW * 0.5, baseY - tree.trunkH, tree.trunkW, tree.trunkH)
@@ -328,9 +716,6 @@ local function drawProceduralBush(bush)
     local sway = math.sin(t * 1.05 + bush.swayOffset) * 0.8
     local x = bush.x + sway
     local y = bush.y
-
-    love.graphics.setColor(0.08, 0.12, 0.08, 0.25)
-    love.graphics.ellipse("fill", x, y + 2, bush.radius * 0.85, 3)
     love.graphics.setColor(0.12, 0.22, 0.12, 1)
     love.graphics.circle("fill", x, y, bush.radius)
     love.graphics.setColor(0.17, 0.30, 0.16, 0.85)
@@ -341,9 +726,6 @@ local function drawProceduralLargeBlocker(blk)
     local x, y = blk.x, blk.y
     local r = blk.radius
     local isMountain = blk.type == "mountain"
-
-    love.graphics.setColor(0.05, 0.06, 0.06, 0.4)
-    love.graphics.ellipse("fill", x, y + 4, r * 1.05, 6)
     if isMountain then
         love.graphics.setColor(0.31, 0.34, 0.36, 0.96)
         love.graphics.polygon("fill",
@@ -393,9 +775,6 @@ local function drawProceduralRock(rock)
     local x, y = rock.x, rock.y
     local rx, ry = rock.rx, rock.ry
     local tint = rock.tint
-
-    love.graphics.setColor(0.09, 0.10, 0.10, 0.25)
-    love.graphics.ellipse("fill", x, y + 2, rx * 1.05, 3)
     love.graphics.setColor(tint, tint, tint + 0.02, 1)
     love.graphics.ellipse("fill", x, y, rx, ry)
     love.graphics.setColor(tint + 0.12, tint + 0.12, tint + 0.12, 0.65)
@@ -403,13 +782,20 @@ local function drawProceduralRock(rock)
 end
 
 function ForestTilemap:drawSprite(spriteKey, x, y, ox, oy, sx, sy)
-    local sheet = self.assets.forestSheet
-    local quads = self.assets.forestQuads
-    local quad = quads and quads[spriteKey]
-    if not (sheet and quad) then return false end
+    local entry = self.assets.spriteEntries and self.assets.spriteEntries[spriteKey]
+    if not entry then
+        local sheet = self.assets.forestSheet
+        local quads = self.assets.forestQuads
+        local quad = quads and quads[spriteKey]
+        if not (sheet and quad) then return false end
+        entry = {
+            image = sheet,
+            quad = quad,
+        }
+    end
 
     love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.draw(sheet, quad, x, y, 0, sx or 1, sy or sx or 1, ox or 0, oy or 0)
+    love.graphics.draw(entry.image, entry.quad, x, y, 0, sx or 1, sy or sx or 1, ox or 0, oy or 0)
     return true
 end
 
@@ -421,7 +807,15 @@ function ForestTilemap:getTreesForSorting()
             y = tree.y,
             draw = function()
                 local sway = math.sin(love.timer.getTime() * 0.6 + tree.swayOffset) * 1.2
-                local drewSprite = self:drawSprite(tree.sprite, tree.x + sway, tree.y, 32, 96, 1.0)
+                drawGroundShadow(tree.x, tree.y + 3, 18, 5, 0.18)
+                local drewSprite = self:drawSprite(
+                    tree.sprite,
+                    tree.x + sway,
+                    tree.y,
+                    tree.spriteOx or 32,
+                    tree.spriteOy or 96,
+                    tree.spriteScale or 1.0
+                )
                 if not drewSprite then
                     drawProceduralTree(tree, false)
                 end
@@ -435,14 +829,19 @@ end
 function ForestTilemap:getBushesForSorting()
     local result = {}
     for _, bush in ipairs(self.bushes) do
+        local drawY = bush.y + (bush.drawOffsetY or 0)
         result[#result + 1] = {
             x = bush.x,
-            y = bush.y,
+            y = drawY,
             draw = function()
                 local sway = math.sin(love.timer.getTime() * 1.05 + bush.swayOffset) * 0.8
-                local drewSprite = self:drawSprite(bush.sprite, bush.x + sway, bush.y, 24, 48, 1.0)
+                drawGroundShadow(bush.x, drawY + 1, bush.radius * 0.85, 3, 0.14)
+                local drewSprite = self:drawSprite(bush.sprite, bush.x + sway, drawY, 24, 48, 1.0)
                 if not drewSprite then
+                    local oldY = bush.y
+                    bush.y = drawY
                     drawProceduralBush(bush)
+                    bush.y = oldY
                 end
                 love.graphics.setColor(1, 1, 1, 1)
             end,
@@ -459,7 +858,15 @@ function ForestTilemap:getSmallTreesForSorting()
             y = tree.y,
             draw = function()
                 local sway = math.sin(love.timer.getTime() * 0.9 + tree.swayOffset) * 0.9
-                local drewSprite = self:drawSprite(tree.sprite, tree.x + sway, tree.y + 4, 32, 96, 0.72)
+                drawGroundShadow(tree.x, tree.y + 3, 14, 4, 0.16)
+                local drewSprite = self:drawSprite(
+                    tree.sprite,
+                    tree.x + sway,
+                    tree.y + 4,
+                    tree.spriteOx or 32,
+                    tree.spriteOy or 96,
+                    tree.spriteSmallScale or tree.spriteScale or 0.72
+                )
                 if not drewSprite then
                     drawProceduralTree(tree, true)
                 end
@@ -477,7 +884,15 @@ function ForestTilemap:getRocksForSorting()
             x = rock.x,
             y = rock.y,
             draw = function()
-                local drewSprite = self:drawSprite(rock.sprite, rock.x, rock.y, 16, 32, 1.0)
+                drawGroundShadow(rock.x, rock.y + 1, 14, 4, 0.16)
+                local drewSprite = self:drawSprite(
+                    rock.sprite,
+                    rock.x,
+                    rock.y,
+                    rock.spriteOx or 16,
+                    rock.spriteOy or 32,
+                    rock.spriteScale or 1.0
+                )
                 if not drewSprite then
                     drawProceduralRock(rock)
                 end
@@ -493,9 +908,18 @@ function ForestTilemap:getLargeBlockersForSorting()
     for _, blk in ipairs(self.largeBlockers or {}) do
         result[#result + 1] = {
             x = blk.x,
-            y = blk.y,
+            y = blk.drawY or blk.y,
             draw = function()
-                local drewSprite = self:drawSprite(blk.sprite, blk.x, blk.y + 8, 24, 48, 1.4)
+                local shadowY = (blk.drawY or blk.y) + 4
+                drawGroundShadow(blk.x, shadowY, (blk.radius or 36) * 0.85, 7, 0.20)
+                local drewSprite = self:drawSprite(
+                    blk.sprite,
+                    blk.x,
+                    blk.drawY or (blk.y + 8),
+                    blk.spriteOx or 24,
+                    blk.spriteOy or 48,
+                    blk.spriteScale or 1.4
+                )
                 if not drewSprite then
                     drawProceduralLargeBlocker(blk)
                 end
@@ -507,34 +931,21 @@ function ForestTilemap:getLargeBlockersForSorting()
 end
 
 function ForestTilemap:drawScreenOverlay()
-    local w, h = love.graphics.getDimensions()
-
-    -- Soft edge shading without visible concentric rings.
-    love.graphics.setColor(0.03, 0.05, 0.06, 0.08)
-    love.graphics.rectangle("fill", 0, 0, w, 28)
-    love.graphics.rectangle("fill", 0, h - 32, w, 32)
-    love.graphics.setColor(0.03, 0.05, 0.06, 0.05)
-    love.graphics.rectangle("fill", 0, 0, 18, h)
-    love.graphics.rectangle("fill", w - 18, 0, 18, h)
-
-    -- Glowing specks
-    local t = love.timer.getTime()
-    love.graphics.setBlendMode("add", "alphamultiply")
-    for _, s in ipairs(self.ambientSpecks) do
-        local pulse = 0.3 + 0.25 * math.sin(t * 2.5 + s.phase)
-        if s.hue == "cyan" then
-            love.graphics.setColor(0.50, 1.00, 0.95, pulse)
-        else
-            love.graphics.setColor(0.72, 1.00, 0.70, pulse)
-        end
-        love.graphics.circle("fill", s.x, s.y, s.size)
-    end
-    love.graphics.setBlendMode("alpha")
-    love.graphics.setColor(1, 1, 1, 1)
+    return
 end
 
 function ForestTilemap:getLargeBlockers()
+    if not self.generated then
+        self:generate()
+    end
     return self.largeBlockers or {}
+end
+
+function ForestTilemap:getCollisionBlockers()
+    if not self.generated then
+        self:generate()
+    end
+    return self.collisionBlockers or self.largeBlockers or {}
 end
 
 function ForestTilemap:drawTrees()

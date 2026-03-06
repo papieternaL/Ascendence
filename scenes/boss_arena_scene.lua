@@ -107,9 +107,10 @@ function BossArenaScene:new(player, playerStats, gameState, xpSystem, rarityChar
         maxAddsPhase1 = 0,
         maxAddsPhase2 = 0,
         
-        -- Arena decorative props
-        arenaProps = {},
-        propImages = {},
+        -- Arena dressing
+        arenaDecor = {},
+        arenaLeafClusters = {},
+        arenaRoots = {},
 
         -- Arrow Volley (falling arrows, impact-timed)
         arrowVolleys = {},
@@ -187,6 +188,7 @@ function BossArenaScene:initialize()
         end
         self.player.abilities.arrow_volley.currentCooldown = 0
         self.player.abilities.arrow_volley.cooldown = 8.0 * baseCDMul
+        self.player.abilities.entangle = self.player.abilities.arrow_volley
         
         -- Ensure dash exists
         if not self.player.abilities.dash then
@@ -203,8 +205,7 @@ function BossArenaScene:initialize()
     local carried = (self.initialFrenzyCharge and type(self.initialFrenzyCharge) == "number") and self.initialFrenzyCharge or 0
     self.frenzyCharge = math.min(self.frenzyChargeMax, math.max(0, carried))
     
-    -- Load decorative props for arena edges
-    self:loadArenaProps()
+    self:generateArenaDecor()
 end
 
 function BossArenaScene:applyStatsToPlayer()
@@ -239,109 +240,133 @@ function BossArenaScene:applyStatsToPlayer()
     end
 end
 
-function BossArenaScene:loadArenaProps()
-    local tilePath = "assets/2D assets/Monochrome RPG Tileset/Dot Matrix/Tiles/"
-    
-    -- Load tile images for props (trees, rocks, stumps, bushes)
-    local propTiles = {
-        tree1 = "tile_0003.png",    -- Tree
-        tree2 = "tile_0004.png",    -- Tree variant
-        rock1 = "tile_0018.png",    -- Rock
-        rock2 = "tile_0019.png",    -- Rock variant
-        stump = "tile_0020.png",    -- Stump
-        bush1 = "tile_0021.png",    -- Bush
-        bush2 = "tile_0022.png",    -- Bush variant
-    }
-    
-    for name, file in pairs(propTiles) do
-        local success, img = pcall(love.graphics.newImage, tilePath .. file)
-        if success then
-            self.propImages[name] = img
-        end
-    end
-    
-    -- Create prop positions around arena edges
+function BossArenaScene:generateArenaDecor()
+    self.arenaDecor = {}
+    self.arenaLeafClusters = {}
+    self.arenaRoots = {}
+
     local screenWidth = love.graphics.getWidth()
     local screenHeight = love.graphics.getHeight()
-    local margin = 60
-    local propTypes = {"tree1", "tree2", "rock1", "rock2", "stump", "bush1", "bush2"}
-    
-    -- Top edge props
-    for i = 1, 6 do
-        local propType = propTypes[math.random(#propTypes)]
-        table.insert(self.arenaProps, {
-            image = propType,
-            x = margin + (i - 1) * ((screenWidth - margin * 2) / 5) + math.random(-20, 20),
-            y = margin + math.random(-10, 10),
-            scale = 2.5 + math.random() * 0.5,
-            tint = {0.7 + math.random() * 0.2, 0.8 + math.random() * 0.15, 0.6 + math.random() * 0.15}
-        })
+    local cx = screenWidth * 0.5
+    local cy = screenHeight * 0.5
+    local outerRx = math.min(screenWidth * 0.44, 460)
+    local outerRy = math.min(screenHeight * 0.34, 250)
+
+    for i = 1, 18 do
+        local a = (i / 18) * math.pi * 2
+        local rrX = outerRx + math.random(-20, 24)
+        local rrY = outerRy + math.random(-16, 16)
+        self.arenaDecor[#self.arenaDecor + 1] = {
+            x = cx + math.cos(a) * rrX,
+            y = cy + math.sin(a) * rrY,
+            size = 14 + math.random() * 12,
+            kind = (i % 4 == 0) and "stump" or "stone",
+        }
     end
-    
-    -- Bottom edge props
-    for i = 1, 6 do
-        local propType = propTypes[math.random(#propTypes)]
-        table.insert(self.arenaProps, {
-            image = propType,
-            x = margin + (i - 1) * ((screenWidth - margin * 2) / 5) + math.random(-20, 20),
-            y = screenHeight - margin + math.random(-10, 10),
-            scale = 2.5 + math.random() * 0.5,
-            tint = {0.7 + math.random() * 0.2, 0.8 + math.random() * 0.15, 0.6 + math.random() * 0.15}
-        })
+
+    for i = 1, 24 do
+        local a = (i / 24) * math.pi * 2
+        self.arenaRoots[#self.arenaRoots + 1] = {
+            x = cx + math.cos(a) * (outerRx - 18 + math.random(-10, 10)),
+            y = cy + math.sin(a) * (outerRy - 10 + math.random(-8, 8)),
+            len = 18 + math.random() * 20,
+            angle = a + math.pi * 0.5 + math.random() * 0.35,
+        }
     end
-    
-    -- Left edge props
-    for i = 1, 4 do
-        local propType = propTypes[math.random(#propTypes)]
-        table.insert(self.arenaProps, {
-            image = propType,
-            x = margin + math.random(-10, 10),
-            y = margin * 2 + (i - 1) * ((screenHeight - margin * 4) / 3) + math.random(-15, 15),
-            scale = 2.5 + math.random() * 0.5,
-            tint = {0.7 + math.random() * 0.2, 0.8 + math.random() * 0.15, 0.6 + math.random() * 0.15}
-        })
-    end
-    
-    -- Right edge props
-    for i = 1, 4 do
-        local propType = propTypes[math.random(#propTypes)]
-        table.insert(self.arenaProps, {
-            image = propType,
-            x = screenWidth - margin + math.random(-10, 10),
-            y = margin * 2 + (i - 1) * ((screenHeight - margin * 4) / 3) + math.random(-15, 15),
-            scale = 2.5 + math.random() * 0.5,
-            tint = {0.7 + math.random() * 0.2, 0.8 + math.random() * 0.15, 0.6 + math.random() * 0.15}
-        })
-    end
-    
-    -- Corner accent props (larger trees in corners)
-    local corners = {
-        {x = 40, y = 40},
-        {x = screenWidth - 40, y = 40},
-        {x = 40, y = screenHeight - 40},
-        {x = screenWidth - 40, y = screenHeight - 40},
-    }
-    
-    for _, corner in ipairs(corners) do
-        table.insert(self.arenaProps, {
-            image = math.random() > 0.5 and "tree1" or "tree2",
-            x = corner.x,
-            y = corner.y,
-            scale = 3.5,
-            tint = {0.6, 0.75, 0.5}
-        })
+
+    for i = 1, 36 do
+        local x = math.random(48, screenWidth - 48)
+        local y = math.random(48, screenHeight - 48)
+        local dx = x - cx
+        local dy = y - cy
+        if dx * dx + dy * dy > (outerRx * 0.82) * (outerRx * 0.82) then
+            self.arenaLeafClusters[#self.arenaLeafClusters + 1] = {
+                x = x,
+                y = y,
+                size = 8 + math.random() * 10,
+                tint = 0.22 + math.random() * 0.08,
+            }
+        end
     end
 end
 
-function BossArenaScene:drawArenaProps()
-    for _, prop in ipairs(self.arenaProps) do
-        local img = self.propImages[prop.image]
-        if img then
-            love.graphics.setColor(prop.tint[1], prop.tint[2], prop.tint[3], 0.85)
-            local imgW, imgH = img:getDimensions()
-            love.graphics.draw(img, prop.x, prop.y, 0, prop.scale, prop.scale, imgW / 2, imgH / 2)
+function BossArenaScene:drawArenaBackdrop()
+    local screenWidth = love.graphics.getWidth()
+    local screenHeight = love.graphics.getHeight()
+    local cx = screenWidth * 0.5
+    local cy = screenHeight * 0.5
+    local outerRx = math.min(screenWidth * 0.44, 460)
+    local outerRy = math.min(screenHeight * 0.34, 250)
+    local innerRx = outerRx * 0.76
+    local innerRy = outerRy * 0.72
+
+    love.graphics.setColor(0.15, 0.28, 0.14, 1)
+    love.graphics.rectangle("fill", 0, 0, screenWidth, screenHeight)
+
+    love.graphics.setColor(0.10, 0.18, 0.10, 0.30)
+    love.graphics.rectangle("fill", 0, 0, screenWidth, 80)
+    love.graphics.rectangle("fill", 0, screenHeight - 80, screenWidth, 80)
+    love.graphics.rectangle("fill", 0, 0, 64, screenHeight)
+    love.graphics.rectangle("fill", screenWidth - 64, 0, 64, screenHeight)
+
+    love.graphics.setColor(0.22, 0.38, 0.18, 0.22)
+    love.graphics.ellipse("fill", cx, cy, outerRx + 46, outerRy + 28)
+    love.graphics.setColor(0.28, 0.44, 0.20, 0.34)
+    love.graphics.ellipse("fill", cx, cy, innerRx, innerRy)
+    love.graphics.setColor(0.34, 0.50, 0.24, 0.16)
+    love.graphics.ellipse("fill", cx, cy, innerRx * 0.62, innerRy * 0.56)
+
+    for _, cluster in ipairs(self.arenaLeafClusters or {}) do
+        love.graphics.setColor(cluster.tint, cluster.tint + 0.08, cluster.tint, 0.16)
+        love.graphics.ellipse("fill", cluster.x, cluster.y, cluster.size, cluster.size * 0.52)
+    end
+
+    for _, root in ipairs(self.arenaRoots or {}) do
+        local ex = root.x + math.cos(root.angle) * root.len
+        local ey = root.y + math.sin(root.angle) * root.len * 0.45
+        love.graphics.setColor(0.18, 0.12, 0.08, 0.55)
+        love.graphics.setLineWidth(3)
+        love.graphics.line(root.x, root.y, ex, ey)
+        love.graphics.setColor(0.32, 0.24, 0.14, 0.28)
+        love.graphics.setLineWidth(1)
+        love.graphics.line(root.x, root.y, ex, ey)
+    end
+
+    for _, prop in ipairs(self.arenaDecor or {}) do
+        love.graphics.setColor(0.08, 0.10, 0.08, 0.24)
+        love.graphics.ellipse("fill", prop.x, prop.y + 4, prop.size * 0.9, 5)
+        if prop.kind == "stump" then
+            love.graphics.setColor(0.34, 0.25, 0.15, 0.95)
+            love.graphics.rectangle("fill", prop.x - prop.size * 0.32, prop.y - prop.size * 0.35, prop.size * 0.64, prop.size * 0.8, 3, 3)
+            love.graphics.setColor(0.56, 0.44, 0.24, 0.82)
+            love.graphics.ellipse("fill", prop.x, prop.y - prop.size * 0.16, prop.size * 0.42, prop.size * 0.22)
+        else
+            love.graphics.setColor(0.34, 0.38, 0.34, 0.92)
+            love.graphics.polygon("fill",
+                prop.x - prop.size * 0.7, prop.y + prop.size * 0.2,
+                prop.x - prop.size * 0.3, prop.y - prop.size * 0.6,
+                prop.x + prop.size * 0.4, prop.y - prop.size * 0.48,
+                prop.x + prop.size * 0.74, prop.y + prop.size * 0.08,
+                prop.x + prop.size * 0.18, prop.y + prop.size * 0.54,
+                prop.x - prop.size * 0.46, prop.y + prop.size * 0.48
+            )
+            love.graphics.setColor(0.54, 0.58, 0.54, 0.45)
+            love.graphics.polygon("fill",
+                prop.x - prop.size * 0.12, prop.y - prop.size * 0.32,
+                prop.x + prop.size * 0.18, prop.y - prop.size * 0.42,
+                prop.x + prop.size * 0.32, prop.y - prop.size * 0.06,
+                prop.x, prop.y
+            )
         end
     end
+
+    love.graphics.setColor(0.48, 0.62, 0.36, 0.18)
+    love.graphics.setLineWidth(2)
+    love.graphics.ellipse("line", cx, cy, innerRx, innerRy)
+    love.graphics.setColor(0.22, 0.18, 0.10, 0.55)
+    love.graphics.setLineWidth(4)
+    love.graphics.ellipse("line", cx, cy, outerRx, outerRy)
+    love.graphics.setLineWidth(1)
     love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -425,6 +450,11 @@ function BossArenaScene:update(dt)
         self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + gain)
     end
 
+    if self.player and self.player.abilities and self.player.abilities.frenzy then
+        self.player.abilities.frenzy.charge = self.frenzyCharge
+        self.player.abilities.frenzy.chargeMax = self.frenzyChargeMax
+    end
+
     -- Tick status effects on boss and adds (bleed/burn DoT, chill expiry)
     local function tickStatusOn(entity)
         if not entity or not entity.isAlive then return end
@@ -441,6 +471,10 @@ function BossArenaScene:update(dt)
             if tick.entity.isAlive then
                 tick.entity:takeDamage(tick.damage, nil, nil, 0)
                 self:applyFrenzyLifesteal(tick.damage)
+                local ex, ey = tick.entity:getPosition()
+                if tick.status == "burn" and self.particles then
+                    self.particles:createBurnFlare(ex, ey - tick.entity:getSize() * 0.2, 1.0 + StatusEffects.getStacks(tick.entity, "burn") * 0.18)
+                end
             end
         end
     end
@@ -579,6 +613,9 @@ function BossArenaScene:update(dt)
                     end
 
                     if _G.audio then _G.audio:playSFX("shoot_arrow") end
+                    if self.particles then
+                        self.particles:createCastBurst(bx, by, {0.95, 0.38, 0.24}, 1.0)
+                    end
                     self.screenShake:add(3, 0.15)
 
                     -- Double_strike: spawn second volley after delay
@@ -737,6 +774,7 @@ function BossArenaScene:update(dt)
                     if self.boss then
                         self.boss.earthquakeCasting = true
                         self.boss.earthquakeCastProgress = 0
+                        self.boss.earthquakeCastTime = (self.boss.baseEarthquakeCastTime or self.boss.earthquakeCastTime or 0) * 1.15
                         self.boss.earthquakeTimer = 0
                         self.boss.earthquakeActive = false
                     end
@@ -1177,28 +1215,7 @@ function BossArenaScene:draw()
     local screenWidth = love.graphics.getWidth()
     local screenHeight = love.graphics.getHeight()
     
-    -- Background: Rich forest green floor (contrasts with brown boss)
-    love.graphics.setColor(0.12, 0.22, 0.10, 1)  -- Dark forest green base
-    love.graphics.rectangle("fill", 0, 0, screenWidth, screenHeight)
-    
-    -- Add subtle grass texture pattern
-    love.graphics.setColor(0.15, 0.28, 0.12, 0.3)  -- Lighter green accents
-    for row = 0, screenHeight / 32 do
-        for col = 0, screenWidth / 32 do
-            if (row + col) % 3 == 0 then
-                love.graphics.rectangle("fill", col * 32, row * 32, 32, 32)
-            end
-        end
-    end
-    
-    -- Arena border (darker edge gradient effect)
-    love.graphics.setColor(0.06, 0.12, 0.05, 0.8)
-    love.graphics.setLineWidth(20)
-    love.graphics.rectangle("line", 10, 10, screenWidth - 20, screenHeight - 20)
-    love.graphics.setLineWidth(1)
-    
-    -- Draw decorative props (behind entities)
-    self:drawArenaProps()
+    self:drawArenaBackdrop()
     
     -- Apply screen shake
     love.graphics.push()
@@ -1316,13 +1333,54 @@ function BossArenaScene:draw()
             love.graphics.setLineWidth(1)
         end
 
+        if drawable.entity and drawable.entity.isAlive and StatusEffects.has(drawable.entity, "burn") then
+            local ex, ey = drawable.entity:getPosition()
+            local sz = (drawable.entity.getSize and drawable.entity:getSize()) or 16
+            local stacks = StatusEffects.getStacks(drawable.entity, "burn")
+            local pulse = 0.45 + 0.18 * math.sin(love.timer.getTime() * 9 + ey * 0.03)
+            love.graphics.setBlendMode("add", "alphamultiply")
+            love.graphics.setColor(1.0, 0.42, 0.12, 0.08 + pulse * 0.10 + math.min(0.08, stacks * 0.012))
+            love.graphics.circle("fill", ex, ey, sz + 8)
+            love.graphics.setColor(1.0, 0.78, 0.22, 0.05 + pulse * 0.08)
+            love.graphics.circle("fill", ex, ey - 2, sz + 4)
+            love.graphics.setBlendMode("alpha")
+            love.graphics.setColor(1.0, 0.62, 0.18, 0.75)
+            love.graphics.setLineWidth(1)
+            love.graphics.arc("line", "open", ex, ey, sz + 3, math.pi * 0.12, math.pi * 0.88)
+            love.graphics.arc("line", "open", ex, ey, sz + 1, math.pi * 1.1, math.pi * 1.9)
+            for k = 0, 2 do
+                local a = love.timer.getTime() * 3.2 + k * (math.pi * 2 / 3)
+                local rr = sz + 2 + (k % 2) * 2
+                local fx = ex + math.cos(a) * rr * 0.55
+                local fy = ey - sz * 0.45 + math.sin(a) * 4
+                love.graphics.setColor(1.0, 0.84, 0.35, 0.85)
+                love.graphics.rectangle("fill", fx - 1, fy - 2, 2, 4)
+            end
+            love.graphics.setLineWidth(1)
+        end
+
         -- Freeze status: icy cyan ring
         if drawable.entity and drawable.entity.isAlive and StatusEffects.has(drawable.entity, "freeze") then
             local ex, ey = drawable.entity:getPosition()
             local sz = (drawable.entity.getSize and drawable.entity:getSize()) or 16
-            love.graphics.setColor(0.5, 0.85, 1.0, 0.9)
+            local t = love.timer.getTime()
+            local pulse = 0.55 + 0.25 * math.sin(t * 7 + ex * 0.05)
+            love.graphics.setBlendMode("add", "alphamultiply")
+            love.graphics.setColor(0.55, 0.9, 1.0, 0.12 + pulse * 0.10)
+            love.graphics.circle("fill", ex, ey, sz + 11)
+            love.graphics.setColor(0.8, 0.98, 1.0, 0.10 + pulse * 0.08)
+            love.graphics.circle("fill", ex, ey, sz + 6)
+            love.graphics.setBlendMode("alpha")
+            love.graphics.setColor(0.65, 0.92, 1.0, 0.95)
             love.graphics.setLineWidth(2)
-            love.graphics.circle("line", ex, ey, sz + 4)
+            love.graphics.circle("line", ex, ey, sz + 5)
+            for k = 0, 3 do
+                local a = t * 2.8 + k * (math.pi * 0.5)
+                local rr = sz + 8
+                local fx = ex + math.cos(a) * rr
+                local fy = ey + math.sin(a) * rr
+                love.graphics.rectangle("fill", fx - 1.5, fy - 1.5, 3, 3)
+            end
             love.graphics.setLineWidth(1)
         end
 
@@ -1330,9 +1388,24 @@ function BossArenaScene:draw()
         if drawable.entity and drawable.entity.isAlive and StatusEffects.has(drawable.entity, "chill") then
             local ex, ey = drawable.entity:getPosition()
             local sz = (drawable.entity.getSize and drawable.entity:getSize()) or 16
-            love.graphics.setColor(0.6, 0.9, 1.0, 0.5)
+            local t = love.timer.getTime()
+            local shimmer = 0.5 + 0.25 * math.sin(t * 5 + ey * 0.05)
+            love.graphics.setBlendMode("add", "alphamultiply")
+            love.graphics.setColor(0.5, 0.88, 1.0, 0.08 + shimmer * 0.08)
+            love.graphics.circle("fill", ex, ey, sz + 8)
+            love.graphics.setColor(0.72, 0.96, 1.0, 0.06 + shimmer * 0.06)
+            love.graphics.circle("fill", ex, ey, sz + 4)
+            love.graphics.setBlendMode("alpha")
+            love.graphics.setColor(0.66, 0.93, 1.0, 0.65)
             love.graphics.setLineWidth(1)
-            love.graphics.circle("line", ex, ey, sz + 2)
+            love.graphics.circle("line", ex, ey, sz + 3)
+            for k = 0, 2 do
+                local a = t * 2.2 + k * (math.pi * 2 / 3)
+                local rr = sz + 5
+                local fx = ex + math.cos(a) * rr
+                local fy = ey + math.sin(a) * rr
+                love.graphics.rectangle("fill", fx - 1, fy - 1, 2, 2)
+            end
             love.graphics.setLineWidth(1)
         end
 
@@ -1495,22 +1568,6 @@ function BossArenaScene:drawUI()
         if _G.PixelFonts then love.graphics.setFont(_G.PixelFonts.body) end
     end
     
-    -- Draw ability HUD (corner-based layout: health bottom-left, abilities bottom-right)
-    if self.abilityHUD then
-        -- Update frenzy charge for display
-        if self.player.abilities.frenzy then
-            self.player.abilities.frenzy.charge = self.frenzyCharge
-            self.player.abilities.frenzy.chargeMax = self.frenzyChargeMax
-        end
-        self.abilityHUD:draw(self.player, self.xpSystem)
-    end
-    
-    -- Draw active buffs
-    if self.buffBar and self.playerStats then
-        local buffs = self.playerStats:getActiveBuffs()
-        self.buffBar:draw(buffs)
-    end
-    
     love.graphics.setColor(1, 1, 1, 1)
 end
 
@@ -1589,9 +1646,6 @@ function BossArenaScene:iceDissolveBlast(x, y)
     self.particles:createIceBlast(x, y, radius)
     self.screenShake:add(5, 0.12)
     JuiceManager.freezeTime(0.04)
-    if _G.triggerScreenFlash then
-        _G.triggerScreenFlash({0.6, 0.9, 1.0, 0.25}, 0.08)
-    end
 end
 
 -- Ice blast on death (AOE when enemy with chill dies)
@@ -1630,9 +1684,6 @@ function BossArenaScene:iceBlastOnDeath(target, radius, damageMultOfMaxHP)
     self.particles:createIceBlast(tx, ty, radius)
     self.screenShake:add(5, 0.12)
     JuiceManager.freezeTime(0.04)
-    if _G.triggerScreenFlash then
-        _G.triggerScreenFlash({0.6, 0.9, 1.0, 0.25}, 0.08)
-    end
 end
 
 -- Execute proc action (ice_blast, aoe_explosion)
@@ -1755,6 +1806,11 @@ function BossArenaScene:keypressed(key)
         self.frenzyExtendedTime = 0
         if _G.audio then _G.audio:playSFX("hit_heavy") end
         self.screenShake:add(4, 0.15)
+        if self.player and self.particles then
+            local px, py = self.player:getPosition()
+            self.particles:createFrenzyBurst(px, py)
+            self.particles:createCastBurst(px, py, {1, 0.62, 0.15}, 1.15)
+        end
         return true
     end
     
@@ -1829,6 +1885,9 @@ function BossArenaScene:fireMultiShot(targetX, targetY)
     end
 
     if _G.audio then _G.audio:playSFX("shoot_arrow") end
+    if self.particles then
+        self.particles:createCastBurst(sx, sy, {0.55, 0.82, 1.0}, 0.95)
+    end
     self.screenShake:add(2, 0.08)
     if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
     if self.player.playAttackAnimation then self.player:playAttackAnimation() end
@@ -1874,100 +1933,56 @@ end
 
 function BossArenaScene:drawBossHealthBar()
     if not self.boss then return end
-    
+
     local w = love.graphics.getWidth()
-    
-    -- Boss health bar dimensions
-    local barWidth = 600
-    local barHeight = 30
-    local barX = (w - barWidth) / 2
-    local barY = 40
-    
-    -- Boss name
-    love.graphics.setColor(1, 1, 1, 1)
-    if _G.PixelFonts and _G.PixelFonts.uiTiny then
-        love.graphics.setFont(_G.PixelFonts.uiTiny)
-    else
-        love.graphics.setNewFont(18)
-    end
-    local bossName = "TREENT OVERLORD"
-    local nameWidth = love.graphics.getFont():getWidth(bossName)
-    love.graphics.print(bossName, (w - nameWidth) / 2, barY - 25)
-    
-    -- Phase indicator
+    local t = love.timer.getTime()
+    local healthPercent = math.max(0, math.min(1, self.boss.health / self.boss.maxHealth))
     local phase = self.boss.phase or 1
-    local phaseText = "Phase " .. phase
-    if _G.PixelFonts and _G.PixelFonts.uiSmallText then
-        love.graphics.setFont(_G.PixelFonts.uiSmallText)
-    else
-        love.graphics.setNewFont(14)
+
+    local barWidth = 356
+    local barHeight = 12
+    local barX = (w - barWidth) / 2
+    local barY = 74
+    local fillW = barWidth * healthPercent
+    local barColor = phase == 2 and {0.92, 0.32, 0.28} or {0.34, 0.86, 0.42}
+
+    love.graphics.setColor(0, 0, 0, 0.22)
+    love.graphics.rectangle("fill", barX - 10, barY - 12, barWidth + 20, barHeight + 28, 12, 12)
+    love.graphics.setColor(0.07, 0.08, 0.11, 0.94)
+    love.graphics.rectangle("fill", barX - 6, barY - 8, barWidth + 12, barHeight + 20, 10, 10)
+    love.graphics.setColor(barColor[1], barColor[2], barColor[3], 0.16)
+    love.graphics.rectangle("line", barX - 6, barY - 8, barWidth + 12, barHeight + 20, 10, 10)
+
+    love.graphics.setColor(0.06, 0.08, 0.1, 1)
+    love.graphics.rectangle("fill", barX, barY, barWidth, barHeight, 3, 3)
+
+    if fillW > 0 then
+        love.graphics.setColor(barColor[1], barColor[2], barColor[3], 1)
+        love.graphics.rectangle("fill", barX, barY, fillW, barHeight, 3, 3)
+        love.graphics.setColor(1, 0.96, 0.9, 0.34)
+        love.graphics.rectangle("fill", barX, barY, fillW, barHeight * 0.4, 3, 3)
+        love.graphics.setColor(1, 0.96, 0.9, 0.32 + 0.18 * math.sin(t * 4))
+        love.graphics.rectangle("fill", barX + fillW - 4, barY, 4, barHeight, 2, 2)
     end
-    local phaseWidth = love.graphics.getFont():getWidth(phaseText)
-    local phaseColor = phase == 1 and {0.3, 1, 0.5} or {1, 0.3, 0.3}
-    love.graphics.setColor(phaseColor[1], phaseColor[2], phaseColor[3], 1)
-    love.graphics.print(phaseText, (w - phaseWidth) / 2, barY - 8)
-    
-    -- Health percentage
-    local healthPercent = self.boss.health / self.boss.maxHealth
-    
-    -- Dark background
-    love.graphics.setColor(0.1, 0.1, 0.15, 0.95)
-    love.graphics.rectangle("fill", barX - 4, barY - 4, barWidth + 8, barHeight + 8, 6, 6)
-    
-    -- Health bar background (dark red)
-    love.graphics.setColor(0.3, 0.05, 0.05, 1)
-    love.graphics.rectangle("fill", barX, barY, barWidth, barHeight, 4, 4)
-    
-    -- Health bar fill with color gradient based on HP
-    local r, g, b
-    if healthPercent > 0.6 then
-        r, g, b = 0.3, 0.9, 0.3  -- Green
-    elseif healthPercent > 0.3 then
-        r, g, b = 0.9, 0.7, 0.2  -- Yellow
-    else
-        r, g, b = 0.9, 0.2, 0.2  -- Red
-    end
-    
-    -- Pulse effect when low health
-    if healthPercent < 0.25 then
-        local pulse = 0.8 + math.sin(love.timer.getTime() * 6) * 0.2
-        r, g, b = r * pulse, g * pulse, b * pulse
-    end
-    
-    love.graphics.setColor(r, g, b, 1)
-    love.graphics.rectangle("fill", barX + 2, barY + 2, (barWidth - 4) * healthPercent, barHeight - 4, 3, 3)
-    
-    -- Segmented overlay (shows damage chunks)
-    love.graphics.setColor(0, 0, 0, 0.3)
-    local segments = 10
-    for i = 1, segments - 1 do
-        local segX = barX + (barWidth / segments) * i
-        love.graphics.rectangle("fill", segX - 1, barY, 2, barHeight)
-    end
-    
-    -- Shine effect on top half
-    love.graphics.setColor(1, 1, 1, 0.15)
-    love.graphics.rectangle("fill", barX + 2, barY + 2, (barWidth - 4) * healthPercent, (barHeight - 4) / 2, 3, 3)
-    
-    -- Border
-    love.graphics.setColor(0.6, 0.6, 0.7, 1)
-    love.graphics.setLineWidth(3)
-    love.graphics.rectangle("line", barX, barY, barWidth, barHeight, 4, 4)
+
+    love.graphics.setColor(barColor[1], barColor[2], barColor[3], 0.72)
     love.graphics.setLineWidth(1)
-    
-    -- HP text
-    love.graphics.setColor(1, 1, 1, 1)
-    if _G.PixelFonts and _G.PixelFonts.uiSmallText then
-        love.graphics.setFont(_G.PixelFonts.uiSmallText)
-    else
-        love.graphics.setNewFont(16)
-    end
+    love.graphics.rectangle("line", barX, barY, barWidth, barHeight, 3, 3)
+
+    local labelFont = _G.PixelFonts and _G.PixelFonts.uiTiny or love.graphics.getFont()
+    love.graphics.setFont(labelFont)
+    local bossName = "TREENT OVERLORD"
+    local nameW = labelFont:getWidth(bossName)
+    love.graphics.setColor(0.96, 0.97, 1.0, 0.96)
+    love.graphics.print(bossName, barX + barWidth / 2 - nameW / 2, barY - 12)
+
     local hpText = string.format("%d / %d", math.floor(self.boss.health), math.floor(self.boss.maxHealth))
-    local hpWidth = love.graphics.getFont():getWidth(hpText)
-    love.graphics.print(hpText, (w - hpWidth) / 2, barY + 7)
-    
-    -- Reset font
+    local hpW = labelFont:getWidth(hpText)
+    love.graphics.setColor(0.94, 0.96, 1.0, 0.9)
+    love.graphics.print(hpText, barX + barWidth + 10, barY - 1)
+
     if _G.PixelFonts then love.graphics.setFont(_G.PixelFonts.body) end
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 return BossArenaScene

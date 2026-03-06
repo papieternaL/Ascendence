@@ -42,6 +42,36 @@ function ProcEngine:onPrimaryFired(playerStats)
   return actions
 end
 
+function ProcEngine:getOnHitDamageMultiplier(playerStats, context)
+  local damageMul = 1.0
+  for _, proc in ipairs(getProcs(playerStats)) do
+    if proc.trigger == "while_target_has_status" then
+      if context.target and context.target.statuses and context.target.statuses[proc.status] then
+        local apply = proc.apply
+        if apply and apply.kind == "stat_mul" and apply.stat == "primary_damage" then
+          damageMul = damageMul * (apply.value or 1.0)
+        end
+      end
+    end
+
+    if proc.trigger == "while_target_beyond_range_pct" then
+      if context.target and context.maxRange then
+        local tx, ty = context.target:getPosition()
+        local dx = tx - context.playerX
+        local dy = ty - context.playerY
+        local threshold = context.maxRange * (proc.pct or 0.55)
+        if dx * dx + dy * dy > threshold * threshold then
+          local apply = proc.apply
+          if apply and apply.kind == "stat_mul" and apply.stat == "primary_damage" then
+            damageMul = damageMul * (apply.value or 1.0)
+          end
+        end
+      end
+    end
+  end
+  return damageMul
+end
+
 -- Called when an arrow hits an enemy (before kill check).
 -- context: { isCrit, target, arrow, playerX, playerY, maxRange }
 function ProcEngine:onHit(playerStats, context)
@@ -76,8 +106,8 @@ function ProcEngine:onHit(playerStats, context)
         local tx, ty = context.target:getPosition()
         local dx = tx - context.playerX
         local dy = ty - context.playerY
-        local dist = math.sqrt(dx * dx + dy * dy)
-        if dist > context.maxRange * (proc.pct or 0.55) then
+        local threshold = context.maxRange * (proc.pct or 0.55)
+        if dx * dx + dy * dy > threshold * threshold then
           actions[#actions + 1] = { apply = proc.apply, target = context.target, conditional = true }
         end
       end

@@ -92,6 +92,11 @@ function DamageNumbers:update(dt)
 end
 
 function DamageNumbers:draw()
+  local gameplay = _G.GameSettings and _G.GameSettings.gameplay or nil
+  if gameplay and gameplay.showDamageNumbers == false then
+    return
+  end
+
   ensureFonts(self)
   for _, it in ipairs(self.items) do
     local t = it.age / it.lifetime

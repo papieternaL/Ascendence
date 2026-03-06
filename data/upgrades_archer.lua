@@ -45,24 +45,10 @@ U.list = {
     effects={ { kind="stat_mul", stat="move_speed", value=1.08 } }
   },
   {
-    id="arch_c_long_draw", name="Long Draw", rarity="common",
-    description="Arrows travel 12% farther before fading",
-    tags={ "range", "primary" },
-    effects={ { kind="stat_mul", stat="range", value=1.12 } }
-  },
-  {
     id="arch_c_piercing_practice", name="Piercing Practice", rarity="common",
     description="Arrows pierce through 2 additional enemies",
     tags={ "projectile", "primary" },
     effects={ { kind="weapon_mod", mod="pierce_add", value=2 } }
-  },
-  {
-    id="arch_c_barbed_shafts", name="Barbed Shafts", rarity="common",
-    description="Arrows cause bleeding, dealing 20% of hit damage every 0.5s for 3 seconds",
-    tags={ "bleed", "dot" },
-    effects={
-      { kind="proc", trigger="on_primary_hit", chance=1.0, apply={ kind="status_apply", status="bleed", stacks=1, duration=3.0 } }
-    }
   },
   {
     id="arch_c_hollow_points", name="Hollow Points", rarity="common",
@@ -81,22 +67,6 @@ U.list = {
     description="Dash recovers 10% faster",
     tags={ "cooldown", "mobility" },
     effects={ { kind="stat_mul", stat="roll_cooldown", value=0.90 } }
-  },
-  {
-    id="arch_c_keen_focus", name="Keen Focus", rarity="common",
-    description="Deal 10% more damage to enemies within close range",
-    tags={ "damage", "close_range" },
-    effects={
-      { kind="proc", trigger="while_enemy_within", range=140, apply={ kind="stat_mul", stat="primary_damage", value=1.10 } }
-    }
-  },
-  {
-    id="arch_c_light_quiver", name="Light Quiver", rarity="common",
-    description="Every 3rd shot fires an extra arrow",
-    tags={ "multishot", "primary" },
-    effects={
-      { kind="proc", trigger="every_n_primary_shots", n=3, apply={ kind="weapon_mod", mod="bonus_projectiles", value=1, spread_deg=6 } }
-    }
   },
   {
     id="arch_c_xp_magnet", name="XP Magnet", rarity="common",
@@ -146,10 +116,10 @@ U.list = {
   },
   {
     id="arch_r_split_shot", name="Split Shot", rarity="rare",
-    description="Every 4th shot fires 2 extra arrows in a spread",
+    description="Every 3rd shot fires 2 extra arrows in a spread",
     tags={ "multishot", "chaos" },
     effects={
-      { kind="proc", trigger="every_n_primary_shots", n=4, apply={ kind="weapon_mod", mod="bonus_projectiles", value=2, spread_deg=16 } }
+      { kind="proc", trigger="every_n_primary_shots", n=3, apply={ kind="weapon_mod", mod="bonus_projectiles", value=2, spread_deg=16 } }
     }
   },
   {
@@ -161,24 +131,14 @@ U.list = {
       { kind="proc", trigger="while_target_has_status", status="marked", apply={ kind="stat_mul", stat="primary_damage", value=1.20 } }
     }
   },
-  {
-    id="arch_r_bleeding_frenzy", name="Bleeding Frenzy", rarity="rare",
-    description="Deal 5% more damage for each bleeding enemy, up to 10%",
-    tags={ "bleed", "scaling" },
-    requires_upgrade = "arch_c_barbed_shafts",
-    effects={
-      { kind="proc", trigger="while_enemies_bleeding", apply={ kind="stat_add", stat="primary_damage_pct_per_bleed_stack", value=0.05, cap=0.10 } }
-    }
-  },
-
   -- Reworked roll synergy (does NOT stack during Frenzy)
   {
     id="arch_r_phase_roll_focused", name="Phase Roll: Focused", rarity="rare",
-    description="After dashing, your next 2 shots deal 30% more damage",
-    tags={ "mobility", "burst" },
+    description="After dashing, your next 2 shots gain 25% crit chance",
+    tags={ "mobility", "crit" },
     effects={
       { kind="proc", trigger="after_roll", apply={ kind="buff", name="focused_shots", duration=4.0, charges=2,
-          stats={ { stat="primary_damage", mul=1.30 } },
+          stats={ { stat="crit_chance", add=0.25 } },
           rules={ no_stack_in_frenzy=true }
       } }
     }
@@ -192,19 +152,6 @@ U.list = {
     effects={
       { kind="proc", trigger="on_crit_kill", chance=1.0, apply={ kind="buff", name="momentum", duration=1.5,
           stats={ { stat="move_speed", mul=1.10 } }
-      } }
-    }
-  },
-
-  -- Reworked from "stand still turret"
-  {
-    id="arch_r_battle_rhythm", name="Battle Rhythm", rarity="rare",
-    description="Firing continuously for 2 seconds grants 15% attack speed. Breaks if you dash or take damage",
-    tags={ "attack_speed", "tempo" },
-    effects={
-      { kind="proc", trigger="firing_continuously_for", seconds=2.0, apply={ kind="buff", name="battle_rhythm", duration=2.5,
-          stats={ { stat="attack_speed", mul=1.15 } },
-          rules={ break_on_roll=true, break_on_hit_taken=true }
       } }
     }
   },
@@ -235,18 +182,12 @@ U.list = {
     effects={ { kind="element_mod", element="ice", mod="ice_freeze_spread", value=true } }
   },
   {
-    id="arch_r_ice_blast_radius", name="Bigger Blast Radius", rarity="rare",
-    description="Ice dissolve blast radius +25 per pick (stacks)",
-    tags={ "element", "ice", "aoe" },
-    requires_upgrade = "arch_c_ice_attunement",
-    effects={ { kind="element_mod", element="ice", mod="ice_blast_radius_add", value=25 } }
-  },
-  {
     id="arch_r_ice_blast", name="Ice Blast", rarity="rare",
-    description="When monsters die with chill or freeze, they release an ice blast dealing AOE damage",
+    description="Ice dissolve blast radius +25, and chilled or frozen enemies erupt in an ice blast on death",
     tags={ "element", "ice", "aoe" },
     requires_upgrade = "arch_c_ice_attunement",
     effects={
+      { kind="element_mod", element="ice", mod="ice_blast_radius_add", value=25 },
       { kind="proc", trigger="on_kill_target_with_status", status="chill", chance=1.0,
         apply={ kind="ice_blast", radius=70, damage_mul_of_target_maxhp=0.05 }
       },
@@ -275,33 +216,11 @@ U.list = {
   -- EPIC (3)
   -- =========================
   {
-    id="arch_e_arrowstorm", name="Arrowstorm", rarity="rare",
+    id="arch_e_arrowstorm", name="Arrowstorm", rarity="epic",
     description="Every 6th shot releases a burst of 8 arrows in all directions, each dealing 40% damage",
     tags={ "aoe", "chaos" },
     effects={
       { kind="proc", trigger="every_n_primary_shots", n=6, apply={ kind="aoe_projectile_burst", count=8, radius=0, speed_mul=0.90, damage_mul=0.40 } }
-    }
-  },
-  {
-    id="arch_e_hemorrhage", name="Hemorrhage", rarity="epic",
-    description="Killing bleeding enemies causes them to explode, dealing damage to nearby foes",
-    tags={ "bleed", "explosion" },
-    requires_upgrade = "arch_c_barbed_shafts",
-    effects={
-      { kind="proc", trigger="on_kill_target_with_status", status="bleed", chance=1.0,
-        apply={ kind="aoe_explosion", radius=90, damage_mul_of_target_maxhp=0.06 }
-      }
-    }
-  },
-  {
-    id="arch_e_ghost_quiver", name="Ghost Quiver", rarity="epic",
-    description="After dashing, your arrows pierce through all enemies for 1.25 seconds",
-    tags={ "mobility", "pierce" },
-    effects={
-      { kind="proc", trigger="after_roll", apply={ kind="buff", name="ghost_quiver", duration=1.25,
-        rules={ primary_only=true, excludes_abilities={ "multi_shot" } },
-        stats={ { stat="primary_ghosting", add=1 } } -- your projectile system reads this
-      } }
     }
   },
   {

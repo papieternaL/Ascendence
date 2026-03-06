@@ -237,6 +237,158 @@ Input → Player.update() → Movement
 10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
+- 2026-03-06: **Forest grounding/art-direction pass + boss arena environment rebuild**:
+  - `systems/forest_tilemap.lua`: removed the remaining screen-space ambient orb overlay entirely, replaced it with world-space composition layers (macro grass-value patches, edge framing, pebble/needle-bed decals), and added stronger contact shadows under trees, bushes, rocks, and blockers so props feel planted on the floor.
+  - `scenes/boss_arena_scene.lua`: removed the placeholder Monochrome RPG edge-prop treatment and rebuilt the room as a dedicated forest arena with a central clearing, root-ring framing, stone/stump perimeter accents, and subdued edge dressing that fits the main game's current visual language.
+  - `main.lua`: enlarged the timer plaque again and raised the bottom XP strip/level badge to keep the level readout clear of the bottom edge.
+  - `scenes/game_scene.lua`: moved the major progress bar higher again to separate it from gameplay and the top HUD.
+- 2026-03-06: **Forest layout composition fix before further polish**:
+  - `systems/forest_tilemap.lua`: upgraded forest generation from loose random scatter to a clearer composition pass with a protected central playfield, readable horizontal/vertical combat lanes, stronger edge weighting, and denser peripheral clustering so the level has usable focal hierarchy before additional polish layers are added.
+  - Large blockers now bias toward more intentional outer anchor zones instead of random mid-field placement, which should improve path readability and preserve cleaner combat space around the player spawn and objective flow.
+- 2026-03-06: **Shadow rollback + bottom HUD separation fix**:
+  - `systems/forest_tilemap.lua`: removed the added ground-shadow layer and stripped the remaining dark macro shadow blobs/edge darkening after they were reading as random circles and making props feel like they were hovering.
+  - `main.lua`: moved the bottom health plate higher so it no longer collides with the bottom XP strip.
+- 2026-03-06: **Forest cleanup correction + HUD spacing polish**:
+  - `systems/forest_tilemap.lua`: removed the guessed decorative D-sheet prop layer and the glowing ground-dot accents after they produced broken-looking half props and random green circles in-game; the denser trees/rocks/bushes remain.
+  - `main.lua`: raised the bottom XP strip slightly so the level badge text no longer clips against the bottom edge, and increased the top-left timer plaque by about 15%.
+  - `scenes/game_scene.lua`: moved the top progress bar higher for cleaner separation from the map and tighter HUD composition.
+- 2026-03-06: **Attunement gating fix + progress bar polish + forest density pass**:
+  - `scenes/game_scene.lua`: restored the rule that the currently active attunement card must never appear in upgrade choices again; active elements now scale through their follow-up upgrades instead of re-rolling the same attunement card.
+  - `scenes/game_scene.lua`: the top boss-progress track is larger, slightly higher, and more polished, with the explicit `OBJECTIVE` label removed so the milestone stays mysterious until it triggers.
+  - `systems/forest_tilemap.lua`: removed the screen-edge darkening overlay, increased tree/rock/bush density, and added a new decorative scatter layer using extra `Fantasy_Outside_D_green_NoShadow` props (stumps, logs, shrubs, and flower pieces) to make the forest feel fuller and more authored.
+- 2026-03-05: **Repeat-pick stacking pass + burn VFX upgrade**:
+  - `systems/player_stats.lua` now treats acquired upgrades as counted stacks instead of one-time booleans, recomputes from the full pick log, and merges repeat proc/buff/element effects so duplicate picks actually improve the build instead of silently doing nothing.
+  - `scenes/game_scene.lua` was temporarily opened to repeat active attunement picks during the stacking pass; this was later corrected on `2026-03-06` so the same attunement card does not appear again.
+  - `systems/particles.lua`, `scenes/game_scene.lua`, and `scenes/boss_arena_scene.lua` now give burning targets a proper ember/flame treatment with stronger burn tick flares and a persistent fiery aura instead of reusing the old bleed drip placeholder.
+- 2026-03-05: **Split Shot retune + ricochet/lightning performance pass**:
+  - `data/upgrades_archer.lua`: removed `Light Quiver` as the overlapping extra-shot proc and retuned `Split Shot` to trigger every 3rd shot instead of every 4th.
+  - `systems/proc_engine.lua`: added a dedicated on-hit damage-multiplier evaluation path so primary hits no longer run the full proc scan twice before/after crit resolution.
+  - `scenes/game_scene.lua`: nearest-target helpers now compare squared distances instead of using `sqrt` on every candidate, and chain lightning now trims cosmetic overhead after the first few jumps (fewer arc/damage-number spawns) while preserving actual jump damage and targeting.
+- 2026-03-05: **Objective target + reward chest pass**:
+  - Removed the top-right in-run quit button from `main.lua` and disabled its click handling so the top HUD stays cleaner.
+  - Removed the player's floating green HP bar in `entities/player.lua`; health now reads from the bottom HUD only.
+  - `scenes/game_scene.lua` now prioritizes live cores for primary fire, Multi Shot, Arrow Volley targeting, ricochet retargeting, and objective-adjacent AOE/chain follow-up so the objective can be cleared through the normal combat kit.
+  - Added `entities/treasure_chest.lua` and rewired the timed core objective reward: finishing the cores in time now spawns a breakable treasure chest that drops a guaranteed rare-only 3-card reward when destroyed.
+  - Arrow Volley and arrows now damage objective targets directly, and the objective HUD reflects the chest phase after the cores are cleared.
+- 2026-03-05: **Boss arena HUD parity + typing window extension**:
+  - `main.lua` now routes boss fights through the same shared top/bottom HUD renderer as normal gameplay, with a small ability-id alias so the boss arena's `arrow_volley` still appears in the regular `E` slot.
+  - `scenes/boss_arena_scene.lua` no longer draws the old corner ability HUD/buff strip, and its boss HP bar was restyled into the same centered slim-panel language used by the main-game progression bar.
+  - `entities/treent_overlord.lua` no longer prints `PHASE 1/2` above the boss sprite.
+  - Boss typing-test windows now use `115%` of the base vine cast time, giving the player 15% more time to finish the sequence.
+- 2026-03-05: **Shared HUD scale-up + timer moved top-left**:
+  - `main.lua` now treats the gameplay HUD as a shared scaled system (`+10%`) so the center crest, bottom health plate, and ability row all render larger in both the regular map and boss arena.
+  - The run timer was moved out of the top-center stack into a dedicated top-left plaque to prevent overlap with boss and progression bars.
+  - `getAbilitySlotLayout()` was updated alongside the HUD scale so tutorial/highlight logic continues to line up with the larger ability row.
+- 2026-03-05: **Upgrade overlap cleanup pass**:
+  - Fixed a data bug in `data/upgrades_archer.lua` where `Arrowstorm` was sitting in the epic section but tagged as `rare`.
+  - Reworked `Light Quiver` away from another extra-arrow trigger into a short attack-speed tempo proc, and shifted `Phase Roll: Focused` from dash-damage into a dash-crit window so it no longer overlaps as heavily with `Ghost Quiver`.
+  - Renamed/retuned several Arrow Volley path descriptions in `data/ability_paths_archer.lua` so `Mirror Volley`, `Satellite Volley`, `Volley Line`, and `Explosion Volley` read as more distinct choices during selection.
+- 2026-03-05: **Upgrade pool trim pass + magnet drop reduction**:
+  - Removed `Ghost Quiver`, `Battle Rhythm`, all bleed upgrades (`Barbed Shafts`, `Bleeding Frenzy`, `Hemorrhage`), and the range/close-range picks (`Long Draw`, `Keen Focus`) from `data/upgrades_archer.lua`.
+  - Merged `Bigger Blast Radius` into `Ice Blast`, so the ice on-death package now grants both the proc and the radius increase in a single pick.
+  - Renamed Arrow Volley path upgrades from `Satellite Volley` -> `Orbit Volley` and `Mirror Volley` -> `Twin Volley`, and made `P.arrow_volley` the primary ability-path table while keeping `P.entangle` only as a compatibility alias for current runtime wiring.
+  - Reduced the XP magnet drop chance in `scenes/game_scene.lua` from `5%` to `2.5%`.
+- 2026-03-05: **Gameplay XP bar restored**:
+  - `scenes/game_scene.lua` now draws the level XP bar again during normal gameplay in a slimmer centered slot under the top crest.
+  - The boss-approach bar was moved lower so the restored XP bar and major-progress bar no longer overlap.
+- 2026-03-05: **Boss-progress milestone bar pass**:
+  - `scenes/game_scene.lua` now draws the major boss-progression track with visible milestone cuts and icon markers so players can read when the core objective is coming before it starts.
+  - Replaced the plain boss-text endpoint treatment with a stylized skull marker and shifted the bar toward a cleaner milestone-driven presentation inspired by the provided reference.
+- 2026-03-05: **Core objective progress timing fix**:
+  - `scenes/game_scene.lua` no longer grants boss-bar progress for each individual core destroyed.
+  - The objective completion reward is now the full chunk: `5.6` progress, which matches `8%` of the current `70`-point boss progression bar.
+- 2026-03-05: **Run stats overlay visual refresh**:
+  - `ui/stats_overlay.lua` was restyled to match the current HUD language with deeper blue-black panels, cyan/gold framing, brighter section headers, stronger title treatment, and a cleaner three-column presentation.
+  - The overlay now reads more like an authored in-game profile screen instead of a flat debug sheet while preserving the same stat and upgrade information.
+- 2026-03-05: **Chest reward gating parity + bottom XP strip**:
+  - `scenes/game_scene.lua` now routes chest reward rolls through the same upgrade-eligibility rules as normal level-up cards, so attunement/path restrictions remain consistent and off-path element upgrades no longer appear.
+  - `main.lua` removes the large mirrored level block from the top HUD and moves player level progression into a thin Spell Brigade-style XP strip along the bottom edge with a level badge on the left.
+  - The top HUD is now reduced to the timer plaque only, leaving the upper center cleaner for objective and boss-progression presentation.
+- 2026-03-05: **Bottom HUD split into floating islands**:
+  - `main.lua` no longer renders the bottom HUD as one connected footer slab; the abilities now sit in their own smaller floating plate above a separate health bar plate.
+  - This intentionally leaves a visible gap of map space between the abilities and health sections so enemies and pickups below the player are easier to read.
+  - `getAbilitySlotLayout()` was updated to keep tutorial/highlight references aligned with the new detached ability row position.
+- 2026-03-05: **Boss pacing -30% total progression + lower-profile bottom HUD**:
+  - `scenes/game_scene.lua` now reduces total boss-portal progression required from `100` to `70`, which is a 30% reduction in total progress needed before the boss portal can spawn.
+  - `main.lua` bottom HUD was compressed and lowered toward a footer-style layout so the ability bar sits closer to the bottom edge and obscures less space beneath the player, following the lower-profile reference direction.
+- 2026-03-05: **Boss-approach bar surfaced + old top-row bars removed**:
+  - `scenes/game_scene.lua` no longer draws the old stacked top-row bars; the legacy XP/top-row strip was removed from the gameplay draw pass.
+  - The existing `majorProgress` system is now presented as a cleaner centered bar under the top HUD, with stateful labels (`BOSS APPROACH`, `CORE HUNT`, `PORTAL READY`) so players can read how close they are to the boss portal at a glance.
+  - The boss-approach bar hides automatically during the actual boss fight and shows an `ENTER PORTAL` prompt once the portal is available.
+- 2026-03-05: **Concept-art UI/HUD pass + upgrade/ability VFX polish**:
+  - `ui/upgrade_ui.lua` was reworked toward the provided concept art: the bulky framed banner was replaced with a centered glow-title treatment, cards now use a tighter/narrower layout, stronger rarity-specific framing, icon pedestals, atmospheric modal motes, improved hover/selection scaling, and corrected card hit-testing for the new layout.
+  - `main.lua` gameplay HUD was rebuilt into a more authored-looking presentation with a centered top status crest, a more ornamental QUIT button, a reshaped bottom panel, and upgraded ability slots that now include glyphs, stronger ready-state glow, and cleaner slot framing.
+  - `systems/particles.lua`, `scenes/game_scene.lua`, and `scenes/boss_arena_scene.lua` received a shared polish pass: new reusable cast/upgrade bursts, richer frenzy/root/dash particles, upgrade-confirm burst feedback, and stronger cast bursts on Multi Shot / Arrow Volley / Frenzy activations in both map and boss contexts.
+- 2026-03-03: **Upgrade modal typography tune-back + concept-style pass**:
+  - `ui/upgrade_ui.lua` reverts the oversized upgrade card name text from the recent readability bump, bringing the title size back down so long ability names fit more comfortably again.
+  - The upgrade modal now uses tighter small-body typography plus subtle text shadowing on the banner and card titles to better match the provided concept-art presentation without changing the rest of the HUD font system.
+- 2026-03-03: **Settings menu spacing overhaul + expanded options**:
+  - `ui/menu.lua` settings screen was rebuilt into a cleaner two-column layout with shared row hitboxes, improved spacing, and room for additional options without the cramped single-column stacking.
+  - Added high-value settings to the main menu settings screen: **Master Volume**, **Reduced Flashes**, **Damage Numbers toggle**, and **FPS Counter toggle**, while keeping existing audio, graphics, and keybind controls.
+  - `systems/settings.lua`, `systems/audio.lua`, `systems/damage_numbers.lua`, and `main.lua` now persist and apply the new settings at runtime (master audio scaling, reduced flash intensity/duration, optional combat text hiding, optional FPS overlay).
+- 2026-03-03: **Ice VFX polish pass + flash removal**:
+  - Removed the screen flash from ice blast / ice dissolve blast in both `scenes/game_scene.lua` and `scenes/boss_arena_scene.lua` so ice detonations keep the hit-stop and shake without the harsh full-screen pop.
+  - `systems/particles.lua` now renders ice blast as a cleaner circular frost ring with layered inner halo, crystal spokes, and tighter frost mist so it reads as a proper icy detonation.
+  - Chill/freeze enemy overlays in both gameplay and boss arena were upgraded from simple rings to fuller icy aura treatments with cold fill, stronger frost edging, and rotating crystal flecks.
+- 2026-03-03: **Global movement speed +5% pass**:
+  - Added shared movement multipliers in `data/config.lua` so both the player and spawned monsters get an additional 5% movement speed on top of the current tuning.
+  - `scenes/game_scene.lua` now applies `playerMoveSpeedScale` when refreshing player stats and `enemyMoveSpeedScale` when spawning enemies, keeping the speed change centralized and easy to retune.
+- 2026-03-03: **Upgrade modal lowered + larger card text**:
+  - `ui/upgrade_ui.lua` now places the level-up banner lower so it clears the translucent top HUD strip instead of sitting inside it.
+  - The upgrade cards now use cached larger fonts (roughly a 15% readability bump for name/body/tag text) so card copy reads more cleanly at gameplay scale.
+- 2026-03-03: **Main menu subtitle removed**:
+  - Removed the "A Descent Into Darkness" subtitle from the main menu title block in `ui/menu.lua` so only the `ASCENDENCE` title remains.
+- 2026-03-03: **Upgrade modal containment + coin HUD removal + XP magnet + tree collision polish**:
+  - **Upgrade modal banner containment**: `ui/upgrade_ui.lua` now sizes the level-up banner from the title width, falls back to a smaller title font when needed, and pushes the cards slightly lower so "LEVEL UP! CHOOSE AN UPGRADE" stays inside the frame.
+  - **Top-left HUD cleanup**: `main.lua` removes the unused coin icon / `0` currency display and re-centers the run timer closer to the level readout.
+  - **XP magnet drop**: `systems/xp_system.lua` now supports a dedicated magnet pickup that visually reads as a larger premium XP orb; when collected it flags every XP orb on the map to home into the player. `scenes/game_scene.lua` now routes monster XP drops through a shared helper and gives the magnet a 5% drop chance on enemy deaths.
+  - **Tree collision + bush grounding**: `systems/forest_tilemap.lua` now builds trunk collision blockers for the large trees, exposes combined movement blockers for player/enemy collision, and draws bushes a few pixels lower so they sit more naturally on the ground plane.
+- 2026-03-03: **Forest blocker alignment + hole removal + light floor accents**:
+  - `systems/forest_tilemap.lua` now excludes the incorrect cave/hole sprite from the rock pool and uses a single safe large rock sprite for LOS blockers, removing the random hole prop from the map.
+  - Large blocker collision was tightened to a consistent tuned radius and shifted upward relative to the sprite draw position so the collision footprint better matches the visible big rock instead of letting the player overlap the top of it.
+  - Added a subtle floor-depth pass on the seamless grass base: about 10% of the ground detail budget is now split between tiny flowers and grass tufts (5% each), with the rest staying low-contrast so the floor remains clean.
+  - Files: systems/forest_tilemap.lua, AGENTS.md.
+- 2026-03-03: **Camera clamp fix + zoom-out + larger field pass**:
+  - `systems/camera.lua` now supports camera zoom and viewport-aware clamping; it no longer allows downward overscroll past world bounds, which prevents the black void below the map from becoming visible.
+  - `systems/enemy_spawner.lua` now uses the camera's actual visible world rectangle (top-left + viewport size) for off-screen spawning, which keeps spawn positions consistent with the zoomed camera.
+  - `scenes/game_scene.lua` now applies a shared enemy size multiplier at spawn time so regular monsters render larger without hand-editing each enemy class.
+  - `data/config.lua` increases world size by 10% (`2640x1760`), sets a mild zoom-out (`0.90`), adds a slight upward follow bias, and enables a shared enemy scale (`1.18`).
+  - Files: systems/camera.lua, systems/enemy_spawner.lua, scenes/game_scene.lua, data/config.lua, AGENTS.md.
+- 2026-03-03: **Forest floor simplified to seamless green base**:
+  - `systems/forest_tilemap.lua` no longer repeats the cropped floor image for the Winlu floor path; it now uses a clean seamless green grass fill so no tile seams, grid lines, or mixed transition cells appear.
+  - This intentionally prioritizes a clean uninterrupted forest base over showing any autotile edge detail until a dedicated seamless grass texture is chosen.
+  - Files: systems/forest_tilemap.lua, AGENTS.md.
+- 2026-03-03: **Forest floor seamless grass pass**:
+  - `systems/forest_tilemap.lua` now uses a larger grass patch crop from the `Fantasy_Outside_A2_green` sheet for the floor instead of a small single-cell tile, and it draws that patch at native size to avoid visible repeated grid seams.
+  - `data/config.lua` now points `winluFloorSheet` at `Fantasy_Outside_A2_green.png` so the forest floor comes from the correct grass sheet page provided by the user.
+  - Files: systems/forest_tilemap.lua, data/config.lua, AGENTS.md.
+- 2026-03-03: **Forest simplification pass from direct art references**:
+  - `systems/forest_tilemap.lua` now uses a single repeated Winlu floor tile for the full forest ground instead of mixing multiple guessed floor cells.
+  - Winlu tree usage was reduced to the two reference silhouettes (one tall pine, one rounded tree) with much lower spawn counts for a cleaner, less cluttered map.
+  - Forest prop density was reduced overall (trees, small trees, bushes, rocks), and large LOS blockers now spawn less frequently but remain heavier rock-based blockers.
+  - When the Winlu floor is active, the ground micro-detail pass is reduced so the official floor art stays readable instead of being over-painted.
+  - Files: systems/forest_tilemap.lua, AGENTS.md.
+- 2026-03-03: **Forest art pass with Winlu official sprites**:
+  - `systems/forest_tilemap.lua` now prefers the new Winlu green no-shadow assets for forest rendering: the floor uses `Fantasy_Outside_A5_green`, trees use `!$Big_Trees_green_NoShadow`, and rock props/large blockers use `Fantasy_Outside_D_green_NoShadow`.
+  - Added multi-atlas sprite registration so the forest tilemap can mix the legacy fallback sheets with the new official tree, decor, and floor sheets without breaking fallback rendering.
+  - Large procedural blocker rocks are now replaced by scaled official rock sprites when the Winlu decor sheet is present, while the procedural fallback remains intact if those assets are missing.
+  - `data/config.lua` now exposes explicit Winlu asset paths under `Config.ForestScene`.
+  - Files: systems/forest_tilemap.lua, data/config.lua, AGENTS.md.
+- 2026-03-03: **Tutorial phase reset positioning**:
+  - `scenes/tutorial_scene.lua` now re-centers the player and clears active dash state whenever a new tutorial phase starts, so each phase begins from neutral and the player must move back into range before auto-fire/auto-cast triggers.
+  - Files: scenes/tutorial_scene.lua, AGENTS.md.
+- 2026-03-03: **Tutorial prompt spacing + top-safe placement pass**:
+  - `scenes/tutorial_scene.lua` now places the tutorial prompt panel in a top-safe HUD zone instead of mid-screen, so it reads as UI and stops hovering directly over the player.
+  - Increased tutorial panel height/width and added more vertical spacing between the large gold title, body copy, and hint text to remove the cramped/janky stacking.
+  - Files: scenes/tutorial_scene.lua, AGENTS.md.
+- 2026-03-03: **Tutorial readability + movement task UI pass**:
+  - `scenes/tutorial_scene.lua` now uses progressive typewriter-style text reveal for tutorial title/body/hint text so phases read in instead of dumping full text immediately.
+  - Tutorial panel layout was expanded and re-spaced to reduce title/body/hint overlap, especially on longer phases like Primary Attack and Frenzy.
+  - The task tracker now sits to the side of the tutorial panel instead of underneath it, keeping the player area clearer.
+  - Movement phase now shows a dedicated 4-checkbox WASD tracker (`W`, `A`, `S`, `D`) with per-key completion instead of a single binary task line.
+  - Tutorial dummies now spawn farther away so primary fire and auto-cast tutorial phases require moving into range before they trigger.
+  - Frenzy task copy now explicitly instructs `Press R` instead of saying to use the shown key.
+  - Files: scenes/tutorial_scene.lua, AGENTS.md.
 - 2026-03-03: **Settings/tutorial/stats layout cleanup + tutorial task tracker**:
   - **Settings layout anchored to frame**: `ui/menu.lua` now positions slider rows, graphics toggles, keybind rows, and BACK using the settings frame bounds instead of loose screen percentages, so the title and controls stay inside the panel.
   - **Tutorial task tracker**: `scenes/tutorial_scene.lua` now shows a separate small task window under the tutorial panel with a binary progress state (`0/1` -> `1/1`) for the active objective.

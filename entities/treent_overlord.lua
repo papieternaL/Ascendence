@@ -84,6 +84,7 @@ function TreentOverlord:new(x, y)
         earthquakeTimer = 0,
         earthquakeCooldown = cfg.earthquakeCooldown,
         earthquakeDuration = cfg.earthquakeDuration,
+        baseEarthquakeCastTime = cfg.earthquakeCastTime,
         earthquakeCastTime = cfg.earthquakeCastTime,
         earthquakeCasting = false,
         earthquakeCastProgress = 0,
@@ -366,10 +367,6 @@ function TreentOverlord:draw()
         love.graphics.setColor(1, 0, 0, 1)
     end
     love.graphics.rectangle("fill", self.x - 60, self.y - self.size - 20, 120 * healthPercent, 10)
-    
-    -- Phase indicator
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print("PHASE " .. self.phase, self.x - 30, self.y - self.size - 35)
     
     -- Cast bar (VINE ATTACK TELEGRAPH)
     if self.earthquakeCasting then

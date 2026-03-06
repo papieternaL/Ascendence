@@ -62,7 +62,7 @@ function Particles:createHitSpark(x, y, color)
 end
 
 function Particles:createDashTrail(x, y)
-    for i = 1, 4 do
+    for i = 1, 6 do
         self.particles[#self.particles + 1] = {
             x = x + (math.random() - 0.5) * 12,
             y = y + (math.random() - 0.5) * 12,
@@ -73,6 +73,53 @@ function Particles:createDashTrail(x, y)
             age = 0,
             color = {0.4, 0.6, 1},
             gravity = 0,
+            baseAlpha = 0.7,
+        }
+    end
+end
+
+function Particles:createCastBurst(x, y, color, scale)
+    color = color or {0.7, 0.9, 1.0}
+    scale = scale or 1.0
+
+    local spokes = 10
+    for i = 1, spokes do
+        local angle = (i / spokes) * math.pi * 2 + (math.random() - 0.5) * 0.18
+        local speed = (55 + math.random() * 35) * scale
+        self.particles[#self.particles + 1] = {
+            x = x,
+            y = y,
+            vx = math.cos(angle) * speed,
+            vy = math.sin(angle) * speed,
+            size = 2 + math.random(0, 2),
+            lifetime = 0.18 + math.random() * 0.08,
+            age = 0,
+            color = {
+                math.min(1, color[1] + math.random() * 0.18),
+                math.min(1, color[2] + math.random() * 0.16),
+                math.min(1, color[3] + math.random() * 0.14),
+            },
+            gravity = 0,
+            baseAlpha = 0.85,
+        }
+    end
+
+    for i = 1, 5 do
+        self.particles[#self.particles + 1] = {
+            x = x + (math.random() - 0.5) * 10,
+            y = y + (math.random() - 0.5) * 10,
+            vx = (math.random() - 0.5) * 18 * scale,
+            vy = -25 - math.random() * 30 * scale,
+            size = 2 + math.random(0, 1),
+            lifetime = 0.22 + math.random() * 0.08,
+            age = 0,
+            color = {
+                math.min(1, color[1] + 0.12),
+                math.min(1, color[2] + 0.12),
+                math.min(1, color[3] + 0.12),
+            },
+            gravity = -12,
+            baseAlpha = 0.7,
         }
     end
 end
@@ -199,62 +246,94 @@ end
 -- Ice blast: cold shock ring, ice shard burst, frost mist (distinct on green terrain)
 function Particles:createIceBlast(x, y, radius)
     radius = radius or 70
-    local color = {0.6, 0.92, 1.0}
-    -- Cold shock ring (expanding outward)
-    local numRing = math.max(14, math.floor(radius / 5))
-    for i = 1, numRing do
-        local angle = (i / numRing) * math.pi * 2 + (math.random() - 0.5) * 0.3
-        local r = radius * (0.7 + math.random() * 0.3)
+    local color = {0.62, 0.92, 1.0}
+
+    -- Outer circular frost ring for a cleaner silhouette.
+    local ringCount = math.max(22, math.floor(radius / 3))
+    for i = 1, ringCount do
+        local angle = (i / ringCount) * math.pi * 2
+        local ringRadius = radius * (0.9 + math.random() * 0.08)
         self.particles[#self.particles + 1] = {
-            x = x + math.cos(angle) * r,
-            y = y + math.sin(angle) * r,
-            vx = math.cos(angle) * 55,
-            vy = math.sin(angle) * 55,
-            size = 3 + math.random(0, 2),
-            lifetime = 0.28 + math.random() * 0.12,
+            x = x + math.cos(angle) * ringRadius,
+            y = y + math.sin(angle) * ringRadius,
+            vx = math.cos(angle) * (48 + math.random() * 20),
+            vy = math.sin(angle) * (48 + math.random() * 20),
+            size = 3 + math.random(0, 1),
+            lifetime = 0.24 + math.random() * 0.08,
             age = 0,
             color = {
-                math.min(1, color[1] + (math.random() - 0.5) * 0.15),
-                math.min(1, color[2] + (math.random() - 0.5) * 0.15),
+                math.min(1, color[1] + math.random() * 0.08),
+                math.min(1, color[2] + math.random() * 0.06),
                 1,
             },
             gravity = 0,
         }
     end
-    -- Ice shard burst (bright cyan/white center)
-    for i = 1, 16 do
-        local angle = (i / 16) * math.pi * 2 + (math.random() - 0.5) * 0.5
-        local speed = 90 + math.random() * 70
+
+    -- Inner halo gives the blast body without making it noisy.
+    local innerCount = math.max(14, math.floor(radius / 5))
+    for i = 1, innerCount do
+        local angle = (i / innerCount) * math.pi * 2 + (math.random() - 0.5) * 0.1
+        local innerRadius = radius * (0.38 + math.random() * 0.18)
+        self.particles[#self.particles + 1] = {
+            x = x + math.cos(angle) * innerRadius,
+            y = y + math.sin(angle) * innerRadius,
+            vx = math.cos(angle) * (18 + math.random() * 12),
+            vy = math.sin(angle) * (18 + math.random() * 12),
+            size = 2 + math.random(0, 1),
+            lifetime = 0.18 + math.random() * 0.08,
+            age = 0,
+            color = {0.78, 0.97, 1.0},
+            gravity = 0,
+            baseAlpha = 0.85,
+        }
+    end
+
+    -- Long crystal spokes so the blast reads as ice instead of generic light.
+    local shardCount = 12
+    for i = 1, shardCount do
+        local angle = (i / shardCount) * math.pi * 2 + (math.random() - 0.5) * 0.14
+        local speed = 95 + math.random() * 55
+        local lengthBias = 1.0 + (i % 2 == 0 and 0.25 or 0)
         self.particles[#self.particles + 1] = {
             x = x,
             y = y,
-            vx = math.cos(angle) * speed,
-            vy = math.sin(angle) * speed,
-            size = 2 + math.random(0, 2),
-            lifetime = 0.2 + math.random() * 0.1,
+            vx = math.cos(angle) * speed * lengthBias,
+            vy = math.sin(angle) * speed * lengthBias,
+            size = 4 + math.random(0, 1),
+            lifetime = 0.22 + math.random() * 0.1,
             age = 0,
-            color = {
-                0.7 + math.random() * 0.3,
-                0.9 + math.random() * 0.1,
-                1,
-            },
+            color = {0.86, 0.98, 1.0},
+            gravity = 0,
+        }
+        self.particles[#self.particles + 1] = {
+            x = x + math.cos(angle) * radius * 0.22,
+            y = y + math.sin(angle) * radius * 0.22,
+            vx = math.cos(angle) * (30 + math.random() * 18),
+            vy = math.sin(angle) * (30 + math.random() * 18),
+            size = 2 + math.random(0, 1),
+            lifetime = 0.16 + math.random() * 0.08,
+            age = 0,
+            color = {0.72, 0.92, 1.0},
             gravity = 0,
         }
     end
-    -- Frost mist accents (short-lived)
-    for i = 1, 8 do
+
+    -- Frost mist stays close to center to sell the cold snap.
+    for i = 1, 12 do
         local angle = love.math.random() * math.pi * 2
-        local dist = love.math.random() * radius * 0.4
+        local dist = love.math.random() * radius * 0.32
         self.particles[#self.particles + 1] = {
             x = x + math.cos(angle) * dist,
             y = y + math.sin(angle) * dist,
-            vx = (math.random() - 0.5) * 40,
-            vy = (math.random() - 0.5) * 40,
+            vx = (math.random() - 0.5) * 28,
+            vy = (math.random() - 0.5) * 28,
             size = 2 + math.random(0, 1),
-            lifetime = 0.15 + math.random() * 0.1,
+            lifetime = 0.16 + math.random() * 0.08,
             age = 0,
-            color = {0.85, 0.95, 1.0},
+            color = {0.86, 0.96, 1.0},
             gravity = 0,
+            baseAlpha = 0.75,
         }
     end
 end
@@ -273,6 +352,45 @@ function Particles:createBleedDrip(x, y, color)
             age = 0,
             color = color,
             gravity = 80,
+        }
+    end
+end
+
+function Particles:createBurnFlare(x, y, intensity)
+    intensity = intensity or 1.0
+    for i = 1, math.max(4, math.floor(5 * intensity)) do
+        local angle = (math.random() - 0.5) * 0.9
+        local lift = 26 + math.random() * 34 * intensity
+        self.particles[#self.particles + 1] = {
+            x = x + (math.random() - 0.5) * 10,
+            y = y + (math.random() - 0.5) * 6,
+            vx = math.sin(angle) * (10 + math.random() * 14),
+            vy = -lift,
+            size = 2 + math.random(0, 2),
+            lifetime = 0.18 + math.random() * 0.12,
+            age = 0,
+            color = {
+                1.0,
+                0.35 + math.random() * 0.35,
+                0.05 + math.random() * 0.12,
+            },
+            gravity = -14,
+            baseAlpha = 0.9,
+        }
+    end
+
+    for i = 1, 2 do
+        self.particles[#self.particles + 1] = {
+            x = x + (math.random() - 0.5) * 12,
+            y = y - 2 + (math.random() - 0.5) * 6,
+            vx = (math.random() - 0.5) * 8,
+            vy = -14 - math.random() * 8,
+            size = 2 + math.random(0, 1),
+            lifetime = 0.24 + math.random() * 0.08,
+            age = 0,
+            color = {0.24, 0.18, 0.16},
+            gravity = -6,
+            baseAlpha = 0.28,
         }
     end
 end
@@ -298,26 +416,28 @@ end
 
 -- Entangle root burst: green vine-like ring
 function Particles:createRootBurst(x, y)
-    for i = 1, 10 do
-        local angle = (i / 10) * math.pi * 2
-        local r = 20 + math.random() * 15
+    for i = 1, 14 do
+        local angle = (i / 14) * math.pi * 2
+        local r = 24 + math.random() * 20
         self.particles[#self.particles + 1] = {
             x = x + math.cos(angle) * r,
             y = y + math.sin(angle) * r,
-            vx = math.cos(angle) * 20,
-            vy = math.sin(angle) * 20 - 15,
-            size = 3 + math.random(0, 1),
-            lifetime = 0.4 + math.random() * 0.2,
+            vx = math.cos(angle) * 26,
+            vy = math.sin(angle) * 26 - 18,
+            size = 3 + math.random(0, 2),
+            lifetime = 0.42 + math.random() * 0.18,
             age = 0,
             color = {0.1 + math.random() * 0.15, 0.6 + math.random() * 0.3, 0.1},
             gravity = 40,
+            baseAlpha = 0.8,
         }
     end
+    self:createCastBurst(x, y, {0.25, 0.82, 0.34}, 0.85)
 end
 
 -- Frenzy ongoing aura: light ember wisps around player
 function Particles:createFrenzyAura(x, y)
-    for i = 1, 6 do
+    for i = 1, 8 do
         local angle = math.random() * math.pi * 2
         local r = 12 + math.random() * 20
         local speed = 8 + math.random() * 16
@@ -338,21 +458,67 @@ end
 
 -- Frenzy activation burst: fiery orange radial
 function Particles:createFrenzyBurst(x, y)
-    for i = 1, 20 do
-        local angle = (i / 20) * math.pi * 2 + (math.random() - 0.5) * 0.3
-        local speed = 80 + math.random() * 60
+    for i = 1, 26 do
+        local angle = (i / 26) * math.pi * 2 + (math.random() - 0.5) * 0.3
+        local speed = 86 + math.random() * 76
         self.particles[#self.particles + 1] = {
             x = x,
             y = y,
             vx = math.cos(angle) * speed,
             vy = math.sin(angle) * speed,
-            size = 2 + math.random(0, 2),
-            lifetime = 0.3 + math.random() * 0.2,
+            size = 2 + math.random(0, 3),
+            lifetime = 0.28 + math.random() * 0.24,
             age = 0,
             color = {1, 0.4 + math.random() * 0.4, 0.05},
             gravity = 0,
+            baseAlpha = 0.9,
         }
     end
+    self:createAoeRing(x, y, 42, {1, 0.42, 0.08})
+    self:createCastBurst(x, y, {1, 0.75, 0.24}, 1.2)
+end
+
+function Particles:createUpgradeBurst(x, y, color)
+    color = color or {0.5, 0.95, 1.0}
+
+    for i = 1, 18 do
+        local angle = (i / 18) * math.pi * 2 + (math.random() - 0.5) * 0.22
+        local speed = 70 + math.random() * 60
+        self.particles[#self.particles + 1] = {
+            x = x,
+            y = y,
+            vx = math.cos(angle) * speed,
+            vy = math.sin(angle) * speed - 8,
+            size = 2 + math.random(0, 2),
+            lifetime = 0.3 + math.random() * 0.16,
+            age = 0,
+            color = {
+                math.min(1, color[1] + math.random() * 0.18),
+                math.min(1, color[2] + math.random() * 0.14),
+                math.min(1, color[3] + math.random() * 0.12),
+            },
+            gravity = 12,
+            baseAlpha = 0.85,
+        }
+    end
+
+    for i = 1, 12 do
+        self.particles[#self.particles + 1] = {
+            x = x + (math.random() - 0.5) * 16,
+            y = y + 4 + (math.random() - 0.5) * 8,
+            vx = (math.random() - 0.5) * 22,
+            vy = -45 - math.random() * 55,
+            size = 2 + math.random(0, 1),
+            lifetime = 0.34 + math.random() * 0.14,
+            age = 0,
+            color = {0.95, 1.0, 1.0},
+            gravity = -10,
+            baseAlpha = 0.75,
+        }
+    end
+
+    self:createAoeRing(x, y, 54, color)
+    self:createCastBurst(x, y, color, 1.1)
 end
 
 ---------------------------------------------------------------------------

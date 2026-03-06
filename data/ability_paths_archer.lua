@@ -19,7 +19,7 @@ P.multi_shot = {
   },
 }
 
-P.entangle = {
+P.arrow_volley = {
   {
     id="en_c_wide_volley", name="Wide Volley", rarity="common",
     description="Arrow Volley fires 3 additional arrows",
@@ -54,29 +54,29 @@ P.entangle = {
     }
   },
   {
-    id="en_r_rain_of_arrows", name="Rain of Arrows", rarity="rare",
-    description="Arrow Volley creates an additional AOE circle to attack enemies",
+    id="en_r_rain_of_arrows", name="Orbit Volley", rarity="rare",
+    description="Arrow Volley creates a second satellite strike around the main impact",
     effects={
       { kind="ability_mod", ability="entangle", mod="extra_zone_add", value=1 }
     }
   },
   {
-    id="en_c_double_volley", name="Double Volley", rarity="common",
-    description="Release two volleys at the same time instead of 1",
+    id="en_c_double_volley", name="Twin Volley", rarity="common",
+    description="Arrow Volley releases a paired twin strike instead of a single impact",
     effects={ { kind="ability_mod", ability="entangle", mod="double_volley", value=true } }
   },
   {
     id="en_r_volley_line", name="Volley Line", rarity="rare",
-    description="Arrow Volley becomes 3 smaller circles in a vertical line",
+    description="Arrow Volley becomes 3 smaller strikes in a vertical lane",
     effects={ { kind="ability_mod", ability="entangle", mod="volley_line", value=true } }
   },
   {
     id="en_r_explosion_volley", name="Explosion Volley", rarity="rare",
-    description="Arrow Volley arrows deal explosion damage and apply burn on impact",
+    description="Arrow Volley gains explosive impacts that also apply burn",
     effects={ { kind="ability_mod", ability="entangle", mod="explosion_volley", value=true } }
   },
 }
-P.arrow_volley = P.entangle
+P.entangle = P.arrow_volley
 
 P.frenzy = {
   {

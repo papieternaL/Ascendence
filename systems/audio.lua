@@ -40,16 +40,25 @@ Audio.sfx = {
 
 function Audio:new()
   local a = setmetatable({
+    masterVolume = 1.0,
     musicVolume = 0.35,
     sfxVolume = 0.5,
     currentMusic = nil,
+    currentMusicBaseVolume = 0,
     currentTrackName = nil,
     loadedSources = {},  -- cache of loaded Source objects
-    fadeTarget = nil,
-    fadeSpeed = 0,
+    fadeTargetBase = nil,
+    fadeSpeedBase = 0,
     muted = false,
   }, Audio)
   return a
+end
+
+function Audio:applyCurrentMusicVolume()
+  if self.currentMusic then
+    local outVol = self.currentMusicBaseVolume * self.masterVolume
+    self.currentMusic:setVolume(self.muted and 0 or outVol)
+  end
 end
 
 -- Load and cache a source (stream for music, static for sfx)
@@ -78,6 +87,8 @@ function Audio:playMusic(trackName, options)
     return
   end
 
+  self.fadeTargetBase = nil
+
   -- Stop current music
   if self.currentMusic then
     self.currentMusic:stop()
@@ -87,7 +98,8 @@ function Audio:playMusic(trackName, options)
   if not source then return end
 
   source:setLooping(options.loop ~= false)  -- loop by default
-  source:setVolume(self.muted and 0 or (options.volume or self.musicVolume))
+  self.currentMusicBaseVolume = options.volume or self.musicVolume
+  source:setVolume(self.muted and 0 or (self.currentMusicBaseVolume * self.masterVolume))
   source:play()
 
   self.currentMusic = source
@@ -100,14 +112,16 @@ function Audio:stopMusic()
     self.currentMusic:stop()
     self.currentMusic = nil
     self.currentTrackName = nil
+    self.currentMusicBaseVolume = 0
   end
+  self.fadeTargetBase = nil
 end
 
 -- Fade music volume over time (call in update loop)
 function Audio:fadeOut(duration)
   if self.currentMusic then
-    self.fadeTarget = 0
-    self.fadeSpeed = self.currentMusic:getVolume() / math.max(duration, 0.01)
+    self.fadeTargetBase = 0
+    self.fadeSpeedBase = self.currentMusicBaseVolume / math.max(duration, 0.01)
   end
 end
 
@@ -115,8 +129,8 @@ function Audio:fadeIn(trackName, duration, options)
   options = options or {}
   self:playMusic(trackName, { volume = 0, loop = options.loop })
   if self.currentMusic then
-    self.fadeTarget = options.volume or self.musicVolume
-    self.fadeSpeed = self.fadeTarget / math.max(duration, 0.01)
+    self.fadeTargetBase = options.volume or self.musicVolume
+    self.fadeSpeedBase = self.fadeTargetBase / math.max(duration, 0.01)
   end
 end
 
@@ -131,19 +145,24 @@ function Audio:playSFX(sfxName, options)
   if not source then return end
 
   local clone = source:clone()
-  clone:setVolume(self.muted and 0 or (options.volume or self.sfxVolume))
+  local baseVolume = options.volume or self.sfxVolume
+  clone:setVolume(self.muted and 0 or (baseVolume * self.masterVolume))
   if options.pitch then
     clone:setPitch(options.pitch)
   end
   clone:play()
 end
 
+function Audio:setMasterVolume(vol)
+  self.masterVolume = math.max(0, math.min(1, vol))
+  self:applyCurrentMusicVolume()
+end
+
 -- Set master music volume
 function Audio:setMusicVolume(vol)
   self.musicVolume = math.max(0, math.min(1, vol))
-  if self.currentMusic and not self.muted then
-    self.currentMusic:setVolume(self.musicVolume)
-  end
+  self.currentMusicBaseVolume = self.musicVolume
+  self:applyCurrentMusicVolume()
 end
 
 -- Set master SFX volume
@@ -154,29 +173,29 @@ end
 -- Toggle mute
 function Audio:toggleMute()
   self.muted = not self.muted
-  if self.currentMusic then
-    self.currentMusic:setVolume(self.muted and 0 or self.musicVolume)
-  end
+  self:applyCurrentMusicVolume()
 end
 
 -- Update (handles fading)
 function Audio:update(dt)
-  if self.fadeTarget ~= nil and self.currentMusic then
-    local currentVol = self.currentMusic:getVolume()
-    if self.fadeTarget > currentVol then
-      currentVol = math.min(self.fadeTarget, currentVol + self.fadeSpeed * dt)
+  if self.fadeTargetBase ~= nil and self.currentMusic then
+    local currentBaseVol = self.currentMusicBaseVolume
+    if self.fadeTargetBase > currentBaseVol then
+      currentBaseVol = math.min(self.fadeTargetBase, currentBaseVol + self.fadeSpeedBase * dt)
     else
-      currentVol = math.max(self.fadeTarget, currentVol - self.fadeSpeed * dt)
+      currentBaseVol = math.max(self.fadeTargetBase, currentBaseVol - self.fadeSpeedBase * dt)
     end
-    self.currentMusic:setVolume(self.muted and 0 or currentVol)
+    self.currentMusicBaseVolume = currentBaseVol
+    self:applyCurrentMusicVolume()
 
-    if math.abs(currentVol - self.fadeTarget) < 0.01 then
-      if self.fadeTarget <= 0 then
+    if math.abs(currentBaseVol - self.fadeTargetBase) < 0.01 then
+      if self.fadeTargetBase <= 0 then
         self.currentMusic:stop()
         self.currentMusic = nil
         self.currentTrackName = nil
+        self.currentMusicBaseVolume = 0
       end
-      self.fadeTarget = nil
+      self.fadeTargetBase = nil
     end
   end
 end

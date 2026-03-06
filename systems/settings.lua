@@ -8,6 +8,7 @@ local SETTINGS_FILE = "settings.lua"
 
 local DEFAULTS = {
     audio = {
+        masterVolume = 1.0,
         musicVolume = 0.35,
         sfxVolume = 0.50,
     },
@@ -16,6 +17,11 @@ local DEFAULTS = {
         brightness = 0.58,
         fullscreen = false,
         vsync = true,
+    },
+    gameplay = {
+        reducedFlashes = false,
+        showDamageNumbers = true,
+        showFPS = false,
     },
     keybinds = {
         dash = "space",
@@ -91,6 +97,7 @@ end
 
 function Settings:apply()
     if self.audioRef then
+        self.audioRef:setMasterVolume(self.values.audio.masterVolume or DEFAULTS.audio.masterVolume)
         self.audioRef:setMusicVolume(self.values.audio.musicVolume or DEFAULTS.audio.musicVolume)
         self.audioRef:setSFXVolume(self.values.audio.sfxVolume or DEFAULTS.audio.sfxVolume)
     end
@@ -111,6 +118,7 @@ function Settings:load()
 
     local okRun, loaded = pcall(chunk)
     if okRun and type(loaded) == "table" then
+        self.values.audio.masterVolume = clamp(tonumber(loaded.audio and loaded.audio.masterVolume) or self.values.audio.masterVolume, 0, 1)
         self.values.audio.musicVolume = clamp(tonumber(loaded.audio and loaded.audio.musicVolume) or self.values.audio.musicVolume, 0, 1)
         self.values.audio.sfxVolume = clamp(tonumber(loaded.audio and loaded.audio.sfxVolume) or self.values.audio.sfxVolume, 0, 1)
         self.values.graphics.screenShake = clamp(tonumber(loaded.graphics and loaded.graphics.screenShake) or self.values.graphics.screenShake, 0, 1)
@@ -124,6 +132,11 @@ function Settings:load()
                 self.values.keybinds[action] = key
             end
         end
+        if loaded.gameplay then
+            if loaded.gameplay.reducedFlashes ~= nil then self.values.gameplay.reducedFlashes = loaded.gameplay.reducedFlashes end
+            if loaded.gameplay.showDamageNumbers ~= nil then self.values.gameplay.showDamageNumbers = loaded.gameplay.showDamageNumbers end
+            if loaded.gameplay.showFPS ~= nil then self.values.gameplay.showFPS = loaded.gameplay.showFPS end
+        end
     end
 
     self:apply()
@@ -136,6 +149,12 @@ end
 
 function Settings:setMusicVolume(v)
     self.values.audio.musicVolume = clamp(v, 0, 1)
+    self:apply()
+    self:save()
+end
+
+function Settings:setMasterVolume(v)
+    self.values.audio.masterVolume = clamp(v, 0, 1)
     self:apply()
     self:save()
 end
@@ -170,6 +189,36 @@ function Settings:toggleVsync()
     flags.vsync = self.values.graphics.vsync and 1 or 0
     love.window.setMode(w, h, flags)
     self:save()
+end
+
+function Settings:setReducedFlashes(enabled)
+    self.values.gameplay.reducedFlashes = enabled == true
+    self:apply()
+    self:save()
+end
+
+function Settings:toggleReducedFlashes()
+    self:setReducedFlashes(not self.values.gameplay.reducedFlashes)
+end
+
+function Settings:setShowDamageNumbers(enabled)
+    self.values.gameplay.showDamageNumbers = enabled ~= false
+    self:apply()
+    self:save()
+end
+
+function Settings:toggleShowDamageNumbers()
+    self:setShowDamageNumbers(not self.values.gameplay.showDamageNumbers)
+end
+
+function Settings:setShowFPS(enabled)
+    self.values.gameplay.showFPS = enabled == true
+    self:apply()
+    self:save()
+end
+
+function Settings:toggleShowFPS()
+    self:setShowFPS(not self.values.gameplay.showFPS)
 end
 
 function Settings:setKeybind(action, key)

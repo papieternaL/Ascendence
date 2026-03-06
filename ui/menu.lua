@@ -13,6 +13,57 @@ local Palette = {
     sliderFillSelected = {1.0, 0.82, 0.46, 1},
 }
 
+local SETTINGS_SECTION_TEMPLATES = {
+    {
+        title = "AUDIO",
+        column = 1,
+        items = {
+            { kind = "slider", id = "master_volume", label = "Master" },
+            { kind = "slider", id = "music_volume", label = "Music" },
+            { kind = "slider", id = "sfx_volume", label = "Sound" },
+        },
+    },
+    {
+        title = "GRAPHICS",
+        column = 1,
+        items = {
+            { kind = "slider", id = "screen_shake", label = "Shake" },
+            { kind = "slider", id = "brightness", label = "Brightness" },
+            { kind = "toggle", id = "fullscreen", label = "Fullscreen" },
+            { kind = "toggle", id = "vsync", label = "VSync" },
+        },
+    },
+    {
+        title = "GAMEPLAY",
+        column = 2,
+        items = {
+            { kind = "toggle", id = "reduced_flashes", label = "Reduced Flashes" },
+            { kind = "toggle", id = "show_damage_numbers", label = "Damage Numbers" },
+            { kind = "toggle", id = "show_fps", label = "FPS Counter" },
+        },
+    },
+    {
+        title = "KEYBINDS",
+        column = 2,
+        items = {
+            { kind = "keybind", id = "dash", label = "Dash" },
+            { kind = "keybind", id = "multi_shot", label = "Multi Shot" },
+            { kind = "keybind", id = "arrow_volley", label = "Arrow Volley" },
+            { kind = "keybind", id = "frenzy", label = "Frenzy" },
+        },
+    },
+}
+
+local function countSettingsItems()
+    local count = 1 -- Back button
+    for _, section in ipairs(SETTINGS_SECTION_TEMPLATES) do
+        count = count + #section.items
+    end
+    return count
+end
+
+local SETTINGS_ITEM_COUNT = countSettingsItems()
+
 function Menu:new(gameState)
     local menu = {
         gameState = gameState,
@@ -149,30 +200,9 @@ function Menu:update(dt)
         end
     elseif state == States.SETTINGS and not self.rebindingIndex then
         local L = self:getSettingsLayout(w, h)
-        local barX, barW, y0, gap, gfxY, kbY = L.barX, L.barW, L.y0, L.gap, L.gfxY, L.kbY
-        local rowH = 24
-        if self:isPointInRect(mx, my, barX, y0, barW, 16) then
-            self.selectedIndex = 1
-        elseif self:isPointInRect(mx, my, barX, y0 + gap, barW, 16) then
-            self.selectedIndex = 2
-        elseif self:isPointInRect(mx, my, barX, y0 + gap * 2, barW, 16) then
-            self.selectedIndex = 3
-        elseif self:isPointInRect(mx, my, barX, gfxY, barW, 16) then
-            self.selectedIndex = 4
-        elseif self:isPointInRect(mx, my, barX, gfxY + gap, barW, rowH) then
-            self.selectedIndex = 5
-        elseif self:isPointInRect(mx, my, barX, gfxY + gap * 2, barW, rowH) then
-            self.selectedIndex = 6
-        elseif self:isPointInRect(mx, my, barX, kbY, barW, rowH) then
-            self.selectedIndex = 7
-        elseif self:isPointInRect(mx, my, barX, kbY + gap, barW, rowH) then
-            self.selectedIndex = 8
-        elseif self:isPointInRect(mx, my, barX, kbY + gap * 2, barW, rowH) then
-            self.selectedIndex = 9
-        elseif self:isPointInRect(mx, my, barX, kbY + gap * 3, barW, rowH) then
-            self.selectedIndex = 10
-        elseif self:isPointInButton(mx, my, L.backCx, L.backCy, 160, 36) then
-            self.selectedIndex = SETTINGS_ITEM_COUNT
+        local hoveredItem = self:getSettingsItemAtPoint(L, mx, my)
+        if hoveredItem then
+            self.selectedIndex = hoveredItem.index
         end
     end
 end
@@ -279,13 +309,6 @@ function Menu:drawMainMenu()
         drawTextWithShadow(title, w/2 - titleW/2, h * 0.25 + self.titleBob)
     end
     
-    -- Subtitle
-    love.graphics.setFont(self.bodyFont)
-    local subtitle = "A Descent Into Darkness"
-    local subW = self.bodyFont:getWidth(subtitle)
-    love.graphics.setColor(Palette.subtitle)
-    drawTextWithShadow(subtitle, w/2 - subW/2, h * 0.25 + 60 + self.titleBob)
-    
     -- Menu buttons
     local labels = {"BEGIN TRIAL", "TUTORIAL", "BOSS TEST", "SETTINGS", "QUIT"}
     local startY = h * 0.50
@@ -323,10 +346,16 @@ function Menu:drawMainMenu()
     drawTextWithShadow(instr, w/2 - instrW/2, h * 0.85)
 end
 
-function Menu:drawSlider(label, value, x, y, width, isSelected)
+function Menu:drawSlider(label, value, labelX, controlX, y, width, isSelected)
     local clamped = math.max(0, math.min(1, value or 0))
-    love.graphics.setColor(0.16, 0.18, 0.24, 0.95)
-    love.graphics.rectangle("fill", x, y, width, 16, 6, 6)
+    local barY = y + 6
+
+    love.graphics.setFont(self.smallFont)
+    love.graphics.setColor(Palette.text)
+    drawTextWithShadow(label, labelX, y + 1)
+
+    love.graphics.setColor(0.15, 0.18, 0.25, 0.98)
+    love.graphics.rectangle("fill", controlX, barY, width, 16, 6, 6)
 
     local fillW = math.floor((width - 4) * clamped)
     if isSelected then
@@ -334,71 +363,218 @@ function Menu:drawSlider(label, value, x, y, width, isSelected)
     else
         love.graphics.setColor(Palette.sliderFill)
     end
-    love.graphics.rectangle("fill", x + 2, y + 2, fillW, 12, 5, 5)
+    love.graphics.rectangle("fill", controlX + 2, barY + 2, fillW, 12, 5, 5)
 
     love.graphics.setColor(Palette.text)
-    love.graphics.setFont(self.bodyFont)
-    drawTextWithShadow(label, x - 220, y - 7)
-    love.graphics.setFont(self.smallFont)
-    drawTextWithShadow(string.format("%d%%", math.floor(clamped * 100)), x + width + 20, y - 3)
+    drawTextWithShadow(string.format("%d%%", math.floor(clamped * 100)), controlX + width + 12, y + 1)
 end
 
--- Settings menu items layout:
--- 1: Music Volume (slider)
--- 2: Sound Volume (slider)
--- 3: Screen Shake (slider)
--- 4: Brightness (slider)
--- 5: Fullscreen (toggle)
--- 6: VSync (toggle)
--- 7: Dash keybind
--- 8: Multi Shot keybind
--- 9: Arrow Volley keybind
--- 10: Frenzy keybind
--- 11: BACK button
-local SETTINGS_ITEM_COUNT = 11
-
 function Menu:getSettingsFrameRect(w, h)
-    local frameW = math.min(640, w - 160)
-    local frameH = math.min(640, h - 80)
+    local frameW = math.min(780, w - 120)
+    local frameH = math.min(680, h - 48)
     local frameX = w * 0.5 - frameW * 0.5
-    local frameY = h * 0.5 - frameH * 0.5
+    local frameY = h * 0.5 - frameH * 0.5 - 8
     return frameX, frameY, frameW, frameH
+end
+
+function Menu:getSettingsValueForItem(item, settings)
+    settings = settings or {}
+    local audio = settings.audio or {}
+    local graphics = settings.graphics or {}
+    local gameplay = settings.gameplay or {}
+
+    if item.id == "master_volume" then
+        return audio.masterVolume or 1.0
+    elseif item.id == "music_volume" then
+        return audio.musicVolume or 0.35
+    elseif item.id == "sfx_volume" then
+        return audio.sfxVolume or 0.5
+    elseif item.id == "screen_shake" then
+        return graphics.screenShake or 1.0
+    elseif item.id == "brightness" then
+        return graphics.brightness or 0.58
+    elseif item.id == "fullscreen" then
+        return graphics.fullscreen == true
+    elseif item.id == "vsync" then
+        return graphics.vsync == true
+    elseif item.id == "reduced_flashes" then
+        return gameplay.reducedFlashes == true
+    elseif item.id == "show_damage_numbers" then
+        return gameplay.showDamageNumbers ~= false
+    elseif item.id == "show_fps" then
+        return gameplay.showFPS == true
+    end
+    return nil
+end
+
+function Menu:applySettingsSliderValue(mgr, item, value)
+    if not mgr or not item then return end
+    if item.id == "master_volume" then
+        mgr:setMasterVolume(value)
+    elseif item.id == "music_volume" then
+        mgr:setMusicVolume(value)
+    elseif item.id == "sfx_volume" then
+        mgr:setSFXVolume(value)
+    elseif item.id == "screen_shake" then
+        mgr:setScreenShake(value)
+    elseif item.id == "brightness" then
+        mgr:setBrightness(value)
+    end
+end
+
+function Menu:setSettingsToggleValue(mgr, item, enabled)
+    if not mgr or not item then return end
+    if item.id == "fullscreen" then
+        local current = mgr:get().graphics.fullscreen == true
+        if current ~= enabled then
+            mgr:toggleFullscreen()
+        end
+    elseif item.id == "vsync" then
+        local current = mgr:get().graphics.vsync == true
+        if current ~= enabled then
+            mgr:toggleVsync()
+        end
+    elseif item.id == "reduced_flashes" then
+        mgr:setReducedFlashes(enabled)
+    elseif item.id == "show_damage_numbers" then
+        mgr:setShowDamageNumbers(enabled)
+    elseif item.id == "show_fps" then
+        mgr:setShowFPS(enabled)
+    end
+end
+
+function Menu:toggleSettingsItem(mgr, item)
+    if not mgr or not item then return end
+    local current = self:getSettingsValueForItem(item, mgr:get())
+    self:setSettingsToggleValue(mgr, item, not current)
 end
 
 function Menu:getSettingsLayout(w, h)
     local frameX, frameY, frameW, frameH = self:getSettingsFrameRect(w, h)
-    local barX = frameX + 220
-    local barW = 220
-    local y0 = frameY + 86
-    local gap = 42
-    local gfxY = y0 + gap * 3 + 30
-    local kbY = gfxY + gap * 3 + 30
+    local contentX = frameX + 42
+    local contentY = frameY + 104
+    local contentW = frameW - 84
+    local contentH = frameH - 178
+    local colGap = 36
+    local colW = math.floor((contentW - colGap) / 2)
+    local rowH = 28
+    local rowGap = 12
+    local sectionGap = 18
+    local headerGap = 18
+    local sliderW = math.min(156, math.floor(colW * 0.48))
+    local toggleW = math.min(108, math.floor(colW * 0.34))
+    local columns = {
+        { x = contentX, y = contentY, w = colW },
+        { x = contentX + colW + colGap, y = contentY, w = colW },
+    }
+    local cursors = { contentY, contentY }
+    local sections = {}
+    local items = {}
+    local index = 1
+
+    for _, template in ipairs(SETTINGS_SECTION_TEMPLATES) do
+        local column = columns[template.column]
+        local sectionY = cursors[template.column]
+        local rows = {}
+
+        for rowIdx, itemTemplate in ipairs(template.items) do
+            local rowY = sectionY + headerGap + (rowIdx - 1) * (rowH + rowGap)
+            local controlW = itemTemplate.kind == "slider" and sliderW or toggleW
+            local controlX
+            local controlH
+            local controlY
+            if itemTemplate.kind == "slider" then
+                controlX = column.x + column.w - controlW - 40
+                controlH = 16
+                controlY = rowY + 6
+            else
+                controlX = column.x + column.w - controlW
+                controlH = rowH
+                controlY = rowY
+            end
+
+            local item = {
+                index = index,
+                kind = itemTemplate.kind,
+                id = itemTemplate.id,
+                label = itemTemplate.label,
+                hitX = column.x,
+                hitY = rowY,
+                hitW = column.w,
+                hitH = rowH,
+                labelX = column.x,
+                controlX = controlX,
+                controlY = controlY,
+                controlW = controlW,
+                controlH = controlH,
+                y = rowY,
+            }
+            rows[#rows + 1] = item
+            items[index] = item
+            index = index + 1
+        end
+
+        sections[#sections + 1] = {
+            title = template.title,
+            x = column.x,
+            y = sectionY,
+            rows = rows,
+        }
+
+        cursors[template.column] = sectionY + headerGap + (#rows * rowH) + math.max(0, (#rows - 1) * rowGap) + sectionGap
+    end
+
+    local backW, backH = 176, 36
+    if self.visual and self.visual.backButtonImage then
+        backW = self.visual.backButtonImage:getWidth()
+        backH = self.visual.backButtonImage:getHeight()
+    end
     local backCx = frameX + frameW * 0.5
-    local backCy = frameY + frameH - 34
+    local backCy = frameY + frameH - 52
+    items[index] = {
+        index = index,
+        kind = "back",
+        id = "back",
+        hitX = backCx - backW * 0.5,
+        hitY = backCy - backH * 0.5,
+        hitW = backW,
+        hitH = backH,
+    }
+
     return {
         frameX = frameX,
         frameY = frameY,
         frameW = frameW,
         frameH = frameH,
-        barX = barX,
-        barW = barW,
-        y0 = y0,
-        gap = gap,
-        gfxY = gfxY,
-        kbY = kbY,
+        contentX = contentX,
+        contentY = contentY,
+        contentW = contentW,
+        contentH = contentH,
+        sections = sections,
+        items = items,
         backCx = backCx,
         backCy = backCy,
+        backW = backW,
+        backH = backH,
     }
+end
+
+function Menu:getSettingsItemAtPoint(layout, px, py)
+    for _, item in ipairs(layout.items) do
+        if self:isPointInRect(px, py, item.hitX, item.hitY, item.hitW, item.hitH) then
+            return item
+        end
+    end
+    return nil
 end
 
 function Menu:drawSettings()
     local w, h = love.graphics.getWidth(), love.graphics.getHeight()
     local v = self.visual
-
-    -- Settings frame image if available (fallback to procedural panel)
     local L = self:getSettingsLayout(w, h)
     local frameX, frameY = L.frameX, L.frameY
     local frameW, frameH = L.frameW, L.frameH
+
     if v.settingsFrameImage then
         local fw, fh = v.settingsFrameImage:getWidth(), v.settingsFrameImage:getHeight()
         love.graphics.setColor(1, 1, 1, 1)
@@ -413,103 +589,124 @@ function Menu:drawSettings()
     love.graphics.setFont(self.headerFont)
     love.graphics.setColor(Palette.title)
     local title = "SETTINGS"
-    drawTextWithShadow(title, w/2 - self.headerFont:getWidth(title)/2, frameY + 30)
+    drawTextWithShadow(title, w / 2 - self.headerFont:getWidth(title) / 2, frameY + 26)
 
     local mgr = _G.settings
-    local s = mgr and mgr:get() or nil
-    local music = s and s.audio and s.audio.musicVolume or 0.35
-    local sfx = s and s.audio and s.audio.sfxVolume or 0.5
-    local shake = s and s.graphics and s.graphics.screenShake or 1.0
-    local brightness = s and s.graphics and s.graphics.brightness or 0.58
-    local fullscreen = s and s.graphics and s.graphics.fullscreen or false
-    local vsync = s and s.graphics and s.graphics.vsync or false
+    local settings = mgr and mgr:get() or {}
 
-    local barX, barW, y0, gap, gfxY, kbY = L.barX, L.barW, L.y0, L.gap, L.gfxY, L.kbY
+    for _, section in ipairs(L.sections) do
+        love.graphics.setFont(self.smallFont)
+        love.graphics.setColor(Palette.section)
+        drawTextWithShadow(section.title, section.x, section.y)
 
-    -- Section: Audio (header Y offset -20 to avoid overlap with first item)
-    love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(Palette.section)
-    love.graphics.print("AUDIO", barX - 160, y0 - 20)
-    self:drawSlider("Music", music, barX, y0, barW, self.selectedIndex == 1)
-    self:drawSlider("Sound", sfx, barX, y0 + gap, barW, self.selectedIndex == 2)
-    self:drawSlider("Shake", shake, barX, y0 + gap * 2, barW, self.selectedIndex == 3)
-
-    -- Section: Graphics
-    love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(Palette.section)
-    love.graphics.print("GRAPHICS", barX - 160, gfxY - 20)
-    self:drawSlider("Brightness", brightness, barX, gfxY, barW, self.selectedIndex == 4)
-    self:drawToggle("Fullscreen", fullscreen, barX, gfxY + gap, barW, self.selectedIndex == 5)
-    self:drawToggle("VSync", vsync, barX, gfxY + gap * 2, barW, self.selectedIndex == 6)
-
-    -- Section: Keybinds
-    love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(Palette.section)
-    love.graphics.print("KEYBINDS", barX - 160, kbY - 20)
-
-    local keybindActions = {"dash", "multi_shot", "arrow_volley", "frenzy"}
-    local keybindLabels = {"Dash", "Multi Shot", "Arrow Volley", "Frenzy"}
-    for i, action in ipairs(keybindActions) do
-        local key = mgr and mgr:getKeybind(action) or action
-        local isSelected = self.selectedIndex == 6 + i
-        local isBinding = self.rebindingIndex == 6 + i
-        self:drawKeybindRow(keybindLabels[i], key, barX, kbY + (i - 1) * gap, barW, isSelected, isBinding)
+        for _, item in ipairs(section.rows) do
+            local isSelected = self.selectedIndex == item.index
+            if item.kind == "slider" then
+                self:drawSlider(
+                    item.label,
+                    self:getSettingsValueForItem(item, settings),
+                    item.labelX,
+                    item.controlX,
+                    item.y,
+                    item.controlW,
+                    isSelected
+                )
+            elseif item.kind == "toggle" then
+                self:drawToggle(
+                    item.label,
+                    self:getSettingsValueForItem(item, settings),
+                    item.labelX,
+                    item.controlX,
+                    item.y,
+                    item.controlW,
+                    isSelected
+                )
+            elseif item.kind == "keybind" then
+                local key = mgr and mgr:getKeybind(item.id) or item.id
+                self:drawKeybindRow(
+                    item.label,
+                    key,
+                    item.labelX,
+                    item.controlX,
+                    item.y,
+                    item.controlW,
+                    isSelected,
+                    self.rebindingIndex == item.index
+                )
+            end
+        end
     end
 
-    -- Back button
     if v.backButtonImage then
         local img = v.backButtonImage
         local iw, ih = img:getWidth(), img:getHeight()
         local bx, by = L.backCx - iw * 0.5, L.backCy - ih * 0.5
-        love.graphics.setColor(1, 1, 1, 1)
+        local isBackSelected = self.selectedIndex == SETTINGS_ITEM_COUNT
+        love.graphics.setColor(1, 1, 1, isBackSelected and 1 or 0.96)
         love.graphics.draw(img, bx, by)
+        if isBackSelected then
+            love.graphics.setBlendMode("add", "alphamultiply")
+            love.graphics.setColor(0.90, 0.72, 0.36, 0.12)
+            love.graphics.rectangle("fill", bx, by, iw, ih, 8, 8)
+            love.graphics.setBlendMode("alpha")
+        end
+        love.graphics.setFont(self.bodyFont)
         love.graphics.setColor(Palette.title)
         drawTextWithShadow("BACK", w * 0.5 - self.bodyFont:getWidth("BACK") * 0.5, by + ih * 0.25)
     else
-        self:drawButton("BACK", L.backCx, L.backCy, 160, 36, self.selectedIndex == SETTINGS_ITEM_COUNT)
+        self:drawButton("BACK", L.backCx, L.backCy, L.backW, L.backH, self.selectedIndex == SETTINGS_ITEM_COUNT)
     end
 
     love.graphics.setFont(self.smallFont)
     love.graphics.setColor(Palette.subtitle)
     local hint = self.rebindingIndex and "Press any key to bind..." or "UP/DOWN: select  LEFT/RIGHT: adjust  ENTER: toggle/rebind"
     local hw = self.smallFont:getWidth(hint)
-    drawTextWithShadow(hint, w/2 - hw/2, frameY + frameH + 14)
+    drawTextWithShadow(hint, w / 2 - hw / 2, frameY + frameH + 12)
 end
 
-function Menu:drawToggle(label, value, x, y, width, isSelected)
-    love.graphics.setColor(Palette.text)
+function Menu:drawToggle(label, value, labelX, controlX, y, width, isSelected)
     local f = self.smallFont or love.graphics.getFont()
     love.graphics.setFont(f)
-    love.graphics.print(label, x - 160, y - 3)
-    local valText = value and "ON" or "OFF"
-    local valColor = value and {0.4, 0.9, 0.5} or {0.6, 0.4, 0.4}
+    love.graphics.setColor(Palette.text)
+    drawTextWithShadow(label, labelX, y + 1)
+
+    love.graphics.setColor(0.12, 0.15, 0.22, 0.98)
+    love.graphics.rectangle("fill", controlX, y, width, 28, 6, 6)
+
     if isSelected then
         love.graphics.setColor(Palette.title)
     else
-        love.graphics.setColor(valColor[1], valColor[2], valColor[3], 1)
+        love.graphics.setColor(Palette.panelBorder)
     end
-    love.graphics.print(valText, x + width / 2 - f:getWidth(valText) / 2, y - 3)
+    love.graphics.rectangle("line", controlX, y, width, 28, 6, 6)
+
+    local valText = value and "ON" or "OFF"
+    local valColor = value and {0.42, 0.92, 0.56, 1} or {0.85, 0.46, 0.46, 1}
+    if isSelected then
+        love.graphics.setColor(Palette.title)
+    else
+        love.graphics.setColor(valColor)
+    end
+    drawTextWithShadow(valText, controlX + width / 2 - f:getWidth(valText) / 2, y + 5)
 end
 
-function Menu:drawKeybindRow(label, key, x, y, width, isSelected, isBinding)
+function Menu:drawKeybindRow(label, key, labelX, controlX, y, width, isSelected, isBinding)
     local f = self.smallFont or love.graphics.getFont()
     love.graphics.setFont(f)
     love.graphics.setColor(Palette.text)
-    love.graphics.print(label, x - 160, y - 3)
+    drawTextWithShadow(label, labelX, y + 1)
 
     local displayKey = isBinding and "..." or string.upper(key or "?")
+    love.graphics.setColor(0.12, 0.15, 0.22, 0.98)
+    love.graphics.rectangle("fill", controlX, y, width, 28, 6, 6)
+
     if isSelected then
         love.graphics.setColor(Palette.title)
     else
-        love.graphics.setColor(0.7, 0.75, 0.85, 1)
+        love.graphics.setColor(0.55, 0.62, 0.76, 1)
     end
-
-    -- Key box
-    local kw = math.max(60, f:getWidth(displayKey) + 16)
-    local kx = x + width / 2 - kw / 2
-    love.graphics.setLineWidth(1)
-    love.graphics.rectangle("line", kx, y - 5, kw, f:getHeight() + 6, 4, 4)
-    love.graphics.print(displayKey, kx + kw / 2 - f:getWidth(displayKey) / 2, y - 2)
+    love.graphics.rectangle("line", controlX, y, width, 28, 6, 6)
+    drawTextWithShadow(displayKey, controlX + width / 2 - f:getWidth(displayKey) / 2, y + 5)
 end
 
 function Menu:drawCharacterSelect()
@@ -982,14 +1179,15 @@ function Menu:keypressed(key)
     elseif state == States.SETTINGS then
         local mgr = _G.settings
         local step = 0.05
+        local w, h = love.graphics.getWidth(), love.graphics.getHeight()
+        local L = self:getSettingsLayout(w, h)
 
         -- If rebinding a key, capture the next keypress
         if self.rebindingIndex then
+            local rebindItem = L.items[self.rebindingIndex]
             if key ~= "escape" then
-                local keybindActions = {"dash", "multi_shot", "arrow_volley", "frenzy"}
-                local actionIdx = self.rebindingIndex - 6
-                if actionIdx >= 1 and actionIdx <= #keybindActions and mgr then
-                    mgr:setKeybind(keybindActions[actionIdx], key)
+                if rebindItem and rebindItem.kind == "keybind" and mgr then
+                    mgr:setKeybind(rebindItem.id, key)
                 end
             end
             self.rebindingIndex = nil
@@ -1004,28 +1202,22 @@ function Menu:keypressed(key)
             if self.selectedIndex > SETTINGS_ITEM_COUNT then self.selectedIndex = 1 end
         elseif key == "left" or key == "right" then
             local dir = (key == "right") and 1 or -1
+            local selectedItem = L.items[self.selectedIndex]
             if mgr then
-                local s = mgr:get()
-                if self.selectedIndex == 1 then
-                    mgr:setMusicVolume((s.audio.musicVolume or 0.35) + step * dir)
-                elseif self.selectedIndex == 2 then
-                    mgr:setSFXVolume((s.audio.sfxVolume or 0.5) + step * dir)
-                elseif self.selectedIndex == 3 then
-                    mgr:setScreenShake((s.graphics.screenShake or 1.0) + step * dir)
-                elseif self.selectedIndex == 4 then
-                    mgr:setBrightness((s.graphics.brightness or 0.58) + step * dir)
+                if selectedItem and selectedItem.kind == "slider" then
+                    local current = self:getSettingsValueForItem(selectedItem, mgr:get()) or 0
+                    self:applySettingsSliderValue(mgr, selectedItem, current + step * dir)
+                elseif selectedItem and selectedItem.kind == "toggle" then
+                    self:setSettingsToggleValue(mgr, selectedItem, dir > 0)
                 end
             end
         elseif key == "return" or key == "space" then
-            if self.selectedIndex == 4 and mgr then
-                -- Brightness is adjusted by left/right only.
-            elseif self.selectedIndex == 5 and mgr then
-                mgr:toggleFullscreen()
-            elseif self.selectedIndex == 6 and mgr then
-                mgr:toggleVsync()
-            elseif self.selectedIndex >= 7 and self.selectedIndex <= 10 then
+            local selectedItem = L.items[self.selectedIndex]
+            if selectedItem and selectedItem.kind == "toggle" and mgr then
+                self:toggleSettingsItem(mgr, selectedItem)
+            elseif selectedItem and selectedItem.kind == "keybind" then
                 self.rebindingIndex = self.selectedIndex
-            elseif self.selectedIndex == SETTINGS_ITEM_COUNT then
+            elseif selectedItem and selectedItem.kind == "back" then
                 self.rebindingIndex = nil
                 self.gameState:transitionTo(States.MENU)
                 self.selectedIndex = 4
@@ -1122,50 +1314,28 @@ function Menu:mousepressed(x, y, button)
         if self.rebindingIndex then return end -- Wait for keypress when rebinding
         local mgr = _G.settings
         local L = self:getSettingsLayout(w, h)
-        local barX, barW, y0, gap, gfxY, kbY = L.barX, L.barW, L.y0, L.gap, L.gfxY, L.kbY
-        local rowH = 24
+        local hitItem = self:getSettingsItemAtPoint(L, x, y)
+        if not hitItem then
+            return
+        end
 
-        -- Sliders 1-4: click to set value
-        if mgr then
-            for i = 1, 4 do
-                local sy
-                if i == 1 then
-                    sy = y0
-                elseif i == 2 then
-                    sy = y0 + gap
-                elseif i == 3 then
-                    sy = y0 + gap * 2
-                else
-                    sy = gfxY
-                end
-                if self:isPointInRect(x, y, barX, sy, barW, 16) then
-                    local t = math.max(0, math.min(1, (x - barX) / barW))
-                    if i == 1 then mgr:setMusicVolume(t)
-                    elseif i == 2 then mgr:setSFXVolume(t)
-                    elseif i == 3 then mgr:setScreenShake(t)
-                    else mgr:setBrightness(t) end
-                    return
-                end
+        self.selectedIndex = hitItem.index
+        if hitItem.kind == "slider" and mgr then
+            if self:isPointInRect(x, y, hitItem.controlX, hitItem.controlY, hitItem.controlW, hitItem.controlH) then
+                local t = math.max(0, math.min(1, (x - hitItem.controlX) / hitItem.controlW))
+                self:applySettingsSliderValue(mgr, hitItem, t)
             end
-            -- Toggles 5-6
-            if self:isPointInRect(x, y, barX, gfxY + gap, barW, rowH) then
-                mgr:toggleFullscreen()
-                return
-            end
-            if self:isPointInRect(x, y, barX, gfxY + gap * 2, barW, rowH) then
-                mgr:toggleVsync()
-                return
-            end
+            return
         end
-        -- Keybinds 7-10
-        for i = 1, 4 do
-            if self:isPointInRect(x, y, barX, kbY + (i - 1) * gap, barW, rowH) then
-                self.rebindingIndex = 6 + i
-                return
-            end
+        if hitItem.kind == "toggle" and mgr then
+            self:toggleSettingsItem(mgr, hitItem)
+            return
         end
-        -- BACK
-        if self:isPointInButton(x, y, L.backCx, L.backCy, 160, 36) then
+        if hitItem.kind == "keybind" then
+            self.rebindingIndex = hitItem.index
+            return
+        end
+        if hitItem.kind == "back" then
             self.gameState:transitionTo(States.MENU)
             self.selectedIndex = 4
         end
@@ -1239,30 +1409,9 @@ function Menu:mousemoved(x, y)
 
     if state == States.SETTINGS and not self.rebindingIndex then
         local L = self:getSettingsLayout(w, h)
-        local barX, barW, y0, gap, gfxY, kbY = L.barX, L.barW, L.y0, L.gap, L.gfxY, L.kbY
-        local rowH = 24
-        if self:isPointInRect(x, y, barX, y0, barW, 16) then
-            self.selectedIndex = 1
-        elseif self:isPointInRect(x, y, barX, y0 + gap, barW, 16) then
-            self.selectedIndex = 2
-        elseif self:isPointInRect(x, y, barX, y0 + gap * 2, barW, 16) then
-            self.selectedIndex = 3
-        elseif self:isPointInRect(x, y, barX, gfxY, barW, 16) then
-            self.selectedIndex = 4
-        elseif self:isPointInRect(x, y, barX, gfxY + gap, barW, rowH) then
-            self.selectedIndex = 5
-        elseif self:isPointInRect(x, y, barX, gfxY + gap * 2, barW, rowH) then
-            self.selectedIndex = 6
-        elseif self:isPointInRect(x, y, barX, kbY, barW, rowH) then
-            self.selectedIndex = 7
-        elseif self:isPointInRect(x, y, barX, kbY + gap, barW, rowH) then
-            self.selectedIndex = 8
-        elseif self:isPointInRect(x, y, barX, kbY + gap * 2, barW, rowH) then
-            self.selectedIndex = 9
-        elseif self:isPointInRect(x, y, barX, kbY + gap * 3, barW, rowH) then
-            self.selectedIndex = 10
-        elseif self:isPointInButton(x, y, L.backCx, L.backCy, 160, 36) then
-            self.selectedIndex = SETTINGS_ITEM_COUNT
+        local hoveredItem = self:getSettingsItemAtPoint(L, x, y)
+        if hoveredItem then
+            self.selectedIndex = hoveredItem.index
         end
     elseif state == States.GAME_OVER then
         if self:isPointInButton(x, y, w/2, h * 0.6, 180, 50) then

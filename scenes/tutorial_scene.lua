@@ -57,6 +57,48 @@ local function wrapText(font, text, maxWidth)
     return lines
 end
 
+local function getTutorialKeyLabel(key)
+    if key == "return" then
+        return "ENTER"
+    end
+    if key == "space" then
+        return "SPACE"
+    end
+    return string.upper(tostring(key or ""))
+end
+
+local function getRevealedText(text, elapsed, charsPerSecond, startDelay, revealAll)
+    text = tostring(text or "")
+    if revealAll or text == "" then
+        return text
+    end
+
+    local visibleTime = math.max(0, (elapsed or 0) - (startDelay or 0))
+    local visibleChars = math.floor(visibleTime * (charsPerSecond or 1))
+    if visibleChars <= 0 then
+        return ""
+    end
+    if visibleChars >= #text then
+        return text
+    end
+    return text:sub(1, visibleChars)
+end
+
+local function getWrappedRevealLines(font, text, maxWidth, maxLines)
+    local lines = wrapText(font, text, maxWidth)
+    maxLines = maxLines or #lines
+    if #lines <= maxLines then
+        return lines
+    end
+
+    local limited = {}
+    for i = 1, maxLines do
+        limited[i] = lines[i] or ""
+    end
+    limited[maxLines] = fitText(font, limited[maxLines], maxWidth)
+    return limited
+end
+
 -- Tutorial pacing (slower so player can observe)
 local MIN_PHASE_DURATION = 6
 local APPROACH_DISTANCE = 200
@@ -64,6 +106,10 @@ local DASH_PHASE_REQUIRED = 2
 local PRACTICE_WAVE_KILLS = 3
 local BARK_VOLLEY_SPAWN_INTERVAL = 2.8
 local PHASE_COMPLETE_HOLD = 0.85
+local DUMMY_OFFSET_X = 460
+local TITLE_REVEAL_SPEED = 24
+local BODY_REVEAL_SPEED = 40
+local HINT_REVEAL_SPEED = 52
 
 -- Phase definitions
 local PHASES = {
@@ -73,34 +119,38 @@ local PHASES = {
         body = "Use WASD to move around the arena.",
         hint = "Move in all 4 directions to continue.",
         condition = "move_all_dirs",
+        taskLabel = "Movement inputs",
     },
     {
         id = "primary",
         title = "PRIMARY ATTACK",
-        body = "Walk toward the target. Your bow auto-fires at the nearest enemy.",
-        hint = "Get within range and watch your arrows aim automatically!",
+        body = "Walk toward the dummy until your bow reaches it. Your primary attack fires automatically.",
+        hint = "Step into range to trigger your first shots.",
         condition = "approached_dummy",
         spawnDummy = 1,
+        taskLabel = "Enter attack range",
     },
     {
         id = "multi_shot",
         title = "MULTI SHOT (Q)",
-        body = "Fires a cone of 3 arrows. Auto-casts when off cooldown.",
-        hint = "Watch Multi Shot fire automatically!",
+        body = "Walk into range. Multi Shot fires a 3-arrow cone automatically when it is ready.",
+        hint = "Get close enough and let Q trigger on its own.",
         condition = "ability_fired",
         abilityId = "multi_shot",
         highlight = "Q",
         spawnDummy = 1,
+        taskLabel = "Trigger Q auto-cast",
     },
     {
         id = "arrow_volley",
         title = "ARROW VOLLEY (E)",
-        body = "Rains arrows on the target. Auto-casts when off cooldown.",
-        hint = "Watch Arrow Volley rain down!",
+        body = "Walk into range. Arrow Volley rains arrows on the dummy automatically when it is ready.",
+        hint = "Get close enough and let E trigger on its own.",
         condition = "ability_fired",
         abilityId = "entangle",
         highlight = "E",
         spawnDummy = 1,
+        taskLabel = "Trigger E auto-cast",
     },
     {
         id = "dash",
@@ -110,18 +160,20 @@ local PHASES = {
         condition = "dash_count",
         highlight = "SPACE",
         spawnDummy = 1,
+        taskLabel = "Dash 2 times",
     },
     {
         id = "frenzy",
         title = "FRENZY (R)",
-        body = "You're hurt! Press R to activate Frenzy, then attack the dummy. Watch your HP rise from lifesteal.",
-        hint = "Press R, then attack to heal!",
+        body = "You're hurt. Press R to activate Frenzy, then move in and attack the dummy to heal.",
+        hint = "Press R, then attack to restore health.",
         condition = "press_key",
         waitKey = "r",
         highlight = "R",
         grantFrenzy = true,
         spawnDummy = 1,
         scriptedDamage = true,
+        taskLabel = "Press R",
     },
     {
         id = "practice_wave",
@@ -130,6 +182,7 @@ local PHASES = {
         hint = "Kill the monsters to continue.",
         condition = "practice_wave",
         spawnSlimes = 4,
+        taskLabel = "Clear the wave",
     },
     {
         id = "complete",
@@ -226,6 +279,13 @@ function TutorialScene:startPhase(idx)
     self.barkVolleySpawnTimer = 0
     self.arrows = {}
     self.arrowVolleys = {}
+    self.isDashing = false
+    self.dashTime = 0
+
+    if self.player then
+        self.player.x = self.arenaW / 2
+        self.player.y = self.arenaH / 2
+    end
 
     local phase = PHASES[idx]
     if not phase then return end
@@ -233,8 +293,8 @@ function TutorialScene:startPhase(idx)
     -- Spawn dummy (invulnerable target)
     if phase.spawnDummy then
         self.enemies = {}
-        local dx = 220
-        local dy = 0
+        local dx = phase.dummyOffsetX or DUMMY_OFFSET_X
+        local dy = phase.dummyOffsetY or 0
         local dummyX = self.arenaW / 2 + dx
         local dummyY = self.arenaH / 2 + dy
         local dummy = TutorialDummy:new(dummyX, dummyY)
@@ -644,9 +704,28 @@ function TutorialScene:draw()
     self:drawBottomHUD()
 end
 
-function TutorialScene:drawTutorialHUD()
+function TutorialScene:getTutorialPanelRect()
     local w = love.graphics.getWidth()
     local h = love.graphics.getHeight()
+    local panelW = 660
+    local panelH = 154
+    local panelX = (w - panelW) / 2
+    local panelY = math.max(36, math.floor(h * 0.08))
+    return panelX, panelY, panelW, panelH
+end
+
+function TutorialScene:getTaskTrackerRect(panelX, panelY, panelW, panelH)
+    local phase = PHASES[self.currentPhase]
+    local isMovement = phase and phase.condition == "move_all_dirs"
+    local trackerW = isMovement and 220 or 280
+    local trackerH = isMovement and 104 or 58
+    local trackerX = math.max(24, panelX - trackerW - 26)
+    local trackerY = panelY + math.floor((panelH - trackerH) / 2)
+    return trackerX, trackerY, trackerW, trackerH
+end
+
+function TutorialScene:drawTutorialHUD()
+    local w = love.graphics.getWidth()
     local phase = PHASES[self.currentPhase]
     if not phase then return end
 
@@ -654,25 +733,30 @@ function TutorialScene:drawTutorialHUD()
     local bodyFont = _G.PixelFonts and (_G.PixelFonts.uiSmall or _G.PixelFonts.body) or love.graphics.getFont()
     local hintFont = _G.PixelFonts and _G.PixelFonts.uiTiny or bodyFont
 
-    -- Panel in play area (center-lower, not at top)
-    local panelW = 600
-    local panelH = 110
-    local panelX = (w - panelW) / 2
-    local panelY = h * 0.35
-    local innerPad = 12
+    local panelX, panelY, panelW, panelH = self:getTutorialPanelRect()
+    local innerPad = 16
     local topRowY = panelY + 8
-    local titleY = panelY + 24
-    local bodyY = panelY + 54
-    local hintY = panelY + 84
+    local titleY = panelY + 16
     local skipText = "TAB TO SKIP"
     local counter = string.format("PHASE %d/%d", self.currentPhase, #PHASES)
     local leftW = hintFont:getWidth(counter)
     local rightW = hintFont:getWidth(skipText)
     local titleMaxW = panelW - innerPad * 2 - leftW - rightW - 28
-    local titleText = fitText(titleFont, phase.title, titleMaxW)
-    local bodyLines = wrapText(bodyFont, phase.body, panelW - innerPad * 2 - 20)
-    local bodyText = fitText(bodyFont, bodyLines[1], panelW - innerPad * 2 - 20)
-    local hintText = fitText(hintFont, phase.hint, panelW - innerPad * 2 - 20)
+    local bodyMaxW = panelW - innerPad * 2 - 24
+    local titleText = fitText(
+        titleFont,
+        getRevealedText(phase.title, self.phaseTimer, TITLE_REVEAL_SPEED, 0.00, self.phaseComplete),
+        titleMaxW
+    )
+    local bodyText = getRevealedText(phase.body, self.phaseTimer, BODY_REVEAL_SPEED, 0.15, self.phaseComplete)
+    local hintText = getRevealedText(phase.hint, self.phaseTimer, HINT_REVEAL_SPEED, 0.90, self.phaseComplete)
+    local bodyLines = getWrappedRevealLines(bodyFont, bodyText, bodyMaxW, 2)
+    local hintLines = getWrappedRevealLines(hintFont, hintText, bodyMaxW, 2)
+    local bodyLineHeight = bodyFont:getHeight() + 2
+    local hintLineHeight = hintFont:getHeight() + 1
+    local titleBottomY = titleY + titleFont:getHeight()
+    local bodyStartY = titleBottomY + 10
+    local hintStartY = bodyStartY + (#bodyLines * bodyLineHeight) + 12
 
     love.graphics.setColor(0.04, 0.04, 0.08, 0.9)
     love.graphics.rectangle("fill", panelX, panelY, panelW, panelH, 8, 8)
@@ -700,15 +784,19 @@ function TutorialScene:drawTutorialHUD()
     -- Body text
     love.graphics.setFont(bodyFont)
     love.graphics.setColor(0.85, 0.85, 0.85, 1)
-    local bw = bodyFont:getWidth(bodyText)
-    love.graphics.print(bodyText, w / 2 - bw / 2, bodyY)
+    for i, line in ipairs(bodyLines) do
+        local bw = bodyFont:getWidth(line)
+        love.graphics.print(line, w / 2 - bw / 2, bodyStartY + (i - 1) * bodyLineHeight)
+    end
 
     -- Hint (pulsing)
     love.graphics.setFont(hintFont)
     local pulse = 0.6 + 0.4 * math.sin(love.timer.getTime() * 3)
     love.graphics.setColor(0.4, 0.8, 1.0, pulse)
-    local hw = hintFont:getWidth(hintText)
-    love.graphics.print(hintText, w / 2 - hw / 2, hintY)
+    for i, line in ipairs(hintLines) do
+        local hw = hintFont:getWidth(line)
+        love.graphics.print(line, w / 2 - hw / 2, hintStartY + (i - 1) * hintLineHeight)
+    end
 
     -- Begin button (complete phase only)
     if phase.id == "complete" then
@@ -734,7 +822,7 @@ function TutorialScene:drawTutorialHUD()
     end
 
     if phase.id ~= "complete" then
-        self:drawTaskTracker(panelX, panelY + panelH + 14)
+        self:drawTaskTracker(panelX, panelY, panelW, panelH)
     end
 
     love.graphics.setColor(1, 1, 1, 1)
@@ -767,6 +855,10 @@ function TutorialScene:getTaskLabel()
         return "Objective"
     end
 
+    if phase.taskLabel then
+        return phase.taskLabel
+    end
+
     if phase.condition == "move_all_dirs" then
         return "Move in all directions"
     elseif phase.condition == "approached_dummy" then
@@ -776,7 +868,7 @@ function TutorialScene:getTaskLabel()
     elseif phase.condition == "dash_count" then
         return "Dash through danger"
     elseif phase.condition == "press_key" then
-        return "Use the shown key"
+        return "Press " .. getTutorialKeyLabel(phase.waitKey)
     elseif phase.condition == "practice_wave" then
         return "Clear the wave"
     end
@@ -784,32 +876,78 @@ function TutorialScene:getTaskLabel()
     return phase.title or "Objective"
 end
 
-function TutorialScene:drawTaskTracker(x, y)
-    local trackerW = 300
-    local trackerH = 56
-    local trackerX = x + 150
+function TutorialScene:drawTaskTracker(panelX, panelY, panelW, panelH)
+    local phase = PHASES[self.currentPhase]
+    if not phase then
+        return
+    end
+
+    local trackerX, trackerY, trackerW, trackerH = self:getTaskTrackerRect(panelX, panelY, panelW, panelH)
     local complete = self:isCurrentTaskComplete() or self.phaseComplete
-    local progressText = complete and "1/1" or "0/1"
     local titleFont = _G.PixelFonts and _G.PixelFonts.uiSmall or love.graphics.getFont()
     local valueFont = (_G.PixelFonts and (_G.PixelFonts.uiBody or _G.PixelFonts.uiSmall)) or titleFont
-    local taskLabel = fitText(titleFont, self:getTaskLabel(), trackerW - 88)
+    local borderColor = complete and {0.35, 0.9, 0.45, 0.9} or {0.45, 0.65, 1.0, 0.55}
 
     love.graphics.setColor(0.03, 0.05, 0.10, 0.92)
-    love.graphics.rectangle("fill", trackerX, y, trackerW, trackerH, 8, 8)
-    if complete then
-        love.graphics.setColor(0.35, 0.9, 0.45, 0.9)
-    else
-        love.graphics.setColor(0.45, 0.65, 1.0, 0.55)
-    end
+    love.graphics.rectangle("fill", trackerX, trackerY, trackerW, trackerH, 8, 8)
+    love.graphics.setColor(borderColor[1], borderColor[2], borderColor[3], borderColor[4])
     love.graphics.setLineWidth(1.5)
-    love.graphics.rectangle("line", trackerX, y, trackerW, trackerH, 8, 8)
+    love.graphics.rectangle("line", trackerX, trackerY, trackerW, trackerH, 8, 8)
     love.graphics.setLineWidth(1)
+
+    if phase.condition == "move_all_dirs" then
+        local moveCount = 0
+        if self.movedDirs["w"] then moveCount = moveCount + 1 end
+        if self.movedDirs["a"] then moveCount = moveCount + 1 end
+        if self.movedDirs["s"] then moveCount = moveCount + 1 end
+        if self.movedDirs["d"] then moveCount = moveCount + 1 end
+
+        love.graphics.setFont(titleFont)
+        love.graphics.setColor(0.82, 0.88, 0.98, 0.95)
+        love.graphics.print("MOVE KEYS", trackerX + 14, trackerY + 8)
+
+        love.graphics.setFont(valueFont)
+        love.graphics.setColor(1, 0.92, 0.62, 1)
+        local moveProgress = string.format("%d/4", moveCount)
+        love.graphics.print(moveProgress, trackerX + trackerW - valueFont:getWidth(moveProgress) - 14, trackerY + 8)
+
+        local keys = {
+            { id = "w", label = "W" },
+            { id = "a", label = "A" },
+            { id = "s", label = "S" },
+            { id = "d", label = "D" },
+        }
+
+        love.graphics.setFont(titleFont)
+        for index, entry in ipairs(keys) do
+            local col = (index - 1) % 2
+            local row = math.floor((index - 1) / 2)
+            local cellX = trackerX + 14 + col * 92
+            local cellY = trackerY + 34 + row * 28
+            local checked = self.movedDirs[entry.id]
+
+            love.graphics.setColor(0.85, 0.9, 1.0, 0.8)
+            love.graphics.rectangle("line", cellX, cellY, 14, 14, 3, 3)
+            if checked then
+                love.graphics.setColor(0.35, 0.95, 0.45, 0.95)
+                love.graphics.rectangle("fill", cellX + 3, cellY + 3, 8, 8, 2, 2)
+            end
+
+            love.graphics.setColor(checked and 0.9 or 0.75, checked and 1.0 or 0.82, checked and 0.92 or 0.9, 1)
+            love.graphics.print(entry.label, cellX + 22, cellY - 1)
+        end
+
+        return
+    end
+
+    local progressText = complete and "1/1" or "0/1"
+    local taskLabel = fitText(titleFont, self:getTaskLabel(), trackerW - 88)
 
     love.graphics.setFont(titleFont)
     love.graphics.setColor(0.82, 0.88, 0.98, 0.95)
-    love.graphics.print("TASK", trackerX + 14, y + 8)
+    love.graphics.print("TASK", trackerX + 14, trackerY + 8)
     love.graphics.setColor(1, 1, 1, 0.82)
-    love.graphics.print(taskLabel, trackerX + 14, y + 28)
+    love.graphics.print(taskLabel, trackerX + 14, trackerY + 29)
 
     love.graphics.setFont(valueFont)
     if complete then
@@ -817,14 +955,12 @@ function TutorialScene:drawTaskTracker(x, y)
     else
         love.graphics.setColor(1, 0.92, 0.62, 1)
     end
-    love.graphics.print(progressText, trackerX + trackerW - valueFont:getWidth(progressText) - 14, y + 18)
+    love.graphics.print(progressText, trackerX + trackerW - valueFont:getWidth(progressText) - 14, trackerY + 18)
 end
 
 function TutorialScene:getBeginButtonRect()
     local w = love.graphics.getWidth()
-    local h = love.graphics.getHeight()
-    local panelW, panelH = 600, 110
-    local panelY = h * 0.35
+    local _, panelY, _, panelH = self:getTutorialPanelRect()
     local btnW, btnH = 180, 44
     local btnX = (w - btnW) / 2
     local btnY = panelY + panelH + 18

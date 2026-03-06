@@ -35,6 +35,7 @@ local ObstacleNav = require("systems.obstacle_navigation")
 local Config = require("data.config")
 local BossPortal = require("entities.boss_portal")
 local Core = require("entities.core")
+local TreasureChest = require("entities.treasure_chest")
 
 -- Load upgrade data
 local ArcherUpgrades = require("data.upgrades_archer")
@@ -116,7 +117,7 @@ function GameScene:new(gameState)
 
         -- Major progression bar (fills from kills + cores → boss portal)
         majorProgress = 0,
-        majorProgressMax = 100,
+        majorProgressMax = 70,
 
         -- Cores objective (starts at 25% major progress)
         cores = {},
@@ -131,11 +132,13 @@ function GameScene:new(gameState)
         coreObjectivePopupTimer = 0, -- popup display duration when objective starts
         coreObjectiveFailed = false,
         coreObjectiveFailPopupTimer = 0, -- popup when timer expires
+        rewardChest = nil,
+        xpMagnetDropChance = 0.025,
 
         -- Progress per event
         majorProgressPerKill = 0.35,
-        majorProgressPerCore = 3.0,
-        majorProgressPerCoreBonus = 5.0, -- bonus if objective completed in time
+        majorProgressPerCore = 0.0,
+        majorProgressPerCoreBonus = 5.6, -- 8% of the current 70-point boss bar
     }
     setmetatable(scene, GameScene)
     return scene
@@ -181,9 +184,17 @@ function GameScene:load()
     local worldW = Config.World and Config.World.width or 2400
     local worldH = Config.World and Config.World.height or 1600
     self.camera = Camera:new(0, 0, worldW, worldH)
+    if Config.World and Config.World.camera then
+        self.camera.zoom = Config.World.camera.zoom or 1.0
+        self.camera.followBiasY = Config.World.camera.followBiasY or 0
+    end
     -- Snap camera to player spawn immediately (no lerp on first frame)
-    self.camera:setPosition(screenWidth / 2 - love.graphics.getWidth() / 2,
-                            screenHeight / 2 - love.graphics.getHeight() / 2)
+    do
+        local viewW, viewH = self.camera:getViewportSize()
+        local camX = math.max(0, math.min(self.player.x - viewW / 2, worldW - viewW))
+        local camY = math.max(0, math.min(self.player.y - viewH / 2 + (self.camera.followBiasY or 0), worldH - viewH))
+        self.camera:setPosition(camX, camY)
+    end
     
     -- Use forest tilemap for lush forest biome
     self.forestTilemap = ForestTilemap:new()
@@ -283,10 +294,12 @@ function GameScene:spawnCores()
     self.coreObjectiveTimer = 0
     self.coreObjectiveComplete = false
     self.coreObjectiveRewardGiven = false
+    self.coreObjectiveFailed = false
+    self.rewardChest = nil
     local worldW = Config.World and Config.World.width or 2400
     local worldH = Config.World and Config.World.height or 1600
     local margin = 120
-    local blockers = self.forestTilemap and self.forestTilemap:getLargeBlockers() or {}
+    local blockers = self:getMovementBlockers()
 
     for i = 1, self.coresTotal do
         local placed = false
@@ -339,14 +352,47 @@ function GameScene:getEnemyHpMultiplier()
     return base * levelMult * floorMult * timeMult
 end
 
+function GameScene:applyEnemyScale(entity)
+    if not entity or not entity.size then
+        return
+    end
+
+    local scale = (Config.World and Config.World.enemyScale) or 1.0
+    if scale ~= 1.0 then
+        entity.size = entity.size * scale
+    end
+end
+
+function GameScene:getMovementBlockers()
+    if not self.forestTilemap then
+        return {}
+    end
+    if self.forestTilemap.getCollisionBlockers then
+        return self.forestTilemap:getCollisionBlockers()
+    end
+    return self.forestTilemap:getLargeBlockers()
+end
+
+function GameScene:spawnEnemyXpDrop(x, y, value)
+    if not self.xpSystem then
+        return
+    end
+
+    self.xpSystem:spawnOrb(x, y, value)
+    if self.xpSystem.spawnMagnet and math.random() < (self.xpMagnetDropChance or 0) then
+        self.xpSystem:spawnMagnet(x, y)
+    end
+end
+
 function GameScene:spawnEnemy(enemy_type, x, y)
     local mult = self.difficultyMult or { enemyHealthMult = 1, enemyDamageMult = 1 }
     local hpMult = self:getEnemyHpMultiplier()
-    local speedScale = 1.12
+    local speedScale = 1.12 * ((Config.World and Config.World.enemyMoveSpeedScale) or 1.0)
     local entity
     
     if enemy_type == "slime" then
         entity = Slime:new(x, y)
+        self:applyEnemyScale(entity)
         entity.health = entity.health * hpMult
         entity.maxHealth = entity.health
         entity.damage = 8 * mult.enemyDamageMult
@@ -354,6 +400,7 @@ function GameScene:spawnEnemy(enemy_type, x, y)
         table.insert(self.slimes, entity)
     elseif enemy_type == "bat" then
         entity = Bat:new(x, y)
+        self:applyEnemyScale(entity)
         entity.health = entity.health * hpMult
         entity.maxHealth = entity.health
         entity.damage = 6 * mult.enemyDamageMult
@@ -361,6 +408,7 @@ function GameScene:spawnEnemy(enemy_type, x, y)
         table.insert(self.bats, entity)
     elseif enemy_type == "skeleton" then
         entity = Skeleton:new(x, y)
+        self:applyEnemyScale(entity)
         entity.health = entity.health * hpMult
         entity.maxHealth = entity.health
         entity.damage = 10 * mult.enemyDamageMult
@@ -368,6 +416,7 @@ function GameScene:spawnEnemy(enemy_type, x, y)
         table.insert(self.skeletons, entity)
     elseif enemy_type == "wolf" then
         entity = Wolf:new(x, y)
+        self:applyEnemyScale(entity)
         entity.health = entity.health * hpMult
         entity.maxHealth = entity.health
         entity.damage = (entity.damage or 12) * mult.enemyDamageMult
@@ -375,6 +424,7 @@ function GameScene:spawnEnemy(enemy_type, x, y)
         table.insert(self.wolves, entity)
     elseif enemy_type == "lunger" then
         entity = Lunger:new(x, y)
+        self:applyEnemyScale(entity)
         entity.health = entity.health * hpMult
         entity.maxHealth = entity.health
         entity.speed = (entity.speed or 30) * speedScale
@@ -382,6 +432,7 @@ function GameScene:spawnEnemy(enemy_type, x, y)
         table.insert(self.lungers, entity)
     elseif enemy_type == "small_treent" then
         entity = SmallTreent:new(x, y)
+        self:applyEnemyScale(entity)
         entity.health = entity.health * hpMult
         entity.maxHealth = entity.health
         entity.damage = (entity.damage or 9) * mult.enemyDamageMult
@@ -389,6 +440,7 @@ function GameScene:spawnEnemy(enemy_type, x, y)
         table.insert(self.smallTreents, entity)
     elseif enemy_type == "wizard" then
         entity = Wizard:new(x, y)
+        self:applyEnemyScale(entity)
         entity.health = entity.health * hpMult
         entity.maxHealth = entity.health
         entity.damage = (entity.damage or 10) * mult.enemyDamageMult
@@ -396,6 +448,7 @@ function GameScene:spawnEnemy(enemy_type, x, y)
         table.insert(self.wizards, entity)
     elseif enemy_type == "treent" then
         entity = Treent:new(x, y)
+        self:applyEnemyScale(entity)
         entity.health = entity.health * hpMult
         entity.maxHealth = entity.health
         entity.damage = (entity.damage or 18) * mult.enemyDamageMult
@@ -403,12 +456,14 @@ function GameScene:spawnEnemy(enemy_type, x, y)
         table.insert(self.treents, entity)
     elseif enemy_type == "healer" then
         entity = Healer:new(x, y)
+        self:applyEnemyScale(entity)
         entity.health = entity.health * hpMult
         entity.maxHealth = entity.health
         entity.speed = (entity.speed or 60) * speedScale
         table.insert(self.healers, entity)
     elseif enemy_type == "druid_treent" then
         entity = DruidTreent:new(x, y)
+        self:applyEnemyScale(entity)
         entity.health = entity.health * hpMult
         entity.maxHealth = entity.health
         entity.damage = (entity.damage or 8) * mult.enemyDamageMult
@@ -417,6 +472,7 @@ function GameScene:spawnEnemy(enemy_type, x, y)
     else
         -- Fallback to slime (enemy/imp removed from roster)
         entity = Slime:new(x, y)
+        self:applyEnemyScale(entity)
         entity.health = entity.health * hpMult
         entity.maxHealth = entity.health
         entity.damage = 8 * mult.enemyDamageMult
@@ -506,6 +562,10 @@ function GameScene:update(dt)
         end
     end
 
+    if self.rewardChest and self.rewardChest.isAlive then
+        self.rewardChest:update(dt)
+    end
+
     -- Major progression bar → boss portal at 100%
     if self.majorProgress >= self.majorProgressMax and not self.bossPortalSpawned and self.player then
         self.bossPortal = BossPortal:new(self.player.x + 150, self.player.y)
@@ -589,7 +649,7 @@ function GameScene:update(dt)
                             self.damageNumbers:add(ex, ey - tick.entity:getSize(), tick.damage, { isCrit = false, color = dmgColor })
                         end
                         if tick.status == "burn" then
-                            self.particles:createBleedDrip(ex, ey, {1.0, 0.4, 0.1})
+                            self.particles:createBurnFlare(ex, ey - tick.entity:getSize() * 0.2, 1.0 + StatusEffects.getStacks(tick.entity, "burn") * 0.18)
                         else
                             self.particles:createBleedDrip(ex, ey)
                         end
@@ -597,7 +657,7 @@ function GameScene:update(dt)
                             if self.enemySpawner then self.enemySpawner:onEnemyDeath() end
                             self.particles:createExplosion(ex, ey, {0.8, 0.1, 0.1})
                             self.screenShake:add(3, 0.12)
-                            self.xpSystem:spawnOrb(ex, ey, 8 + math.random(0, 5))
+                            self:spawnEnemyXpDrop(ex, ey, 8 + math.random(0, 5))
                             self:addMajorProgress(self.majorProgressPerKill)
                             -- Check hemorrhage proc on bleed-kill
                             local killActions = self.procEngine:onKill(self.playerStats, { isCrit = false, target = tick.entity })
@@ -640,7 +700,7 @@ function GameScene:update(dt)
         self.player.activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
 
         -- Find nearest enemy for targeting (all types)
-        local nearestEnemy, nearestDistance = self:findNearestEnemyTo(playerX, playerY, self.attackRange)
+        local nearestEnemy, nearestDistance = self:findNearestPriorityTargetTo(playerX, playerY, self.attackRange)
 
         -- Aim bow at nearest enemy for presentation + primary targeting
         if nearestEnemy then
@@ -718,7 +778,7 @@ function GameScene:update(dt)
 
         -- Multi Shot (Q): auto-cast at nearest enemy when off cooldown
         if self.player and self.player:isAbilityReady("multi_shot") and not self.isDashing then
-            local msTarget = self:findNearestEnemyTo(playerX, playerY, self.attackRange)
+            local msTarget = self:findNearestPriorityTargetTo(playerX, playerY, self.attackRange)
             if msTarget then
                 local tx, ty = msTarget:getPosition()
                 self:fireMultiShot(tx, ty)
@@ -776,6 +836,7 @@ function GameScene:update(dt)
 
                 if _G.audio then _G.audio:playSFX("shoot_arrow") end
                 self.particles:createRootBurst(px, py)
+                self.particles:createCastBurst(tx, ty, {0.95, 0.38, 0.24}, 1.0)
                 self.screenShake:add(3, 0.12)
                 self:hitFreeze(0.04)
                 if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
@@ -846,20 +907,13 @@ function GameScene:update(dt)
                             -- Apply per-hit conditional procs (Marked Prey damage, Tactical Spacing, etc.)
                             local hitDmgMul = 1.0
                             if self.procEngine then
-                                local hitActions = self.procEngine:onHit(self.playerStats, {
-                                    isCrit = false, -- set after roll below
+                                hitDmgMul = self.procEngine:getOnHitDamageMultiplier(self.playerStats, {
                                     target = enemy,
                                     arrow = arrow,
                                     playerX = playerX,
                                     playerY = playerY,
                                     maxRange = self.attackRange,
                                 })
-                                -- We'll re-run after we know isCrit; for now collect conditional dmg boosts
-                                for _, ha in ipairs(hitActions) do
-                                    if ha.conditional and ha.apply and ha.apply.kind == "stat_mul" and ha.apply.stat == "primary_damage" then
-                                        hitDmgMul = hitDmgMul * (ha.apply.value or 1)
-                                    end
-                                end
                             end
 
                             local dmg, isCrit = rollDamage(arrow.damage * hitDmgMul, arrow.alwaysCrit)
@@ -906,7 +960,7 @@ function GameScene:update(dt)
                                 self:hitFreeze(isCrit and 0.045 or 0.03)
 
                                 local xpValue = group.xpBase + math.random(0, group.xpRand)
-                                self.xpSystem:spawnOrb(ex2, ey2, xpValue)
+                                self:spawnEnemyXpDrop(ex2, ey2, xpValue)
                                 self:addMajorProgress(self.majorProgressPerKill)
 
                                 if enemy.isMCM or group.isMCM then
@@ -936,7 +990,7 @@ function GameScene:update(dt)
                             -- Ricochet: redirect arrow to nearest un-hit enemy
                             if not died or arrow.ricochetBounces > 0 then
                                 if arrow.ricochetBounces > 0 then
-                                    local nextTarget = self:findNearestEnemyTo(ex2, ey2, arrow.ricochetRange, arrow.hit)
+                                    local nextTarget = self:findNearestPriorityTargetTo(ex2, ey2, arrow.ricochetRange, arrow.hit)
                                     if nextTarget then
                                         local ntx, nty = nextTarget:getPosition()
                                         arrow:bounceToward(ntx, nty)
@@ -994,9 +1048,20 @@ function GameScene:update(dt)
                                 end
                                 if died then
                                     if self.enemySpawner then self.enemySpawner:onEnemyDeath() end
-                                    self.xpSystem:spawnOrb(ex, ey, 12 + math.random(0, 8))
+                                    self:spawnEnemyXpDrop(ex, ey, 12 + math.random(0, 8))
                                 end
                             end
+                        end
+                    end
+                end
+
+                for _, target in ipairs(self:getObjectiveTargets(true)) do
+                    if target.isAlive then
+                        local tx, ty = target:getPosition()
+                        local dx = tx - vx
+                        local dy = ty - vy
+                        if dx * dx + dy * dy <= radius * radius then
+                            self:damageObjectiveTarget(target, dmg, vx, vy)
                         end
                     end
                 end
@@ -1006,46 +1071,20 @@ function GameScene:update(dt)
             end
         end
 
-        -- Core collision with arrows (check remaining arrows against living cores)
+        -- Objective collision with arrows (cores + reward chest)
         for i = #self.arrows, 1, -1 do
             local arrow = self.arrows[i]
             if arrow then
                 local ax, ay = arrow:getPosition()
-                for _, core in ipairs(self.cores) do
-                    if core.isAlive then
-                        local cx, cy = core:getPosition()
-                        local dx = ax - cx
-                        local dy = ay - cy
-                        local sumR = core:getSize() + arrow:getSize()
-                        if dx * dx + dy * dy < sumR * sumR and arrow:canHit(core) then
-                            arrow:markHit(core)
-                            local dmg = arrow.damage or 10
-                            local died = core:takeDamage(dmg)
-                            self.particles:createHitSpark(cx, cy, {0.4, 0.7, 1.0})
-                            if self.damageNumbers then
-                                self.damageNumbers:add(cx, cy - core:getSize(), dmg, { isCrit = false, color = {0.4, 0.8, 1.0} })
-                            end
-                            if died then
-                                self.coresDestroyed = self.coresDestroyed + 1
-                                self:addMajorProgress(core.majorProgress)
-                                self.particles:createExplosion(cx, cy, {0.3, 0.6, 1.0})
-                                self.screenShake:add(5, 0.18)
-                                self:hitFreeze(0.05)
-                                self.xpSystem:spawnOrb(cx, cy, 20 + math.random(0, 10))
-                                if _G.triggerScreenFlash then
-                                    _G.triggerScreenFlash({0.4, 0.7, 1.0, 0.3}, 0.1)
-                                end
-                                -- Check if core objective complete
-                                if self.coresDestroyed >= self.coresTotal and not self.coreObjectiveComplete then
-                                    self.coreObjectiveComplete = true
-                                    local withinTime = self.coreObjectiveTimer <= self.coreObjectiveTimeLimit
-                                    if withinTime and not self.coreObjectiveRewardGiven then
-                                        self.coreObjectiveRewardGiven = true
-                                        self:grantCoreObjectiveReward()
-                                    end
-                                    self:addMajorProgress(self.majorProgressPerCoreBonus)
-                                end
-                            end
+                for _, target in ipairs(self:getObjectiveTargets(true)) do
+                    if target.isAlive then
+                        local tx, ty = target:getPosition()
+                        local dx = ax - tx
+                        local dy = ay - ty
+                        local sumR = target:getSize() + arrow:getSize()
+                        if dx * dx + dy * dy < sumR * sumR and arrow:canHit(target) then
+                            arrow:markHit(target)
+                            self:damageObjectiveTarget(target, arrow.damage or 10, ax, ay)
                             if not arrow:consumePierce() then
                                 table.remove(self.arrows, i)
                                 break
@@ -1127,7 +1166,7 @@ function GameScene:update(dt)
         end
         
         -- Update and collide all enemies with player
-        local blockers = self.forestTilemap and self.forestTilemap:getLargeBlockers() or {}
+        local blockers = self:getMovementBlockers()
         local enemyUpdateData = {
             { list = self.enemies,      getDmg = function(e) return (e.damage or 10) end, shake = {4, 0.15}, melee = true },
             { list = self.lungers,      getDmg = function(e) local d = e.getDamage and e:getDamage() or e.damage or 15; if e.isLunging and e:isLunging() then d = d * 1.5 end; return d end, shake = {6, 0.2}, melee = true },
@@ -1290,7 +1329,6 @@ function GameScene:getBuildPathStage()
     if self.playerStats:hasUpgrade("arch_c_ice_attunement") then return 4 end
     if self.playerStats:hasUpgrade("arch_c_lightning_attunement") then return 3 end
     if self.playerStats:hasUpgrade("arch_c_fire_attunement") then return 2 end
-    if self.playerStats:hasUpgrade("arch_c_barbed_shafts") then return 1 end
     return 0
 end
 
@@ -1344,30 +1382,7 @@ function GameScene:showUpgradeSelection()
         count = 3,
         pickBias = pickBias,
         isAllowed = function(_ctx, upgrade)
-            if upgrade.requires_upgrade and self.playerStats then
-                if not self.playerStats:hasUpgrade(upgrade.requires_upgrade) then
-                    return false
-                end
-            end
-            if self:isUtilityUpgrade(upgrade) then
-                return true
-            end
-            -- Core attunements: exclude the one currently active (no duplicate; switch via fire/ice/lightning)
-            if self:isCoreAttunement(upgrade) and self.playerStats then
-                local active = self.playerStats.activePrimaryElement
-                local elemFor = (upgrade.id == "arch_c_fire_attunement" and "fire")
-                    or (upgrade.id == "arch_c_ice_attunement" and "ice")
-                    or (upgrade.id == "arch_c_lightning_attunement" and "lightning")
-                if elemFor and active == elemFor then
-                    return false
-                end
-                return true
-            end
-            local tier = self:getUpgradePathTier(upgrade)
-            if tier and tier > nextStage then
-                return false
-            end
-            return true
+            return self:isUpgradeAllowedForRun(upgrade, nextStage)
         end,
     })
     
@@ -1378,9 +1393,49 @@ function GameScene:showUpgradeSelection()
         
         -- Apply stat changes to player entity
         self:applyStatsToPlayer()
+        if self.player and self.particles then
+            local px, py = self.player:getPosition()
+            local rarityColors = {
+                common = {0.78, 0.82, 0.9},
+                rare = {0.45, 0.82, 1.0},
+                epic = {0.7, 0.52, 1.0},
+            }
+            self.particles:createUpgradeBurst(px, py, rarityColors[upgrade.rarity] or rarityColors.common)
+        end
+        self.screenShake:add(4, 0.12)
+        self:hitFreeze(0.04)
+        if _G.triggerScreenFlash then
+            _G.triggerScreenFlash({0.65, 0.95, 1.0, 0.22}, 0.1)
+        end
         
         print("Selected upgrade: " .. upgrade.name .. " (" .. upgrade.rarity .. ")")
     end, self.playerStats)
+end
+
+function GameScene:isUpgradeAllowedForRun(upgrade, nextStage)
+    if upgrade.requires_upgrade and self.playerStats then
+        if not self.playerStats:hasUpgrade(upgrade.requires_upgrade) then
+            return false
+        end
+    end
+    if self:isUtilityUpgrade(upgrade) then
+        return true
+    end
+    if self:isCoreAttunement(upgrade) and self.playerStats then
+        local active = self.playerStats.activePrimaryElement
+        local elemFor = (upgrade.id == "arch_c_fire_attunement" and "fire")
+            or (upgrade.id == "arch_c_ice_attunement" and "ice")
+            or (upgrade.id == "arch_c_lightning_attunement" and "lightning")
+        if elemFor and active == elemFor then
+            return false
+        end
+        return true
+    end
+    local tier = self:getUpgradePathTier(upgrade)
+    if tier and nextStage and tier > nextStage then
+        return false
+    end
+    return true
 end
 
 function GameScene:applyStatsToPlayer()
@@ -1388,7 +1443,8 @@ function GameScene:applyStatsToPlayer()
 
     -- Update player with computed stats
     self.player.attackDamage = self.playerStats:get("primary_damage")
-    self.player.speed = self.playerStats:get("move_speed")
+    local playerMoveScale = (Config.World and Config.World.playerMoveSpeedScale) or 1.0
+    self.player.speed = self.playerStats:get("move_speed") * playerMoveScale
     self.attackRange = self.playerStats:get("range")
 
     -- Attack speed affects fire rate (higher = faster)
@@ -1422,21 +1478,64 @@ end
 -- HELPER: grant core objective reward (rare/epic upgrade card)
 ---------------------------------------------------------------------------
 function GameScene:grantCoreObjectiveReward()
+    local stage = self:getBuildPathStage()
+    local nextStage = math.min(4, stage + 1)
+    local rareOnly = {}
+    for _, upgrade in ipairs(ArcherUpgrades.list) do
+        if upgrade.rarity == "rare" and self:isUpgradeAllowedForRun(upgrade, nextStage) then
+            table.insert(rareOnly, upgrade)
+        end
+    end
+
     local result = UpgradeRoll.rollOptions({
         rng = function() return love.math.random() end,
         now = love.timer.getTime(),
         player = self.player,
-        classUpgrades = ArcherUpgrades.list,
-        abilityPaths = AbilityPaths,
-        rarityCharge = self.rarityCharge,
+        classUpgrades = rareOnly,
+        abilityPaths = nil,
+        rarityCharge = nil,
         count = 3,
         minRarity = "rare",
+        isAllowed = function(_ctx, upgrade)
+            return self:isUpgradeAllowedForRun(upgrade, nextStage)
+        end,
     })
     self.upgradeUI:show(result.options, function(upgrade)
         self.playerStats:applyUpgrade(upgrade)
         self:applyStatsToPlayer()
-        print("Core Reward: " .. upgrade.name .. " (" .. upgrade.rarity .. ")")
+        if self.player and self.particles then
+            local px, py = self.player:getPosition()
+            local rewardColors = {
+                rare = {1.0, 0.82, 0.38},
+            }
+            self.particles:createUpgradeBurst(px, py, rewardColors[upgrade.rarity] or {1.0, 0.82, 0.38})
+        end
+        self.screenShake:add(4, 0.12)
+        self:hitFreeze(0.04)
+        print("Rare Chest Reward: " .. upgrade.name .. " (" .. upgrade.rarity .. ")")
     end, self.playerStats)
+end
+
+function GameScene:spawnRewardChest(x, y)
+    if self.rewardChest or self.coreObjectiveRewardGiven then
+        return
+    end
+    self.rewardChest = TreasureChest:new(x, y, { health = 100, size = 22 })
+    self.particles:createUpgradeBurst(x, y, {1.0, 0.82, 0.34})
+    self.screenShake:add(5, 0.16)
+    self:hitFreeze(0.05)
+    if _G.audio then _G.audio:playSFX("portal_open") end
+end
+
+function GameScene:completeCoreObjective(x, y)
+    if self.coreObjectiveComplete then
+        return
+    end
+    self.coreObjectiveComplete = true
+    if self.coreObjectiveTimer <= self.coreObjectiveTimeLimit then
+        self:spawnRewardChest(x, y)
+    end
+    self:addMajorProgress(self.majorProgressPerCoreBonus)
 end
 
 ---------------------------------------------------------------------------
@@ -1524,6 +1623,9 @@ function GameScene:fireMultiShot(targetX, targetY)
     end
 
     if _G.audio then _G.audio:playSFX("shoot_arrow") end
+    if self.particles then
+        self.particles:createCastBurst(sx, sy, {0.55, 0.82, 1.0}, 0.95)
+    end
     if self.player.playAttackAnimation then self.player:playAttackAnimation() end
     self.screenShake:add(2, 0.08)
     if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
@@ -1553,7 +1655,7 @@ end
 ---------------------------------------------------------------------------
 function GameScene:resolvePlayerBlockers()
     if not self.player or not self.forestTilemap then return end
-    local blockers = self.forestTilemap:getLargeBlockers()
+    local blockers = self:getMovementBlockers()
     if #blockers == 0 then return end
     local px, py = self.player.x, self.player.y
     local pr = self.player.size or 20
@@ -1596,11 +1698,53 @@ function GameScene:getFlattenedEnemies()
     return flat
 end
 
+function GameScene:getObjectiveTargets(includeChest)
+    local targets = {}
+    for _, core in ipairs(self.cores) do
+        if core.isAlive then
+            table.insert(targets, core)
+        end
+    end
+    if includeChest and self.rewardChest and self.rewardChest.isAlive then
+        table.insert(targets, self.rewardChest)
+    end
+    return targets
+end
+
+function GameScene:findNearestObjectiveTargetTo(x, y, maxRange, excludeSet, includeChest)
+    local best, bestDistSq = nil, maxRange * maxRange
+    for _, target in ipairs(self:getObjectiveTargets(includeChest)) do
+        if target.isAlive and (not excludeSet or not excludeSet[target]) then
+            local tx, ty = target:getPosition()
+            local dx = tx - x
+            local dy = ty - y
+            local distSq = dx * dx + dy * dy
+            if distSq < bestDistSq then
+                best = target
+                bestDistSq = distSq
+            end
+        end
+    end
+    return best, math.sqrt(bestDistSq)
+end
+
+function GameScene:findNearestPriorityTargetTo(x, y, maxRange, excludeSet)
+    local objectiveTarget, objectiveDist = self:findNearestObjectiveTargetTo(x, y, maxRange, excludeSet, true)
+    if objectiveTarget then
+        return objectiveTarget, objectiveDist
+    end
+    return self:findNearestEnemyTo(x, y, maxRange, excludeSet)
+end
+
 ---------------------------------------------------------------------------
 -- HELPER: find best target for Arrow Volley - prefer clusters of 2-3+ enemies
 ---------------------------------------------------------------------------
 function GameScene:findBestClusterTarget(px, py, maxRange, clusterRadius)
     clusterRadius = clusterRadius or 80
+    local objectiveTarget = self:findNearestObjectiveTargetTo(px, py, maxRange, nil, true)
+    if objectiveTarget then
+        return objectiveTarget
+    end
     local all = self:getFlattenedEnemies()
     local bestTarget, bestScore, bestDist = nil, 0, maxRange
     for _, e in ipairs(all) do
@@ -1637,22 +1781,66 @@ end
 -- HELPER: find nearest living enemy to a point, optionally excluding a set
 ---------------------------------------------------------------------------
 function GameScene:findNearestEnemyTo(x, y, maxRange, excludeSet)
-    local best, bestDist = nil, maxRange
+    local best, bestDistSq = nil, maxRange * maxRange
     for _, list in ipairs(self:getAllEnemyLists()) do
         for _, e in ipairs(list) do
             if e.isAlive and (not excludeSet or not excludeSet[e]) then
                 local ex, ey = e:getPosition()
                 local dx = ex - x
                 local dy = ey - y
-                local d = math.sqrt(dx * dx + dy * dy)
-                if d < bestDist then
+                local distSq = dx * dx + dy * dy
+                if distSq < bestDistSq then
                     best = e
-                    bestDist = d
+                    bestDistSq = distSq
                 end
             end
         end
     end
-    return best, bestDist
+    return best, math.sqrt(bestDistSq)
+end
+
+function GameScene:damageObjectiveTarget(target, dmg, _sourceX, _sourceY)
+    if not target or not target.isAlive then return false end
+
+    local tx, ty = target:getPosition()
+    local died = target:takeDamage(dmg)
+    self:applyFrenzyLifesteal(dmg)
+    local isChest = target == self.rewardChest
+    local hitColor = isChest and {1.0, 0.8, 0.35} or {0.4, 0.7, 1.0}
+    local burstColor = isChest and {1.0, 0.72, 0.24} or {0.3, 0.6, 1.0}
+
+    self.particles:createHitSpark(tx, ty, hitColor)
+    if self.damageNumbers then
+        self.damageNumbers:add(tx, ty - target:getSize(), dmg, { isCrit = false, color = hitColor })
+    end
+
+    if not died then
+        return false
+    end
+
+    self.screenShake:add(isChest and 6 or 5, isChest and 0.22 or 0.18)
+    self:hitFreeze(isChest and 0.06 or 0.05)
+    self.particles:createExplosion(tx, ty, burstColor)
+
+    if isChest then
+        self.coreObjectiveRewardGiven = true
+        self:grantCoreObjectiveReward()
+        if _G.triggerScreenFlash then
+            _G.triggerScreenFlash({1.0, 0.82, 0.35, 0.28}, 0.12)
+        end
+        return true
+    end
+
+    self.coresDestroyed = self.coresDestroyed + 1
+    self.xpSystem:spawnOrb(tx, ty, 20 + math.random(0, 10))
+    if _G.triggerScreenFlash then
+        _G.triggerScreenFlash({0.4, 0.7, 1.0, 0.3}, 0.1)
+    end
+    if self.coresDestroyed >= self.coresTotal then
+        self:completeCoreObjective(tx, ty)
+    end
+
+    return true
 end
 
 ---------------------------------------------------------------------------
@@ -1676,9 +1864,20 @@ function GameScene:aoeDamage(cx, cy, radius, damage)
                         self.particles:createExplosion(ex, ey, {1, 0.5, 0.1})
                         self.screenShake:add(4, 0.15)
                         local xpValue = 10 + math.random(0, 5)
-                        self.xpSystem:spawnOrb(ex, ey, xpValue)
+                        self:spawnEnemyXpDrop(ex, ey, xpValue)
                     end
                 end
+            end
+        end
+    end
+
+    for _, target in ipairs(self:getObjectiveTargets(true)) do
+        if target.isAlive then
+            local tx, ty = target:getPosition()
+            local dx = tx - cx
+            local dy = ty - cy
+            if math.sqrt(dx * dx + dy * dy) <= radius then
+                self:damageObjectiveTarget(target, damage, cx, cy)
             end
         end
     end
@@ -1690,29 +1889,40 @@ end
 function GameScene:chainDamage(startEnemy, jumps, jumpRange, damage)
     local current = startEnemy
     local hit = { [startEnemy] = true }
+    local didJump = false
     for i = 1, jumps do
         local cx, cy = current:getPosition()
-        local next = self:findNearestEnemyTo(cx, cy, jumpRange, hit)
+        local next = self:findNearestPriorityTargetTo(cx, cy, jumpRange, hit)
         if not next then break end
+        didJump = true
         hit[next] = true
         local nx, ny = next:getPosition()
-        -- Lightning arc VFX (bold blue chain lightning)
-        self.particles:createLightningArc(cx, cy, nx, ny, {0.55, 0.8, 1.0})
-        if self.damageNumbers then
-            self.damageNumbers:add(nx, ny - next:getSize(), damage, { isCrit = false })
+        if i <= 3 then
+            self.particles:createLightningArc(cx, cy, nx, ny, {0.55, 0.8, 1.0})
+        elseif self.particles and self.particles.createHitSpark then
+            self.particles:createHitSpark(nx, ny, {0.55, 0.8, 1.0})
         end
-        local died = next:takeDamage(damage, cx, cy, 60)
-        self:applyFrenzyLifesteal(damage)
-        if died then
-            if self.enemySpawner then self.enemySpawner:onEnemyDeath() end
-            self.particles:createExplosion(nx, ny, {0.35, 0.6, 1.0})
-            self.screenShake:add(4, 0.14)
-            self.xpSystem:spawnOrb(nx, ny, 10 + math.random(0, 5))
+        if next == self.rewardChest or next.majorProgress then
+            self:damageObjectiveTarget(next, damage, cx, cy)
+        else
+            if self.damageNumbers and i <= 3 then
+                self.damageNumbers:add(nx, ny - next:getSize(), damage, { isCrit = false })
+            end
+            local died = next:takeDamage(damage, cx, cy, 60)
+            self:applyFrenzyLifesteal(damage)
+            if died then
+                if self.enemySpawner then self.enemySpawner:onEnemyDeath() end
+                self.particles:createExplosion(nx, ny, {0.35, 0.6, 1.0})
+                self.screenShake:add(4, 0.14)
+                self:spawnEnemyXpDrop(nx, ny, 10 + math.random(0, 5))
+            end
         end
         current = next
     end
     -- Freeze for chain lightning payoff (no screen flash)
-    self:hitFreeze(0.04)
+    if didJump then
+        self:hitFreeze(0.04)
+    end
 end
 
 ---------------------------------------------------------------------------
@@ -1780,9 +1990,6 @@ function GameScene:iceDissolveBlast(x, y)
     self.particles:createIceBlast(x, y, radius)
     self.screenShake:add(5, 0.12)
     self:hitFreeze(0.04)
-    if _G.triggerScreenFlash then
-        _G.triggerScreenFlash({0.6, 0.9, 1.0, 0.25}, 0.08)
-    end
 end
 
 ---------------------------------------------------------------------------
@@ -1797,9 +2004,6 @@ function GameScene:iceBlastOnDeath(target, radius, damageMultOfMaxHP)
     self.particles:createIceBlast(tx, ty, radius)
     self.screenShake:add(5, 0.12)
     self:hitFreeze(0.04)
-    if _G.triggerScreenFlash then
-        _G.triggerScreenFlash({0.6, 0.9, 1.0, 0.25}, 0.08)
-    end
 end
 
 ---------------------------------------------------------------------------
@@ -1940,6 +2144,9 @@ function GameScene:draw()
             table.insert(drawables, {entity = core, y = core.y, type = "core"})
         end
     end
+    if self.rewardChest and self.rewardChest.isAlive then
+        table.insert(drawables, {entity = self.rewardChest, y = self.rewardChest.y, type = "reward_chest"})
+    end
     
     -- Add forest tilemap small trees and rocks (Y-sorted with entities)
     if self.forestTilemap then
@@ -2058,23 +2265,79 @@ function GameScene:draw()
             love.graphics.setLineWidth(1)
         end
 
+        if drawable.entity and drawable.entity.isAlive and StatusEffects.has(drawable.entity, "burn") then
+            local ex, ey = drawable.entity:getPosition()
+            local sz = (drawable.entity.getSize and drawable.entity:getSize()) or 16
+            local stacks = StatusEffects.getStacks(drawable.entity, "burn")
+            local pulse = 0.45 + 0.18 * math.sin(love.timer.getTime() * 9 + ey * 0.03)
+            love.graphics.setBlendMode("add", "alphamultiply")
+            love.graphics.setColor(1.0, 0.42, 0.12, 0.08 + pulse * 0.10 + math.min(0.08, stacks * 0.012))
+            love.graphics.circle("fill", ex, ey, sz + 8)
+            love.graphics.setColor(1.0, 0.78, 0.22, 0.05 + pulse * 0.08)
+            love.graphics.circle("fill", ex, ey - 2, sz + 4)
+            love.graphics.setBlendMode("alpha")
+            love.graphics.setColor(1.0, 0.62, 0.18, 0.75)
+            love.graphics.setLineWidth(1)
+            love.graphics.arc("line", "open", ex, ey, sz + 3, math.pi * 0.12, math.pi * 0.88)
+            love.graphics.arc("line", "open", ex, ey, sz + 1, math.pi * 1.1, math.pi * 1.9)
+            for k = 0, 2 do
+                local a = love.timer.getTime() * 3.2 + k * (math.pi * 2 / 3)
+                local rr = sz + 2 + (k % 2) * 2
+                local fx = ex + math.cos(a) * rr * 0.55
+                local fy = ey - sz * 0.45 + math.sin(a) * 4
+                love.graphics.setColor(1.0, 0.84, 0.35, 0.85)
+                love.graphics.rectangle("fill", fx - 1, fy - 2, 2, 4)
+            end
+            love.graphics.setLineWidth(1)
+        end
+
         -- Freeze status: icy cyan ring/glow
         if drawable.entity and drawable.entity.isAlive and StatusEffects.has(drawable.entity, "freeze") then
             local ex, ey = drawable.entity:getPosition()
             local sz = (drawable.entity.getSize and drawable.entity:getSize()) or 16
-            love.graphics.setColor(0.5, 0.85, 1.0, 0.9)
+            local t = love.timer.getTime()
+            local pulse = 0.55 + 0.25 * math.sin(t * 7 + ex * 0.05)
+            love.graphics.setBlendMode("add", "alphamultiply")
+            love.graphics.setColor(0.55, 0.9, 1.0, 0.12 + pulse * 0.10)
+            love.graphics.circle("fill", ex, ey, sz + 11)
+            love.graphics.setColor(0.8, 0.98, 1.0, 0.10 + pulse * 0.08)
+            love.graphics.circle("fill", ex, ey, sz + 6)
+            love.graphics.setBlendMode("alpha")
+            love.graphics.setColor(0.65, 0.92, 1.0, 0.95)
             love.graphics.setLineWidth(2)
-            love.graphics.circle("line", ex, ey, sz + 4)
+            love.graphics.circle("line", ex, ey, sz + 5)
+            for k = 0, 3 do
+                local a = t * 2.8 + k * (math.pi * 0.5)
+                local rr = sz + 8
+                local fx = ex + math.cos(a) * rr
+                local fy = ey + math.sin(a) * rr
+                love.graphics.rectangle("fill", fx - 1.5, fy - 1.5, 3, 3)
+            end
             love.graphics.setLineWidth(1)
         end
 
-        -- Chill/slow status: lighter blue aura tint
+        -- Chill/slow status: colder aura hugging the enemy body
         if drawable.entity and drawable.entity.isAlive and StatusEffects.has(drawable.entity, "chill") then
             local ex, ey = drawable.entity:getPosition()
             local sz = (drawable.entity.getSize and drawable.entity:getSize()) or 16
-            love.graphics.setColor(0.6, 0.9, 1.0, 0.5)
+            local t = love.timer.getTime()
+            local shimmer = 0.5 + 0.25 * math.sin(t * 5 + ey * 0.05)
+            love.graphics.setBlendMode("add", "alphamultiply")
+            love.graphics.setColor(0.5, 0.88, 1.0, 0.08 + shimmer * 0.08)
+            love.graphics.circle("fill", ex, ey, sz + 8)
+            love.graphics.setColor(0.72, 0.96, 1.0, 0.06 + shimmer * 0.06)
+            love.graphics.circle("fill", ex, ey, sz + 4)
+            love.graphics.setBlendMode("alpha")
+            love.graphics.setColor(0.66, 0.93, 1.0, 0.65)
             love.graphics.setLineWidth(1)
-            love.graphics.circle("line", ex, ey, sz + 2)
+            love.graphics.circle("line", ex, ey, sz + 3)
+            for k = 0, 2 do
+                local a = t * 2.2 + k * (math.pi * 2 / 3)
+                local rr = sz + 5
+                local fx = ex + math.cos(a) * rr
+                local fy = ey + math.sin(a) * rr
+                love.graphics.rectangle("fill", fx - 1, fy - 1, 2, 2)
+            end
             love.graphics.setLineWidth(1)
         end
 
@@ -2115,7 +2378,6 @@ function GameScene:draw()
     end
     
     -- Draw HUD (not affected by screen shake or camera)
-    self:drawXPBar()
     self:drawMajorProgressBar()
     if self.coreObjectiveStarted then
         self:drawObjectiveHUD()
@@ -2145,15 +2407,15 @@ function GameScene:drawXPBar()
     local screenWidth = love.graphics.getWidth()
     local t = love.timer.getTime()
 
-    local barWidth = 420
+    local barWidth = 312
     local barHeight = 10
     local barX = (screenWidth - barWidth) / 2
-    local barY = 14
+    local barY = 54
     local progress = self.xpSystem:getProgress()
 
     -- Subtle backing panel
     love.graphics.setColor(0.04, 0.04, 0.08, 0.75)
-    love.graphics.rectangle("fill", barX - 4, barY - 4, barWidth + 8, barHeight + 8, 6, 6)
+    love.graphics.rectangle("fill", barX - 8, barY - 6, barWidth + 16, barHeight + 12, 8, 8)
 
     -- Bar track
     love.graphics.setColor(0.1, 0.08, 0.14, 1)
@@ -2204,55 +2466,123 @@ function GameScene:drawXPBar()
     love.graphics.setColor(1, 1, 1, 1)
 end
 
+local function drawProgressDiamond(mode, cx, cy, halfW, halfH)
+    love.graphics.polygon(mode, cx, cy - halfH, cx + halfW, cy, cx, cy + halfH, cx - halfW, cy)
+end
+
 function GameScene:drawMajorProgressBar()
+    if self.gameState and self.gameState:getState() == self.gameState.States.BOSS_FIGHT then
+        return
+    end
+
     local screenWidth = love.graphics.getWidth()
     local t = love.timer.getTime()
 
-    local barWidth = 500
-    local barHeight = 14
+    local barWidth = 432
+    local barHeight = 16
     local barX = (screenWidth - barWidth) / 2
-    local barY = 34
+    local barY = 46
     local progress = math.min(1, self.majorProgress / self.majorProgressMax)
+    local objectivePct = self.coreObjectiveStartPct or 0.25
+    local markerPcts = { objectivePct, 0.50, 0.75, 1.0 }
 
-    -- Panel
-    love.graphics.setColor(0.04, 0.04, 0.08, 0.75)
-    love.graphics.rectangle("fill", barX - 4, barY - 3, barWidth + 8, barHeight + 6, 5, 5)
-
-    -- Track
-    love.graphics.setColor(0.08, 0.06, 0.12, 1)
-    love.graphics.rectangle("fill", barX, barY, barWidth, barHeight, 3, 3)
-
-    -- Fill (warm gold/amber — Spell Brigade inspired)
-    local fillW = barWidth * progress
-    if fillW > 0 then
-        love.graphics.setColor(0.85, 0.55, 0.12, 1)
-        love.graphics.rectangle("fill", barX, barY, fillW, barHeight, 3, 3)
-        love.graphics.setColor(1.0, 0.75, 0.2, 0.6)
-        love.graphics.rectangle("fill", barX, barY, fillW, barHeight * 0.4, 3, 3)
-        -- Leading glow
-        love.graphics.setColor(1, 0.85, 0.3, 0.5 + 0.25 * math.sin(t * 4))
-        love.graphics.rectangle("fill", barX + fillW - 4, barY, 4, barHeight, 2, 2)
+    local function drawCoreMarker(cx, cy, active)
+        local glow = active and (0.22 + 0.14 * math.sin(t * 4)) or 0.08
+        love.graphics.setBlendMode("add", "alphamultiply")
+        love.graphics.setColor(0.72, 0.96, 1.0, glow)
+        love.graphics.circle("fill", cx, cy, 18)
+        love.graphics.setBlendMode("alpha")
+        love.graphics.setColor(0.09, 0.11, 0.15, 0.98)
+        love.graphics.circle("fill", cx, cy, 13)
+        love.graphics.setColor(active and 0.84 or 0.32, active and 0.96 or 0.56, active and 1.0 or 0.72, 0.95)
+        love.graphics.circle("line", cx, cy, 13)
+        love.graphics.setColor(0.92, 0.98, 1.0, active and 0.95 or 0.72)
+        drawProgressDiamond("line", cx, cy, 5, 7)
+        drawProgressDiamond("line", cx, cy, 9, 11)
     end
 
-    -- Frame
-    love.graphics.setColor(0.55, 0.4, 0.2, 0.7)
-    love.graphics.setLineWidth(1)
-    love.graphics.rectangle("line", barX, barY, barWidth, barHeight, 3, 3)
+    local function drawSkullMarker(cx, cy, active)
+        local glow = active and (0.24 + 0.14 * math.sin(t * 5)) or 0.08
+        love.graphics.setBlendMode("add", "alphamultiply")
+        love.graphics.setColor(0.95, 0.78, 0.48, glow)
+        love.graphics.circle("fill", cx, cy, 19)
+        love.graphics.setBlendMode("alpha")
+        love.graphics.setColor(0.12, 0.08, 0.07, 0.98)
+        love.graphics.circle("fill", cx, cy, 14)
+        love.graphics.setColor(active and 0.96 or 0.55, active and 0.82 or 0.46, active and 0.48 or 0.3, 0.95)
+        love.graphics.circle("line", cx, cy, 14)
+        love.graphics.setColor(0.95, 0.9, 0.82, active and 0.95 or 0.7)
+        love.graphics.circle("fill", cx, cy - 1, 6.5)
+        love.graphics.rectangle("fill", cx - 4.5, cy + 4, 9, 5.5, 2, 2)
+        love.graphics.setColor(0.1, 0.08, 0.07, 1)
+        love.graphics.circle("fill", cx - 2.5, cy - 1.5, 1.7)
+        love.graphics.circle("fill", cx + 2.5, cy - 1.5, 1.7)
+        love.graphics.polygon("fill", cx, cy + 1, cx - 1.5, cy + 3.5, cx + 1.5, cy + 3.5)
+    end
 
-    -- Label
+    love.graphics.setColor(0, 0, 0, 0.24)
+    love.graphics.rectangle("fill", barX - 16, barY - 16, barWidth + 32, barHeight + 36, 16, 16)
+    love.graphics.setColor(0.07, 0.08, 0.11, 0.95)
+    love.graphics.rectangle("fill", barX - 10, barY - 10, barWidth + 20, barHeight + 24, 14, 14)
+    love.graphics.setColor(0.9, 0.95, 1.0, 0.08)
+    love.graphics.rectangle("fill", barX - 8, barY - 8, barWidth + 16, 10, 12, 12)
+    love.graphics.setColor(0.42, 0.56, 0.7, 0.18)
+    love.graphics.rectangle("line", barX - 10, barY - 10, barWidth + 20, barHeight + 24, 14, 14)
+
+    love.graphics.setColor(0.03, 0.05, 0.07, 1)
+    love.graphics.rectangle("fill", barX, barY, barWidth, barHeight, 5, 5)
+    love.graphics.setColor(0.12, 0.16, 0.2, 0.9)
+    love.graphics.rectangle("line", barX, barY, barWidth, barHeight, 5, 5)
+
+    for _, pct in ipairs(markerPcts) do
+        local cutX = barX + barWidth * pct
+        love.graphics.setColor(0.01, 0.02, 0.04, 0.95)
+        love.graphics.rectangle("fill", cutX - 2, barY - 2, 4, barHeight + 4, 2, 2)
+        love.graphics.setColor(0.92, 0.98, 1.0, 0.14)
+        love.graphics.rectangle("fill", cutX - 1, barY, 2, barHeight, 1, 1)
+    end
+
+    local fillW = barWidth * progress
+    if fillW > 0 then
+        love.graphics.setBlendMode("add", "alphamultiply")
+        love.graphics.setColor(0.26, 0.9, 1.0, 0.16)
+        love.graphics.rectangle("fill", barX - 2, barY - 2, fillW + 4, barHeight + 4, 6, 6)
+        love.graphics.setBlendMode("alpha")
+        love.graphics.setColor(0.16, 0.78, 0.95, 1)
+        love.graphics.rectangle("fill", barX, barY, fillW, barHeight, 5, 5)
+        love.graphics.setColor(0.84, 0.98, 1.0, 0.46)
+        love.graphics.rectangle("fill", barX + 2, barY + 2, math.max(0, fillW - 4), math.max(0, barHeight * 0.35), 4, 4)
+        love.graphics.setColor(1.0, 1.0, 1.0, 0.16)
+        local sweepW = math.min(fillW, 52)
+        if sweepW > 8 then
+            love.graphics.rectangle("fill", barX + fillW - sweepW, barY + 1, sweepW, barHeight - 2, 4, 4)
+        end
+        love.graphics.setColor(0.94, 1.0, 1.0, 0.45 + 0.2 * math.sin(t * 4))
+        love.graphics.rectangle("fill", barX + fillW - 5, barY - 1, 5, barHeight + 2, 2, 2)
+    end
+
+    love.graphics.setColor(0.64, 0.86, 0.98, 0.75)
+    love.graphics.setLineWidth(1)
+    love.graphics.rectangle("line", barX, barY, barWidth, barHeight, 5, 5)
+
     local labelFont = _G.PixelFonts and _G.PixelFonts.uiTiny or love.graphics.getFont()
     love.graphics.setFont(labelFont)
-
-    -- "BOSS" marker at right end
-    love.graphics.setColor(0.9, 0.3, 0.2, 0.9)
-    local bossLabel = "BOSS"
-    local bw = labelFont:getWidth(bossLabel)
-    love.graphics.print(bossLabel, barX + barWidth + 8, barY)
-
-    -- Progress percent on left
-    love.graphics.setColor(0.9, 0.8, 0.5, 0.9)
+    love.graphics.setColor(0.9, 0.98, 1.0, 0.9)
     local pct = string.format("%d%%", math.floor(progress * 100))
-    love.graphics.print(pct, barX - labelFont:getWidth(pct) - 8, barY)
+    love.graphics.print(pct, barX + barWidth + 10, barY - 1)
+
+    local objectiveX = barX + barWidth * objectivePct
+    local bossX = barX + barWidth
+    local markerY = barY - 18
+    drawCoreMarker(objectiveX, markerY, progress >= objectivePct)
+    drawSkullMarker(bossX, markerY, self.bossPortalSpawned or progress >= 1.0)
+
+    if self.bossPortalSpawned then
+        local readyText = "PORTAL READY"
+        local readyW = labelFont:getWidth(readyText)
+        love.graphics.setColor(0.95, 0.82, 0.45, 0.95)
+        love.graphics.print(readyText, bossX - readyW / 2, barY + barHeight + 4)
+    end
 
     love.graphics.setColor(1, 1, 1, 1)
 end
@@ -2339,6 +2669,9 @@ function GameScene:drawObjectiveHUD()
     if self.coreObjectiveFailed then
         love.graphics.setColor(1, 0.3, 0.25, 1)
         coreText = "TASK FAILED"
+    elseif self.rewardChest and self.rewardChest.isAlive then
+        love.graphics.setColor(1, 0.82, 0.34, 1)
+        coreText = "RARE CHEST!"
     elseif self.coreObjectiveComplete then
         love.graphics.setColor(0.3, 1, 0.4, 1)
         coreText = "CORES COMPLETE!"
@@ -2356,6 +2689,9 @@ function GameScene:drawObjectiveHUD()
     if self.coreObjectiveFailed then
         timerText = "TIME EXPIRED"
         love.graphics.setColor(1, 0.35, 0.3, 1)
+    elseif self.rewardChest and self.rewardChest.isAlive then
+        timerText = "BREAK FOR RARE CARDS"
+        love.graphics.setColor(1, 0.85, 0.3, 1)
     elseif self.coreObjectiveComplete then
         timerText = "BONUS CLAIMED!"
         love.graphics.setColor(1, 0.85, 0.3, 1)
@@ -2482,6 +2818,7 @@ function GameScene:keypressed(key)
         if self.player then
             local px, py = self.player:getPosition()
             self.particles:createFrenzyBurst(px, py)
+            self.particles:createCastBurst(px, py, {1, 0.62, 0.15}, 1.15)
         end
         self:hitFreeze(0.06)
         if _G.triggerScreenFlash then
