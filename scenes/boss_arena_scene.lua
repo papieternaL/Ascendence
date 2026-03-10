@@ -23,6 +23,7 @@ local AbilityHUD = require("ui.ability_hud")
 local BuffBar = require("ui.buff_bar")
 local StatsOverlay = require("ui.stats_overlay")
 local ProcEngine = require("systems.proc_engine")
+local SpellbladeRuntime = require("systems.spellblade_runtime")
 
 local BossArenaScene = {}
 BossArenaScene.__index = BossArenaScene
@@ -125,6 +126,7 @@ function BossArenaScene:new(player, playerStats, gameState, xpSystem, rarityChar
 
         -- Proc engine (for on_kill procs like Ice Blast)
         procEngine = ProcEngine:new(),
+        spellblade = nil,
     }
     
     setmetatable(scene, BossArenaScene)
@@ -158,13 +160,18 @@ function BossArenaScene:initialize()
         self.player.y = screenHeight - 100
     end
 
+    if self.player and self.player.heroClass == "spellblade" then
+        self.spellblade = SpellbladeRuntime:new()
+        self.spellblade:setupPlayer(self.player)
+    end
+
     -- Initialize mouse aim (center of screen)
     self.mouseX = screenWidth / 2
     self.mouseY = screenHeight / 2
     
     -- Wire player abilities (15% base cooldown reduction)
     local baseCDMul = (Config.game_balance and Config.game_balance.player and Config.game_balance.player.base_cooldown_mul) or 0.85
-    if self.player then
+    if self.player and self.player.heroClass ~= "spellblade" then
         self.player.abilities = self.player.abilities or {}
         local aCfg = Config.Abilities
         
@@ -210,6 +217,10 @@ end
 
 function BossArenaScene:applyStatsToPlayer()
     if not self.player or not self.playerStats then return end
+    if self.spellblade and self.spellblade:isActive(self.player) then
+        self.spellblade:applyStats(self)
+        return
+    end
     local baseCDMul = (Config.game_balance and Config.game_balance.player and Config.game_balance.player.base_cooldown_mul) or 0.85
 
     self.player.attackDamage = self.playerStats:get("primary_damage")
@@ -510,173 +521,178 @@ function BossArenaScene:update(dt)
         self.mouseX = rawMx
         self.mouseY = rawMy
 
-        -- Drive bow attunement VFX from current element
-        self.player.activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
+        if self.spellblade and self.spellblade:isActive(self.player) then
+            self.player.activeElement = nil
+            self.spellblade:update(self, dt)
+        else
+            -- Drive bow attunement VFX from current element
+            self.player.activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
 
-        -- Auto-aim at nearest target (boss or adds), matching main game behavior
-        local nearestTarget = self:findNearestBossTargetTo(playerX, playerY, self.attackRange)
-        if nearestTarget then
-            local tx, ty = nearestTarget.getPosition and nearestTarget:getPosition() or nearestTarget.x, nearestTarget.y
-            self.player:aimAt(tx, ty)
+            -- Auto-aim at nearest target (boss or adds), matching main game behavior
+            local nearestTarget = self:findNearestBossTargetTo(playerX, playerY, self.attackRange)
+            if nearestTarget then
+                local tx, ty = nearestTarget.getPosition and nearestTarget:getPosition() or nearestTarget.x, nearestTarget.y
+                self.player:aimAt(tx, ty)
 
-            -- Auto-fire primary at target (blocked during typing test - boss is invulnerable)
-            if self.fireCooldown <= 0 and not self.isDashing and not self.typingTestActive then
-                local baseDmg = (self.player.attackDamage or 10) * 1.0
-                local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
-                local ricBounces = (self.playerStats and self.playerStats:getWeaponMod("ricochet_bounces")) or 0
-                local ricRange = (self.playerStats and self.playerStats:getWeaponMod("ricochet_range")) or 220
-                local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
-                local activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
+                -- Auto-fire primary at target (blocked during typing test - boss is invulnerable)
+                if self.fireCooldown <= 0 and not self.isDashing and not self.typingTestActive then
+                    local baseDmg = (self.player.attackDamage or 10) * 1.0
+                    local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
+                    local ricBounces = (self.playerStats and self.playerStats:getWeaponMod("ricochet_bounces")) or 0
+                    local ricRange = (self.playerStats and self.playerStats:getWeaponMod("ricochet_range")) or 220
+                    local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
+                    local activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
 
-                local arrow = Arrow:new(sx, sy, tx, ty, {
-                    damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140,
-                    ricochetBounces = ricBounces, ricochetRange = ricRange,
-                    iceAttuned = activeElement == "ice",
-                    element = activeElement,
-                })
-                table.insert(self.arrows, arrow)
-                if _G.audio then _G.audio:playSFX("shoot_arrow") end
-                if self.player.playAttackAnimation then self.player:playAttackAnimation() end
-
-                -- Bonus projectiles from weapon mods (matches main game)
-                local bonusProj = (self.playerStats and self.playerStats:getWeaponMod("bonus_projectiles")) or 0
-                if bonusProj > 0 then
-                    local spreadDeg = (self.playerStats and self.playerStats.weaponMods and self.playerStats.weaponMods.projectile_spread) or 10
-                    local spreadRad = math.rad(spreadDeg)
-                    local baseAngle = math.atan2(ty - sy, tx - sx)
-                    for p = 1, bonusProj do
-                        local offset = spreadRad * p * (p % 2 == 0 and 1 or -1)
-                        local bx = sx + math.cos(baseAngle + offset) * 10
-                        local by = sy + math.sin(baseAngle + offset) * 10
-                        local btx = sx + math.cos(baseAngle + offset) * 300
-                        local bty = sy + math.sin(baseAngle + offset) * 300
-                        local bonusArrow = Arrow:new(bx, by, btx, bty, {
-                            damage = baseDmg * 0.7, pierce = pierce, kind = "primary", knockback = 100,
-                            ricochetBounces = ricBounces, ricochetRange = ricRange,
-                            iceAttuned = activeElement == "ice",
-                            element = activeElement,
-                        })
-                        table.insert(self.arrows, bonusArrow)
-                        if _G.audio then _G.audio:playSFX("shoot_arrow") end
-                    end
-                end
-
-                self.fireCooldown = self.fireRate
-                if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
-            end
-        end
-
-        -- Multi Shot (Q): auto-cast at nearest target when off cooldown (matches main game)
-        if self.player and self.player:isAbilityReady("multi_shot") and not self.isDashing and not self.typingTestActive then
-            local msTarget = self:findNearestBossTargetTo(playerX, playerY, self.attackRange)
-            if msTarget then
-                local tx, ty = msTarget.getPosition and msTarget:getPosition() or msTarget.x, msTarget.y
-                self:fireMultiShot(tx, ty)
-            end
-        end
-
-        -- Auto-cast Arrow Volley (targets boss, blocked during typing test)
-        if self.player and self.player:isAbilityReady("arrow_volley") and not self.typingTestActive then
-            local volleyRange = 300
-            
-            -- Target boss
-            if self.boss and self.boss.isAlive then
-                local bx, by = self.boss:getPosition()
-                local px, py = playerX, playerY
-                local dx = bx - px
-                local dy = by - py
-                local dist = math.sqrt(dx*dx + dy*dy)
-                
-                if dist <= volleyRange then
-                    self.player:useAbility("arrow_volley", self.playerStats)
-                    local baseDmg = self.playerStats and self.playerStats:get("primary_damage") or 25
-                    local damageMul = self.playerStats:getAbilityValue("arrow_volley", "damage_mul", 1.0)
-                    local damage = baseDmg * 1.5 * damageMul
-                    local doubleVolley = self.playerStats and self.playerStats:getAbilityMod("entangle", "double_volley")
-                    local volleyLine = self.playerStats and self.playerStats:getAbilityMod("entangle", "volley_line")
-
-                    local function spawnVolleyAt(vx, vy, vdmg, vradius)
-                        local v = ArrowVolley:new(vx, vy, vdmg, vradius, 0)
-                        table.insert(self.arrowVolleys, { volley = v, targetBoss = true })
-                    end
-
-                    if volleyLine then
-                        local lineRadius, lineDamage = 40, damage * 0.6
-                        for _, oy in ipairs({ by - 60, by, by + 60 }) do
-                            spawnVolleyAt(bx, oy, lineDamage, lineRadius)
-                        end
-                    elseif doubleVolley then
-                        spawnVolleyAt(bx, by, damage, 80)
-                        spawnVolleyAt(bx + 35, by, damage, 80)
-                    else
-                        spawnVolleyAt(bx, by, damage, 80)
-                    end
-
+                    local arrow = Arrow:new(sx, sy, tx, ty, {
+                        damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140,
+                        ricochetBounces = ricBounces, ricochetRange = ricRange,
+                        iceAttuned = activeElement == "ice",
+                        element = activeElement,
+                    })
+                    table.insert(self.arrows, arrow)
                     if _G.audio then _G.audio:playSFX("shoot_arrow") end
-                    if self.particles then
-                        self.particles:createCastBurst(bx, by, {0.95, 0.38, 0.24}, 1.0)
-                    end
-                    self.screenShake:add(3, 0.15)
+                    if self.player.playAttackAnimation then self.player:playAttackAnimation() end
 
-                    -- Double_strike: spawn second volley after delay
-                    local doubleStrikeMod = self.playerStats:getAbilityMod("arrow_volley", "double_strike")
-                    if doubleStrikeMod then
-                        local delay = doubleStrikeMod.delay or 0.3
-                        local secondVolleyDamageMul = doubleStrikeMod.second_volley_damage_mul or 1.0
-                        self.pendingArrowVolleys = self.pendingArrowVolleys or {}
-                        table.insert(self.pendingArrowVolleys, {
-                            timer = delay,
-                            tx = bx, ty = by,
-                            damage = damage * secondVolleyDamageMul,
-                        })
+                    -- Bonus projectiles from weapon mods (matches main game)
+                    local bonusProj = (self.playerStats and self.playerStats:getWeaponMod("bonus_projectiles")) or 0
+                    if bonusProj > 0 then
+                        local spreadDeg = (self.playerStats and self.playerStats.weaponMods and self.playerStats.weaponMods.projectile_spread) or 10
+                        local spreadRad = math.rad(spreadDeg)
+                        local baseAngle = math.atan2(ty - sy, tx - sx)
+                        for p = 1, bonusProj do
+                            local offset = spreadRad * p * (p % 2 == 0 and 1 or -1)
+                            local bx = sx + math.cos(baseAngle + offset) * 10
+                            local by = sy + math.sin(baseAngle + offset) * 10
+                            local btx = sx + math.cos(baseAngle + offset) * 300
+                            local bty = sy + math.sin(baseAngle + offset) * 300
+                            local bonusArrow = Arrow:new(bx, by, btx, bty, {
+                                damage = baseDmg * 0.7, pierce = pierce, kind = "primary", knockback = 100,
+                                ricochetBounces = ricBounces, ricochetRange = ricRange,
+                                iceAttuned = activeElement == "ice",
+                                element = activeElement,
+                            })
+                            table.insert(self.arrows, bonusArrow)
+                            if _G.audio then _G.audio:playSFX("shoot_arrow") end
+                        end
                     end
-                    -- Extra_zone_add: additional volleys after delay
-                    local extraZones = self.playerStats and self.playerStats:getAbilityValue("arrow_volley", "extra_zone_add", 0) or 0
-                    for _ = 1, extraZones do
-                        self.pendingArrowVolleys = self.pendingArrowVolleys or {}
-                        table.insert(self.pendingArrowVolleys, {
-                            timer = 0.5,
-                            tx = bx, ty = by,
-                            damage = damage * 0.7,
-                        })
-                    end
-                end
-            end
-        end
-        
-        -- Process pending arrow volleys (spawn volley when timer fires)
-        if self.pendingArrowVolleys then
-            for i = #self.pendingArrowVolleys, 1, -1 do
-                local pending = self.pendingArrowVolleys[i]
-                pending.timer = pending.timer - dt
-                if pending.timer <= 0 then
-                    local volley = ArrowVolley:new(pending.tx, pending.ty, pending.damage, 80, 0)
-                    table.insert(self.arrowVolleys, { volley = volley, targetBoss = true })
-                    table.remove(self.pendingArrowVolleys, i)
-                end
-            end
-        end
 
-        -- Update Arrow Volleys (impact-timed damage on boss)
-        for i = #self.arrowVolleys, 1, -1 do
-            local entry = self.arrowVolleys[i]
-            local volley = entry.volley
-            volley:update(dt)
-            if volley:shouldApplyDamage() and entry.targetBoss and self.boss and self.boss.isAlive then
-                local dmg = volley:getDamage()
-                local bx, by = self.boss:getPosition()
-                self.boss:takeDamage(dmg)
-                self:applyFrenzyLifesteal(dmg)
-                if self.playerStats and self.playerStats:getAbilityMod("entangle", "explosion_volley") then
-                    StatusEffects.apply(self.boss, "burn", 1, 2.5)
-                end
-                self.particles:createExplosion(bx, by, {1, 0.8, 0.2})
-                if self.damageNumbers then
-                    self.damageNumbers:add(bx, by - 30, dmg, { isCrit = false })
+                    self.fireCooldown = self.fireRate
+                    if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
                 end
             end
-            if volley:isFinished() then
-                table.remove(self.arrowVolleys, i)
+
+            -- Multi Shot (Q): auto-cast at nearest target when off cooldown (matches main game)
+            if self.player and self.player:isAbilityReady("multi_shot") and not self.isDashing and not self.typingTestActive then
+                local msTarget = self:findNearestBossTargetTo(playerX, playerY, self.attackRange)
+                if msTarget then
+                    local tx, ty = msTarget.getPosition and msTarget:getPosition() or msTarget.x, msTarget.y
+                    self:fireMultiShot(tx, ty)
+                end
+            end
+
+            -- Auto-cast Arrow Volley (targets boss, blocked during typing test)
+            if self.player and self.player:isAbilityReady("arrow_volley") and not self.typingTestActive then
+                local volleyRange = 300
+                
+                -- Target boss
+                if self.boss and self.boss.isAlive then
+                    local bx, by = self.boss:getPosition()
+                    local px, py = playerX, playerY
+                    local dx = bx - px
+                    local dy = by - py
+                    local dist = math.sqrt(dx*dx + dy*dy)
+
+                    if dist <= volleyRange then
+                        self.player:useAbility("arrow_volley", self.playerStats)
+                        local baseDmg = self.playerStats and self.playerStats:get("primary_damage") or 25
+                        local damageMul = self.playerStats:getAbilityValue("arrow_volley", "damage_mul", 1.0)
+                        local damage = baseDmg * 1.5 * damageMul
+                        local doubleVolley = self.playerStats and self.playerStats:getAbilityMod("entangle", "double_volley")
+                        local volleyLine = self.playerStats and self.playerStats:getAbilityMod("entangle", "volley_line")
+
+                        local function spawnVolleyAt(vx, vy, vdmg, vradius)
+                            local v = ArrowVolley:new(vx, vy, vdmg, vradius, 0)
+                            table.insert(self.arrowVolleys, { volley = v, targetBoss = true })
+                        end
+
+                        if volleyLine then
+                            local lineRadius, lineDamage = 40, damage * 0.6
+                            for _, oy in ipairs({ by - 60, by, by + 60 }) do
+                                spawnVolleyAt(bx, oy, lineDamage, lineRadius)
+                            end
+                        elseif doubleVolley then
+                            spawnVolleyAt(bx, by, damage, 80)
+                            spawnVolleyAt(bx + 35, by, damage, 80)
+                        else
+                            spawnVolleyAt(bx, by, damage, 80)
+                        end
+
+                        if _G.audio then _G.audio:playSFX("shoot_arrow") end
+                        if self.particles then
+                            self.particles:createCastBurst(bx, by, {0.95, 0.38, 0.24}, 1.0)
+                        end
+                        self.screenShake:add(3, 0.15)
+
+                        -- Double_strike: spawn second volley after delay
+                        local doubleStrikeMod = self.playerStats:getAbilityMod("arrow_volley", "double_strike")
+                        if doubleStrikeMod then
+                            local delay = doubleStrikeMod.delay or 0.3
+                            local secondVolleyDamageMul = doubleStrikeMod.second_volley_damage_mul or 1.0
+                            self.pendingArrowVolleys = self.pendingArrowVolleys or {}
+                            table.insert(self.pendingArrowVolleys, {
+                                timer = delay,
+                                tx = bx, ty = by,
+                                damage = damage * secondVolleyDamageMul,
+                            })
+                        end
+                        -- Extra_zone_add: additional volleys after delay
+                        local extraZones = self.playerStats and self.playerStats:getAbilityValue("arrow_volley", "extra_zone_add", 0) or 0
+                        for _ = 1, extraZones do
+                            self.pendingArrowVolleys = self.pendingArrowVolleys or {}
+                            table.insert(self.pendingArrowVolleys, {
+                                timer = 0.5,
+                                tx = bx, ty = by,
+                                damage = damage * 0.7,
+                            })
+                        end
+                    end
+                end
+            end
+
+            -- Process pending arrow volleys (spawn volley when timer fires)
+            if self.pendingArrowVolleys then
+                for i = #self.pendingArrowVolleys, 1, -1 do
+                    local pending = self.pendingArrowVolleys[i]
+                    pending.timer = pending.timer - dt
+                    if pending.timer <= 0 then
+                        local volley = ArrowVolley:new(pending.tx, pending.ty, pending.damage, 80, 0)
+                        table.insert(self.arrowVolleys, { volley = volley, targetBoss = true })
+                        table.remove(self.pendingArrowVolleys, i)
+                    end
+                end
+            end
+
+            -- Update Arrow Volleys (impact-timed damage on boss)
+            for i = #self.arrowVolleys, 1, -1 do
+                local entry = self.arrowVolleys[i]
+                local volley = entry.volley
+                volley:update(dt)
+                if volley:shouldApplyDamage() and entry.targetBoss and self.boss and self.boss.isAlive then
+                    local dmg = volley:getDamage()
+                    local bx, by = self.boss:getPosition()
+                    self.boss:takeDamage(dmg)
+                    self:applyFrenzyLifesteal(dmg)
+                    if self.playerStats and self.playerStats:getAbilityMod("entangle", "explosion_volley") then
+                        StatusEffects.apply(self.boss, "burn", 1, 2.5)
+                    end
+                    self.particles:createExplosion(bx, by, {1, 0.8, 0.2})
+                    if self.damageNumbers then
+                        self.damageNumbers:add(bx, by - 30, dmg, { isCrit = false })
+                    end
+                end
+                if volley:isFinished() then
+                    table.remove(self.arrowVolleys, i)
+                end
             end
         end
         
@@ -1274,6 +1290,9 @@ function BossArenaScene:draw()
             entry.volley:draw()
         end
     end
+    if self.spellblade then
+        self.spellblade:drawGround(self)
+    end
 
     -- Draw falling trunks (ground telegraphs first, then falling trunks later)
     -- Draw telegraphs on ground (before entities)
@@ -1439,6 +1458,9 @@ function BossArenaScene:draw()
     -- Draw projectiles (always on top)
     for _, arrow in ipairs(self.arrows) do
         arrow:draw()
+    end
+    if self.spellblade then
+        self.spellblade:drawForeground(self)
     end
     
     for _, bark in ipairs(self.barkProjectiles) do
@@ -1777,6 +1799,12 @@ function BossArenaScene:keypressed(key)
             self.screenShake:add(2, 0.1)
         end
         return true  -- Consume input
+    end
+
+    if self.spellblade and self.spellblade:isActive(self.player) then
+        if self.spellblade:keypressed(self, key) or key == "q" or key == "e" or key == "r" or key == "space" then
+            return true
+        end
     end
     
     -- Manual abilities (blocked during typing test)

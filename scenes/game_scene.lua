@@ -32,6 +32,7 @@ local DamageNumbers = require("systems.damage_numbers")
 local StatusEffects = require("systems.status_effects")
 local ProcEngine = require("systems.proc_engine")
 local ObstacleNav = require("systems.obstacle_navigation")
+local SpellbladeRuntime = require("systems.spellblade_runtime")
 local Config = require("data.config")
 local BossPortal = require("entities.boss_portal")
 local Core = require("entities.core")
@@ -40,6 +41,7 @@ local TreasureChest = require("entities.treasure_chest")
 -- Load upgrade data
 local ArcherUpgrades = require("data.upgrades_archer")
 local AbilityPaths = require("data.ability_paths_archer")
+local SpellbladeUpgrades = require("data.upgrades_spellblade")
 
 local GameScene = {}
 GameScene.__index = GameScene
@@ -134,6 +136,7 @@ function GameScene:new(gameState)
         coreObjectiveFailPopupTimer = 0, -- popup when timer expires
         rewardChest = nil,
         xpMagnetDropChance = 0.025,
+        spellblade = nil,
 
         -- Progress per event
         majorProgressPerKill = 0.35,
@@ -167,6 +170,11 @@ function GameScene:load()
         self.player.attackRange = heroClass.attackRange
         self.player.attackSpeed = heroClass.attackSpeed
         self.player.heroClass = heroClass.id
+    end
+
+    if heroClass and heroClass.id == "spellblade" then
+        self.spellblade = SpellbladeRuntime:new()
+        self.spellblade:setupPlayer(self.player)
     end
     
     -- Store difficulty multipliers
@@ -214,8 +222,8 @@ function GameScene:load()
     self.damageNumbers = DamageNumbers:new()
     self.procEngine = ProcEngine:new()
     
-    -- Set ability unlock states for archer (abilities are already defined in player)
-    if self.player and self.player.abilities then
+    -- Set ability unlock states for class loadout
+    if self.player and self.player.abilities and self.player.heroClass ~= "spellblade" then
         self.player.abilities.multi_shot.unlocked = true
         self.player.abilities.entangle.unlocked = true
         self.player.abilities.frenzy.unlocked = true
@@ -696,152 +704,157 @@ function GameScene:update(dt)
 
         local playerX, playerY = self.player:getPosition()
 
-        -- Drive bow attunement VFX from current element
-        self.player.activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
+        if self.spellblade and self.spellblade:isActive(self.player) then
+            self.player.activeElement = nil
+            self.spellblade:update(self, dt)
+        else
+            -- Drive bow attunement VFX from current element
+            self.player.activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
 
-        -- Find nearest enemy for targeting (all types)
-        local nearestEnemy, nearestDistance = self:findNearestPriorityTargetTo(playerX, playerY, self.attackRange)
+            -- Find nearest enemy for targeting (all types)
+            local nearestEnemy, nearestDistance = self:findNearestPriorityTargetTo(playerX, playerY, self.attackRange)
 
-        -- Aim bow at nearest enemy for presentation + primary targeting
-        if nearestEnemy then
-            local ex, ey = nearestEnemy:getPosition()
-            self.player:aimAt(ex, ey)
+            -- Aim bow at nearest enemy for presentation + primary targeting
+            if nearestEnemy then
+                local ex, ey = nearestEnemy:getPosition()
+                self.player:aimAt(ex, ey)
 
-            if self.fireCooldown <= 0 and not self.isDashing then
-                local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult
-                local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
-                local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
+                if self.fireCooldown <= 0 and not self.isDashing then
+                    local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult
+                    local pierce = (self.playerStats and self.playerStats:getWeaponMod("pierce")) or 0
+                    local sx, sy = self.player.getBowTip and self.player:getBowTip() or playerX, playerY
 
-                local ricBounces = (self.playerStats and self.playerStats.weaponMods.ricochet_bounces) or 0
-                local ricRange = (self.playerStats and self.playerStats.weaponMods.ricochet_range) or 220
-                local isGhosting = self.ghostQuiverTimer > 0
-                local activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
+                    local ricBounces = (self.playerStats and self.playerStats.weaponMods.ricochet_bounces) or 0
+                    local ricRange = (self.playerStats and self.playerStats.weaponMods.ricochet_range) or 220
+                    local isGhosting = self.ghostQuiverTimer > 0
+                    local activeElement = self.playerStats and self.playerStats.activePrimaryElement or nil
 
-                local arrow = Arrow:new(sx, sy, ex, ey, {
-                    damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140,
-                    ricochetBounces = ricBounces, ricochetRange = ricRange,
-                    ghosting = isGhosting,
-                    iceAttuned = activeElement == "ice",
-                    element = activeElement,
-                })
-                table.insert(self.arrows, arrow)
-                if _G.audio then _G.audio:playSFX("shoot_arrow") end
-                if self.player.playAttackAnimation then self.player:playAttackAnimation() end
+                    local arrow = Arrow:new(sx, sy, ex, ey, {
+                        damage = baseDmg, pierce = pierce, kind = "primary", knockback = 140,
+                        ricochetBounces = ricBounces, ricochetRange = ricRange,
+                        ghosting = isGhosting,
+                        iceAttuned = activeElement == "ice",
+                        element = activeElement,
+                    })
+                    table.insert(self.arrows, arrow)
+                    if _G.audio then _G.audio:playSFX("shoot_arrow") end
+                    if self.player.playAttackAnimation then self.player:playAttackAnimation() end
 
-                -- Bonus projectiles from weapon mods
-                local bonusProj = (self.playerStats and self.playerStats:getWeaponMod("bonus_projectiles")) or 0
+                    -- Bonus projectiles from weapon mods
+                    local bonusProj = (self.playerStats and self.playerStats:getWeaponMod("bonus_projectiles")) or 0
 
-                -- Check proc-on-fire actions (every_n_primary_shots)
-                if self.procEngine then
-                    local fireActions = self.procEngine:onPrimaryFired(self.playerStats)
-                    for _, action in ipairs(fireActions) do
-                        local a = action.apply
-                        if a and a.kind == "weapon_mod" and a.mod == "bonus_projectiles" then
-                            bonusProj = bonusProj + (a.value or 0)
-                        elseif a and a.kind == "aoe_projectile_burst" then
-                            self:spawnArrowstorm(a.count or 12, a.damage_mul or 0.40, a.speed_mul or 0.90)
-                        else
-                            self:executeAction(action)
+                    -- Check proc-on-fire actions (every_n_primary_shots)
+                    if self.procEngine then
+                        local fireActions = self.procEngine:onPrimaryFired(self.playerStats)
+                        for _, action in ipairs(fireActions) do
+                            local a = action.apply
+                            if a and a.kind == "weapon_mod" and a.mod == "bonus_projectiles" then
+                                bonusProj = bonusProj + (a.value or 0)
+                            elseif a and a.kind == "aoe_projectile_burst" then
+                                self:spawnArrowstorm(a.count or 12, a.damage_mul or 0.40, a.speed_mul or 0.90)
+                            else
+                                self:executeAction(action)
+                            end
                         end
                     end
-                end
 
-                if bonusProj > 0 then
-                    local spreadDeg = (self.playerStats and self.playerStats.weaponMods.projectile_spread) or 10
-                    local spreadRad = math.rad(spreadDeg)
-                    local baseAngle = math.atan2(ey - sy, ex - sx)
-                    for p = 1, bonusProj do
-                        local offset = spreadRad * p * (p % 2 == 0 and 1 or -1)
-                        local bx = sx + math.cos(baseAngle + offset) * 10
-                        local by = sy + math.sin(baseAngle + offset) * 10
-                        local tx = sx + math.cos(baseAngle + offset) * 300
-                        local ty = sy + math.sin(baseAngle + offset) * 300
-                        local bonusArrow = Arrow:new(bx, by, tx, ty, {
-                            damage = baseDmg * 0.7,
-                            pierce = pierce,
-                            kind = "primary",
-                            knockback = 100,
-                            ricochetBounces = ricBounces, ricochetRange = ricRange,
-                            ghosting = isGhosting,
-                            iceAttuned = activeElement == "ice",
-                            element = activeElement,
-                        })
-                        table.insert(self.arrows, bonusArrow)
-                        if _G.audio then _G.audio:playSFX("shoot_arrow") end
+                    if bonusProj > 0 then
+                        local spreadDeg = (self.playerStats and self.playerStats.weaponMods.projectile_spread) or 10
+                        local spreadRad = math.rad(spreadDeg)
+                        local baseAngle = math.atan2(ey - sy, ex - sx)
+                        for p = 1, bonusProj do
+                            local offset = spreadRad * p * (p % 2 == 0 and 1 or -1)
+                            local bx = sx + math.cos(baseAngle + offset) * 10
+                            local by = sy + math.sin(baseAngle + offset) * 10
+                            local tx = sx + math.cos(baseAngle + offset) * 300
+                            local ty = sy + math.sin(baseAngle + offset) * 300
+                            local bonusArrow = Arrow:new(bx, by, tx, ty, {
+                                damage = baseDmg * 0.7,
+                                pierce = pierce,
+                                kind = "primary",
+                                knockback = 100,
+                                ricochetBounces = ricBounces, ricochetRange = ricRange,
+                                ghosting = isGhosting,
+                                iceAttuned = activeElement == "ice",
+                                element = activeElement,
+                            })
+                            table.insert(self.arrows, bonusArrow)
+                            if _G.audio then _G.audio:playSFX("shoot_arrow") end
+                        end
                     end
+
+                    self.fireCooldown = self.fireRate
+                    if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
                 end
-
-                self.fireCooldown = self.fireRate
-                if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
             end
-        end
 
-        -- Multi Shot (Q): auto-cast at nearest enemy when off cooldown
-        if self.player and self.player:isAbilityReady("multi_shot") and not self.isDashing then
-            local msTarget = self:findNearestPriorityTargetTo(playerX, playerY, self.attackRange)
-            if msTarget then
-                local tx, ty = msTarget:getPosition()
-                self:fireMultiShot(tx, ty)
+            -- Multi Shot (Q): auto-cast at nearest enemy when off cooldown
+            if self.player and self.player:isAbilityReady("multi_shot") and not self.isDashing then
+                local msTarget = self:findNearestPriorityTargetTo(playerX, playerY, self.attackRange)
+                if msTarget then
+                    local tx, ty = msTarget:getPosition()
+                    self:fireMultiShot(tx, ty)
+                end
             end
-        end
 
-        -- Entangle (Arrow Volley): ground circle AOE at nearest enemy (2s falling-arrows field)
-        if self.player and self.player:isAbilityReady("entangle") and not self.isDashing then
-            local px, py = playerX, playerY
-            local entangleRange = 260
-            if self.playerStats then
-                entangleRange = entangleRange + (self.playerStats:getAbilityValue("entangle", "range_add", 0) or 0)
-            end
-            local target = self:findBestClusterTarget(px, py, entangleRange)
-            if target then
-                self.player:useAbility("entangle")
-                local tx, ty = target:getPosition()
-                self.player:aimAt(tx, ty)
-
-                local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult * 0.35
+            -- Entangle (Arrow Volley): ground circle AOE at nearest enemy (2s falling-arrows field)
+            if self.player and self.player:isAbilityReady("entangle") and not self.isDashing then
+                local px, py = playerX, playerY
+                local entangleRange = 260
                 if self.playerStats then
-                    baseDmg = baseDmg * self.playerStats:getAbilityValue("entangle", "damage_mul", 1.0)
+                    entangleRange = entangleRange + (self.playerStats:getAbilityValue("entangle", "range_add", 0) or 0)
                 end
-                local duration = 2.0
-                local tickInterval = 0.15
-                local numTicks = math.ceil(duration / tickInterval)
-                local totalDamage = baseDmg * numTicks
-                local extraZones = self.playerStats and self.playerStats:getAbilityValue("entangle", "extra_zone_add", 0) or 0
-                local arrowCountAdd = self.playerStats and self.playerStats:getAbilityValue("entangle", "arrow_count_add", 0) or 0
-                local doubleVolley = self.playerStats and self.playerStats:getAbilityMod("entangle", "double_volley")
-                local volleyLine = self.playerStats and self.playerStats:getAbilityMod("entangle", "volley_line")
+                local target = self:findBestClusterTarget(px, py, entangleRange)
+                if target then
+                    self.player:useAbility("entangle")
+                    local tx, ty = target:getPosition()
+                    self.player:aimAt(tx, ty)
 
-                if volleyLine then
-                    -- Volley Line: 3 smaller circles in vertical line OOO
-                    local lineRadius, lineDamage = 40, totalDamage * 0.6
-                    for _, oy in ipairs({ ty - 60, ty, ty + 60 }) do
-                        local volley = ArrowVolley:new(tx, oy, lineDamage, lineRadius, arrowCountAdd)
-                        table.insert(self.arrowVolleys, volley)
+                    local baseDmg = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult * 0.35
+                    if self.playerStats then
+                        baseDmg = baseDmg * self.playerStats:getAbilityValue("entangle", "damage_mul", 1.0)
                     end
-                else
-                    local volleyCount = (doubleVolley and 2 or 1) + extraZones
-                    for z = 0, volleyCount - 1 do
-                        local ox, oy = tx, ty
-                        if z == 1 and doubleVolley then
-                            ox, oy = tx + 35, ty
-                        elseif z > (doubleVolley and 1 or 0) then
-                            local angle = (z - (doubleVolley and 2 or 1)) * (math.pi * 2 / math.max(1, extraZones)) + math.random() * 0.5
-                            ox = tx + math.cos(angle) * 110
-                            oy = ty + math.sin(angle) * 110
+                    local duration = 2.0
+                    local tickInterval = 0.15
+                    local numTicks = math.ceil(duration / tickInterval)
+                    local totalDamage = baseDmg * numTicks
+                    local extraZones = self.playerStats and self.playerStats:getAbilityValue("entangle", "extra_zone_add", 0) or 0
+                    local arrowCountAdd = self.playerStats and self.playerStats:getAbilityValue("entangle", "arrow_count_add", 0) or 0
+                    local doubleVolley = self.playerStats and self.playerStats:getAbilityMod("entangle", "double_volley")
+                    local volleyLine = self.playerStats and self.playerStats:getAbilityMod("entangle", "volley_line")
+
+                    if volleyLine then
+                        -- Volley Line: 3 smaller circles in vertical line OOO
+                        local lineRadius, lineDamage = 40, totalDamage * 0.6
+                        for _, oy in ipairs({ ty - 60, ty, ty + 60 }) do
+                            local volley = ArrowVolley:new(tx, oy, lineDamage, lineRadius, arrowCountAdd)
+                            table.insert(self.arrowVolleys, volley)
                         end
-                        local volley = ArrowVolley:new(ox, oy, totalDamage, 80, arrowCountAdd)
-                        table.insert(self.arrowVolleys, volley)
+                    else
+                        local volleyCount = (doubleVolley and 2 or 1) + extraZones
+                        for z = 0, volleyCount - 1 do
+                            local ox, oy = tx, ty
+                            if z == 1 and doubleVolley then
+                                ox, oy = tx + 35, ty
+                            elseif z > (doubleVolley and 1 or 0) then
+                                local angle = (z - (doubleVolley and 2 or 1)) * (math.pi * 2 / math.max(1, extraZones)) + math.random() * 0.5
+                                ox = tx + math.cos(angle) * 110
+                                oy = ty + math.sin(angle) * 110
+                            end
+                            local volley = ArrowVolley:new(ox, oy, totalDamage, 80, arrowCountAdd)
+                            table.insert(self.arrowVolleys, volley)
+                        end
                     end
-                end
 
-                if _G.audio then _G.audio:playSFX("shoot_arrow") end
-                self.particles:createRootBurst(px, py)
-                self.particles:createCastBurst(tx, ty, {0.95, 0.38, 0.24}, 1.0)
-                self.screenShake:add(3, 0.12)
-                self:hitFreeze(0.04)
-                if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
-                if _G.triggerScreenFlash then
-                    _G.triggerScreenFlash({0.8, 0.2, 0.2, 0.2}, 0.08)
+                    if _G.audio then _G.audio:playSFX("shoot_arrow") end
+                    self.particles:createRootBurst(px, py)
+                    self.particles:createCastBurst(tx, ty, {0.95, 0.38, 0.24}, 1.0)
+                    self.screenShake:add(3, 0.12)
+                    self:hitFreeze(0.04)
+                    if self.player.triggerBowRecoil then self.player:triggerBowRecoil() end
+                    if _G.triggerScreenFlash then
+                        _G.triggerScreenFlash({0.8, 0.2, 0.2, 0.2}, 0.08)
+                    end
                 end
             end
         end
@@ -1345,46 +1358,71 @@ function GameScene:isUtilityUpgrade(upgrade)
     return hasTag(upgrade, "crit") or hasTag(upgrade, "regen")
 end
 
+function GameScene:getActiveUpgradePool()
+    if self.player and self.player.heroClass == "spellblade" then
+        return SpellbladeUpgrades.list, nil
+    end
+    return ArcherUpgrades.list, AbilityPaths
+end
+
 function GameScene:showUpgradeSelection()
     if not self.xpSystem:hasPendingLevelUp() then return end
     
     -- Consume the level-up
     self.xpSystem:consumeLevelUp()
     
-    -- Roll upgrade options with controlled path gating:
-    -- bleed -> fire -> lightning -> ice, while crit/regen stays always available.
-    local stage = self:getBuildPathStage()
-    local nextStage = math.min(4, stage + 1)
-    local pickBias = {}
-    for _, u in ipairs(ArcherUpgrades.list) do
-        if self:isUtilityUpgrade(u) then
-            pickBias[u.id] = 1.35
-        elseif self:isCoreAttunement(u) then
-            -- Core attunements: integral to kit, bias so they show early
-            pickBias[u.id] = 1.6
-        else
-            local tier = self:getUpgradePathTier(u)
-            if tier == nextStage then
-                pickBias[u.id] = 1.8
-            elseif tier and tier < nextStage then
-                pickBias[u.id] = 1.15
+    local classUpgrades, abilityPaths = self:getActiveUpgradePool()
+    local result
+    local nextStage = nil
+
+    if self.player and self.player.heroClass == "spellblade" then
+        result = UpgradeRoll.rollOptions({
+            rng = function() return love.math.random() end,
+            now = love.timer.getTime(),
+            player = self.player,
+            classUpgrades = classUpgrades,
+            abilityPaths = abilityPaths,
+            rarityCharge = self.rarityCharge,
+            count = 3,
+            isAllowed = function(_ctx, upgrade)
+                return self:isUpgradeAllowedForRun(upgrade, nil)
+            end,
+        })
+    else
+        -- Roll upgrade options with controlled path gating:
+        -- bleed -> fire -> lightning -> ice, while crit/regen stays always available.
+        local stage = self:getBuildPathStage()
+        nextStage = math.min(4, stage + 1)
+        local pickBias = {}
+        for _, u in ipairs(classUpgrades) do
+            if self:isUtilityUpgrade(u) then
+                pickBias[u.id] = 1.35
+            elseif self:isCoreAttunement(u) then
+                pickBias[u.id] = 1.6
+            else
+                local tier = self:getUpgradePathTier(u)
+                if tier == nextStage then
+                    pickBias[u.id] = 1.8
+                elseif tier and tier < nextStage then
+                    pickBias[u.id] = 1.15
+                end
             end
         end
-    end
 
-    local result = UpgradeRoll.rollOptions({
-        rng = function() return love.math.random() end,
-        now = love.timer.getTime(),
-        player = self.player,
-        classUpgrades = ArcherUpgrades.list,
-        abilityPaths = AbilityPaths,
-        rarityCharge = self.rarityCharge,
-        count = 3,
-        pickBias = pickBias,
-        isAllowed = function(_ctx, upgrade)
-            return self:isUpgradeAllowedForRun(upgrade, nextStage)
-        end,
-    })
+        result = UpgradeRoll.rollOptions({
+            rng = function() return love.math.random() end,
+            now = love.timer.getTime(),
+            player = self.player,
+            classUpgrades = classUpgrades,
+            abilityPaths = abilityPaths,
+            rarityCharge = self.rarityCharge,
+            count = 3,
+            pickBias = pickBias,
+            isAllowed = function(_ctx, upgrade)
+                return self:isUpgradeAllowedForRun(upgrade, nextStage)
+            end,
+        })
+    end
     
     -- Show the upgrade UI (pass playerStats for current->next preview on repeat picks)
     self.upgradeUI:show(result.options, function(upgrade)
@@ -1413,6 +1451,12 @@ function GameScene:showUpgradeSelection()
 end
 
 function GameScene:isUpgradeAllowedForRun(upgrade, nextStage)
+    if self.player and self.player.heroClass == "spellblade" then
+        if upgrade.requires_upgrade and self.playerStats and not self.playerStats:hasUpgrade(upgrade.requires_upgrade) then
+            return false
+        end
+        return true
+    end
     if upgrade.requires_upgrade and self.playerStats then
         if not self.playerStats:hasUpgrade(upgrade.requires_upgrade) then
             return false
@@ -1440,6 +1484,11 @@ end
 
 function GameScene:applyStatsToPlayer()
     if not self.player or not self.playerStats then return end
+
+    if self.spellblade and self.spellblade:isActive(self.player) then
+        self.spellblade:applyStats(self)
+        return
+    end
 
     -- Update player with computed stats
     self.player.attackDamage = self.playerStats:get("primary_damage")
@@ -1478,11 +1527,12 @@ end
 -- HELPER: grant core objective reward (rare/epic upgrade card)
 ---------------------------------------------------------------------------
 function GameScene:grantCoreObjectiveReward()
+    local classUpgrades = self:getActiveUpgradePool()
     local stage = self:getBuildPathStage()
     local nextStage = math.min(4, stage + 1)
     local rareOnly = {}
-    for _, upgrade in ipairs(ArcherUpgrades.list) do
-        if upgrade.rarity == "rare" and self:isUpgradeAllowedForRun(upgrade, nextStage) then
+    for _, upgrade in ipairs(classUpgrades) do
+        if upgrade.rarity == "rare" and self:isUpgradeAllowedForRun(upgrade, self.player and self.player.heroClass == "spellblade" and nil or nextStage) then
             table.insert(rareOnly, upgrade)
         end
     end
@@ -2120,6 +2170,9 @@ function GameScene:draw()
     for _, volley in ipairs(self.arrowVolleys) do
         volley:draw()
     end
+    if self.spellblade then
+        self.spellblade:drawGround(self)
+    end
     
     -- Collect all drawable entities for Y-sorting
     local drawables = {}
@@ -2347,6 +2400,9 @@ function GameScene:draw()
     -- Draw arrows and bark projectiles (always on top of entities)
     for _, arrow in ipairs(self.arrows) do
         arrow:draw()
+    end
+    if self.spellblade then
+        self.spellblade:drawForeground(self)
     end
     for _, bark in ipairs(self.barkProjectiles) do
         bark:draw()
@@ -2794,6 +2850,12 @@ function GameScene:keypressed(key)
             return true
         elseif key == "down" then
             self.statsOverlay:scroll(1, #(self.playerStats:getUpgradeLog() or {}))
+            return true
+        end
+    end
+
+    if self.spellblade and self.spellblade:isActive(self.player) then
+        if self.spellblade:keypressed(self, key) or key == "q" or key == "e" or key == "r" or key == "space" then
             return true
         end
     end

@@ -237,6 +237,16 @@ Input → Player.update() → Movement
 10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
+- 2026-03-10: **Spellblade playable class implementation**:
+ - Added `data/spellblade_config.lua`, `data/upgrades_spellblade.lua`, `systems/spellblade_runtime.lua`, and dedicated Spellblade entities for energy waves, mirrors, orbiting swords, and prism rifts so the new class ships as a modular runtime instead of scene-local one-off logic.
+ - `systems/game_state.lua` now exposes Spellblade in hero selection with class metadata and hover-preview skill copy, while `ui/menu.lua` adds Spellblade to the character roster and renders a bespoke arcane portrait/icon treatment.
+ - `scenes/game_scene.lua`, `scenes/boss_arena_scene.lua`, `entities/player.lua`, `main.lua`, and `systems/player_stats.lua` now support the Spellblade loadout, dynamic HUD slot resolution, Astral active-state display, generic `_add` / `_mul` ability tuning hooks, and in-run Spellblade combat behavior across the map and boss scene.
+- 2026-03-10: **Spellblade R debug cleanup**:
+ - Removed the temporary instrumentation added for the Astral Ascension death investigation, restoring `systems/spellblade_runtime.lua`, `entities/player.lua`, and `main.lua` to production-ready behavior after the issue was confirmed fixed.
+- 2026-03-10: **Temporary Spellblade R death instrumentation**:
+ - Added scoped runtime logs in `systems/spellblade_runtime.lua`, `entities/player.lua`, and `main.lua` to trace the Astral Ascension live-run death bug (cast entry, post-activation state, exact damage caller, and PLAYING -> GAME_OVER transition).
+- 2026-03-10: **Spellblade Q debug cleanup**:
+ - Removed the temporary instrumentation that had been added to trace the Arcane Swords self-death investigation, restoring `systems/spellblade_runtime.lua`, `entities/player.lua`, and `main.lua` to production-ready runtime behavior.
 - 2026-03-10: **Character select visual redesign + hoverable skill readouts**:
   - `ui/menu.lua`: replaced the old generic three-card hero screen with a featured character-select layout that includes a large showcase portrait panel, richer stat treatment, bottom hero selector cards, a dedicated continue button, and hoverable skill chips that update an in-place detail panel.
   - `ui/menu.lua`: added bespoke character art rendering for Archer/Wizard/Knight in the menu flow, including an Archer sprite-backed portrait and stylized class-specific silhouette/weapon compositions for the placeholder heroes so each class reads as a distinct character instead of a colored circle.

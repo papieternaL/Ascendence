@@ -447,16 +447,27 @@ function isPointInQuitButton(_px, _py)
 end
 
 -- Returns ability slot positions for tutorial highlight and other reuse
-function getAbilitySlotLayout()
+function getAbilitySlotLayout(player)
     local w = love.graphics.getWidth()
     local h = love.graphics.getHeight()
     local diamondR, diamondSpacing = math.floor(24 * HUD_SCALE), math.floor(72 * HUD_SCALE)
-    local slotConfig = {
-        { key = "Q", abilityId = "multi_shot" },
-        { key = "SPACE", abilityId = "dash" },
-        { key = "E", abilityId = "entangle" },
-        { key = "R", abilityId = "frenzy" },
-    }
+    local slotConfig = {}
+    if player and player.abilities and player.abilityOrder then
+        for _, abilityId in ipairs(player.abilityOrder) do
+            local ability = player.abilities[abilityId]
+            if ability and ability.unlocked ~= false then
+                slotConfig[#slotConfig + 1] = { key = ability.key or "?", abilityId = abilityId }
+            end
+        end
+    end
+    if #slotConfig == 0 then
+        slotConfig = {
+            { key = "Q", abilityId = "multi_shot" },
+            { key = "SPACE", abilityId = "dash" },
+            { key = "E", abilityId = "entangle" },
+            { key = "R", abilityId = "frenzy" },
+        }
+    end
     local numSlots = #slotConfig
     local abilitiesWidth = (numSlots - 1) * diamondSpacing
     local abilitiesStartX = w / 2 - abilitiesWidth / 2
@@ -551,6 +562,11 @@ function drawBottomHUD(player)
     local font = love.graphics.getFont()
     local textWidth = font:getWidth(healthText)
     drawTextWithShadow(healthText, healthBarX + healthBarWidth / 2 - textWidth / 2, healthBarY + 1)
+    if player.formStatusText then
+        love.graphics.setColor(0.92, 0.72, 1.0, 0.95)
+        local statusW = font:getWidth(player.formStatusText)
+        drawTextWithShadow(player.formStatusText, healthBarX + healthBarWidth - statusW, healthBarY - 16)
+    end
 
     if xpSystem and xpSystem.getProgress then
         local xpProgress = math.max(0, math.min(1, xpSystem:getProgress() or 0))
@@ -602,13 +618,23 @@ function drawBottomHUD(player)
         return nil
     end
 
-    -- Four ability slots: Q, SPACE, E, R
-    local slotConfig = {
-        { key = "Q", abilityId = "multi_shot" },
-        { key = "SPACE", abilityId = "dash" },
-        { key = "E", abilityId = "entangle" },
-        { key = "R", abilityId = "frenzy" },
-    }
+    local slotConfig = {}
+    if player and player.abilities and player.abilityOrder then
+        for _, abilityId in ipairs(player.abilityOrder) do
+            local ability = resolveAbility(player, abilityId)
+            if ability and ability.unlocked ~= false then
+                slotConfig[#slotConfig + 1] = { key = ability.key or "?", abilityId = abilityId }
+            end
+        end
+    end
+    if #slotConfig == 0 then
+        slotConfig = {
+            { key = "Q", abilityId = "multi_shot" },
+            { key = "SPACE", abilityId = "dash" },
+            { key = "E", abilityId = "entangle" },
+            { key = "R", abilityId = "frenzy" },
+        }
+    end
     local diamondR = math.floor(24 * HUD_SCALE)
     local diamondSpacing = math.floor(72 * HUD_SCALE)
     local numSlots = #slotConfig
@@ -732,22 +758,33 @@ local abilityAccents = {
 local function drawAbilityGlyph(ability, key, cx, cy, accent)
     local id = ability and ability.name and ability.name:lower() or key:lower()
     love.graphics.setColor(0.95, 0.97, 1.0, 0.92)
-    if id:find("multi") or key == "Q" then
+    if id:find("multi") or id:find("sword") or key == "Q" then
         love.graphics.setLineWidth(2)
-        love.graphics.line(cx - 11, cy + 8, cx + 8, cy - 7)
-        love.graphics.line(cx - 6, cy + 11, cx + 11, cy - 4)
+        if id:find("sword") then
+            love.graphics.line(cx - 10, cy + 10, cx + 8, cy - 10)
+            love.graphics.line(cx - 3, cy + 10, cx + 15, cy - 10)
+            love.graphics.line(cx - 8, cy + 4, cx + 12, cy + 4)
+        else
+            love.graphics.line(cx - 11, cy + 8, cx + 8, cy - 7)
+            love.graphics.line(cx - 6, cy + 11, cx + 11, cy - 4)
+        end
         love.graphics.setLineWidth(1)
         love.graphics.polygon("fill", cx + 7, cy - 10, cx + 13, cy - 6, cx + 8, cy - 2)
-    elseif id:find("dash") or key == "SPACE" then
+    elseif id:find("dash") or id:find("blink") or key == "SPACE" then
         love.graphics.setLineWidth(3)
         love.graphics.line(cx - 10, cy + 8, cx + 10, cy - 8)
         love.graphics.setLineWidth(1)
         love.graphics.polygon("fill", cx + 3, cy - 13, cx + 14, cy - 8, cx + 6, cy)
-    elseif id:find("entangle") or key == "E" then
-        love.graphics.circle("line", cx, cy, 10)
-        love.graphics.circle("line", cx, cy, 5)
-        love.graphics.line(cx - 12, cy, cx + 12, cy)
-        love.graphics.line(cx, cy - 12, cx, cy + 12)
+    elseif id:find("entangle") or id:find("rift") or key == "E" then
+        if id:find("rift") then
+            love.graphics.polygon("line", cx, cy - 12, cx + 11, cy - 3, cx + 7, cy + 12, cx - 7, cy + 12, cx - 11, cy - 3)
+            love.graphics.circle("line", cx, cy, 4)
+        else
+            love.graphics.circle("line", cx, cy, 10)
+            love.graphics.circle("line", cx, cy, 5)
+            love.graphics.line(cx - 12, cy, cx + 12, cy)
+            love.graphics.line(cx, cy - 12, cx, cy + 12)
+        end
     else
         love.graphics.setColor(accent[1], accent[2], accent[3], 0.25)
         love.graphics.circle("fill", cx, cy, 13)

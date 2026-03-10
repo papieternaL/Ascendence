@@ -363,6 +363,10 @@ function PlayerStats:getAbilityValue(abilityName, modType, baseValue)
         value = value * (mod.value or 1)
       elseif modType == "extra_zone_add" then
         value = value + (mod.value or 0)
+      elseif modType:match("_mul$") then
+        value = value * (mod.value or 1)
+      elseif modType:match("_add$") then
+        value = value + (mod.value or 0)
       else
         -- Generic additive for unknown mods
         value = value + (mod.value or 0)

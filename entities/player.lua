@@ -1,4 +1,6 @@
 -- Player Entity (Archer Class)
+local SpellbladeConfig = require("data.spellblade_config")
+
 local Player = {}
 Player.__index = Player
 
@@ -43,6 +45,13 @@ function Player:new(x, y)
         attackRange = 350,
         attackSpeed = 0.4,
         heroClass = "archer",
+        weaponHidden = false,
+        attackVisualStyle = "archer",
+        bodyColor = {0.2, 0.6, 1.0},
+        secondaryColor = {1, 1, 1},
+        astralActive = false,
+        astralTimeRemaining = 0,
+        formStatusText = nil,
         -- Bow aiming
         bowAngle = 0, -- angle the bow is pointing
         lastMoveX = 1, -- last movement direction x
@@ -233,6 +242,44 @@ function Player:draw()
     -- Draw player as a simple circle with bobbing effect
     local drawY = self.y + self.bobOffset
     
+    if self.heroClass == "spellblade" then
+        local pulse = 0.5 + 0.5 * math.sin(love.timer.getTime() * 7)
+        local aura = SpellbladeConfig.astral.auraColor
+        local body = self.bodyColor or {0.34, 0.82, 1.0}
+        local secondary = self.secondaryColor or {0.76, 0.62, 1.0}
+
+        if self.astralActive then
+            love.graphics.setBlendMode("add", "alphamultiply")
+            love.graphics.setColor(aura[1], aura[2], aura[3], 0.18 + pulse * 0.14)
+            love.graphics.circle("fill", self.x, drawY, self.size + 18)
+            love.graphics.setColor(body[1], body[2], body[3], 0.14 + pulse * 0.08)
+            love.graphics.circle("fill", self.x, drawY, self.size + 10)
+            love.graphics.setBlendMode("alpha")
+        elseif self.invincibleTime > 0 and math.floor(self.invincibleTime * 14) % 2 == 0 then
+            love.graphics.setColor(1, 1, 1, 0.42)
+            love.graphics.circle("fill", self.x, drawY, self.size + 8)
+        end
+
+        love.graphics.setColor(body[1], body[2], body[3], self.invincibleTime > 0 and 0.68 or 1.0)
+        love.graphics.circle("fill", self.x, drawY, self.size)
+        love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.9)
+        love.graphics.circle("fill", self.x, drawY - 5, self.size * 0.42)
+        love.graphics.setColor(0.1, 0.12, 0.18, 1)
+        love.graphics.circle("fill", self.x - 5, drawY - 6, 2)
+        love.graphics.circle("fill", self.x + 5, drawY - 6, 2)
+
+        local dirX = math.cos(self.bowAngle)
+        local dirY = math.sin(self.bowAngle)
+        love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.92)
+        love.graphics.setLineWidth(3)
+        love.graphics.line(self.x, drawY, self.x + dirX * (self.size + 16), drawY + dirY * (self.size + 16))
+        love.graphics.setLineWidth(1)
+        love.graphics.setColor(aura[1], aura[2], aura[3], self.astralActive and 0.95 or 0.55)
+        love.graphics.rectangle("fill", self.x + dirX * (self.size + 10) - 6, drawY + dirY * (self.size + 10) - 2, 12, 4, 2, 2)
+        love.graphics.setColor(1, 1, 1, 1)
+        return
+    end
+
     -- Frenzy aura glow (soft outer ring)
     if self.isFrenzyActive then
         local pulse = 0.5 + 0.35 * math.sin(love.timer.getTime() * 6)
@@ -265,7 +312,7 @@ function Player:draw()
     -- Draw bow
     love.graphics.setColor(1, 1, 1, 1)
     local bowImg = Player.bowImage
-    if bowImg then
+    if bowImg and not self.weaponHidden then
         local imgW = bowImg:getWidth()
         local imgH = bowImg:getHeight()
         -- Tiny pack sprites are 16x16; scale up for visibility (old were 32x32)
@@ -365,6 +412,10 @@ end
 
 function Player:getBowAngle()
     return self.bowAngle
+end
+
+function Player:getFacingVector()
+    return math.cos(self.bowAngle), math.sin(self.bowAngle)
 end
 
 function Player:useAbility(abilityId)

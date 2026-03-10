@@ -13,7 +13,7 @@ local Palette = {
     sliderFillSelected = {1.0, 0.82, 0.46, 1},
 }
 
-local CHARACTER_CLASSES = {"ARCHER", "WIZARD", "KNIGHT"}
+local CHARACTER_CLASSES = {"ARCHER", "SPELLBLADE", "WIZARD", "KNIGHT"}
 
 local SETTINGS_SECTION_TEMPLATES = {
     {
@@ -885,6 +885,41 @@ function Menu:drawCharacterSkillIcon(skill, cx, cy, size, color)
             love.graphics.line(-dx, -dy, dx, dy)
         end
         love.graphics.circle("line", 0, 0, size * 0.08)
+    elseif skill.icon == "mirror_blink" then
+        love.graphics.arc("line", "open", 0, 0, size * 0.28, math.pi * 0.18, math.pi * 1.82)
+        love.graphics.line(size * 0.08, -size * 0.24, size * 0.28, -size * 0.06)
+        love.graphics.line(size * 0.08, size * 0.24, size * 0.28, size * 0.06)
+        love.graphics.line(-size * 0.16, -size * 0.22, -size * 0.16, size * 0.22)
+    elseif skill.icon == "arcane_swords" then
+        love.graphics.line(-size * 0.24, size * 0.20, 0, -size * 0.26)
+        love.graphics.line(0, -size * 0.26, size * 0.24, size * 0.20)
+        love.graphics.line(-size * 0.10, size * 0.04, size * 0.10, size * 0.04)
+        love.graphics.arc("line", "open", 0, 0, size * 0.30, math.pi * 0.82, math.pi * 1.98)
+    elseif skill.icon == "prism_rift" then
+        love.graphics.polygon("line",
+            0, -size * 0.30,
+            size * 0.26, -size * 0.06,
+            size * 0.18, size * 0.28,
+            -size * 0.18, size * 0.28,
+            -size * 0.26, -size * 0.06
+        )
+        love.graphics.circle("line", 0, 0, size * 0.10)
+    elseif skill.icon == "astral_ascension" then
+        love.graphics.circle("line", 0, 0, size * 0.26)
+        love.graphics.line(-size * 0.28, 0, size * 0.28, 0)
+        love.graphics.line(0, -size * 0.28, 0, size * 0.28)
+        love.graphics.polygon("line",
+            0, -size * 0.34,
+            size * 0.08, -size * 0.12,
+            size * 0.30, -size * 0.04,
+            size * 0.10, size * 0.08,
+            size * 0.18, size * 0.30,
+            0, size * 0.12,
+            -size * 0.18, size * 0.30,
+            -size * 0.10, size * 0.08,
+            -size * 0.30, -size * 0.04,
+            -size * 0.08, -size * 0.12
+        )
     elseif skill.icon == "teleport" then
         love.graphics.arc("line", "open", 0, 0, size * 0.28, math.pi * 0.2, math.pi * 1.8)
         love.graphics.line(size * 0.12, -size * 0.28, size * 0.28, -size * 0.10)
@@ -965,6 +1000,29 @@ function Menu:drawCharacterPortrait(classData, x, y, w, h)
         love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.30)
         love.graphics.line(x + w * 0.18, y + h * 0.24, x + w * 0.74, y + h * 0.18)
         love.graphics.line(x + w * 0.18, y + h * 0.30, x + w * 0.78, y + h * 0.24)
+    elseif classData.id == "spellblade" then
+        love.graphics.setColor(0.16, 0.12, 0.22, 0.96)
+        love.graphics.circle("fill", x + w * 0.50, y + h * 0.26, w * 0.08)
+        love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.95)
+        love.graphics.polygon("fill",
+            x + w * 0.36, y + h * 0.48,
+            x + w * 0.64, y + h * 0.48,
+            x + w * 0.58, y + h * 0.78,
+            x + w * 0.42, y + h * 0.78
+        )
+        love.graphics.setColor(accent[1], accent[2], accent[3], 0.95)
+        love.graphics.polygon("line",
+            x + w * 0.50, y + h * 0.14,
+            x + w * 0.68, y + h * 0.34,
+            x + w * 0.58, y + h * 0.56,
+            x + w * 0.42, y + h * 0.56,
+            x + w * 0.32, y + h * 0.34
+        )
+        for i = -1, 1 do
+            local bladeX = x + w * (0.50 + i * 0.18)
+            love.graphics.line(bladeX, y + h * 0.24, bladeX, y + h * 0.70)
+            love.graphics.rectangle("fill", bladeX - 8, y + h * 0.54, 16, 4, 2, 2)
+        end
     elseif classData.id == "wizard" then
         love.graphics.setColor(0.14, 0.09, 0.24, 0.92)
         love.graphics.polygon("fill",
@@ -1030,7 +1088,18 @@ function Menu:drawCharacterSelectorCard(classData, x, y, w, h, isSelected)
     love.graphics.setColor(accent[1], accent[2], accent[3], 0.18)
     love.graphics.circle("fill", x + 44, y + h * 0.5, 26)
 
-    if classData.id == "wizard" then
+    if classData.id == "spellblade" then
+        love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.95)
+        love.graphics.polygon("line",
+            x + 44, y + h * 0.5 - 16,
+            x + 56, y + h * 0.5,
+            x + 44, y + h * 0.5 + 16,
+            x + 32, y + h * 0.5
+        )
+        love.graphics.setColor(accent[1], accent[2], accent[3], 0.95)
+        love.graphics.line(x + 28, y + h * 0.5 + 12, x + 60, y + h * 0.5 - 12)
+        love.graphics.line(x + 28, y + h * 0.5 - 12, x + 60, y + h * 0.5 + 12)
+    elseif classData.id == "wizard" then
         love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.95)
         love.graphics.circle("fill", x + 44, y + h * 0.5 - 2, 9)
         love.graphics.setColor(accent[1], accent[2], accent[3], 0.95)
