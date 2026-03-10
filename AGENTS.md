@@ -237,6 +237,9 @@ Input → Player.update() → Movement
 10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
+- 2026-03-10: **Playable roster trim: Wizard removed, Knight renamed to Wind Star**:
+ - Removed the Wizard from the playable hero roster so character select now shows three options: Archer, Spellblade, and Wind Star.
+ - Renamed the old Knight slot's display name to `Wind Star` while keeping the internal `KNIGHT` key for compatibility with the current class-selection/runtime plumbing.
 - 2026-03-10: **Spellblade playable class implementation**:
  - Added `data/spellblade_config.lua`, `data/upgrades_spellblade.lua`, `systems/spellblade_runtime.lua`, and dedicated Spellblade entities for energy waves, mirrors, orbiting swords, and prism rifts so the new class ships as a modular runtime instead of scene-local one-off logic.
  - `systems/game_state.lua` now exposes Spellblade in hero selection with class metadata and hover-preview skill copy, while `ui/menu.lua` adds Spellblade to the character roster and renders a bespoke arcane portrait/icon treatment.

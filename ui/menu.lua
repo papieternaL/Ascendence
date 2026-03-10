@@ -13,7 +13,7 @@ local Palette = {
     sliderFillSelected = {1.0, 0.82, 0.46, 1},
 }
 
-local CHARACTER_CLASSES = {"ARCHER", "SPELLBLADE", "WIZARD", "KNIGHT"}
+local CHARACTER_CLASSES = {"ARCHER", "SPELLBLADE", "KNIGHT"}
 
 local SETTINGS_SECTION_TEMPLATES = {
     {
