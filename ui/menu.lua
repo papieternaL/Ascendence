@@ -163,6 +163,23 @@ local function drawTextWithShadow(text, x, y)
     love.graphics.print(text, x, y)
 end
 
+local function drawDiamond(mode, cx, cy, halfW, halfH)
+    love.graphics.polygon(mode, cx, cy - halfH, cx + halfW, cy, cx, cy + halfH, cx - halfW, cy)
+end
+
+local function drawHexPlate(mode, cx, cy, halfW, halfH, notch)
+    notch = notch or math.floor(halfW * 0.34)
+    love.graphics.polygon(
+        mode,
+        cx - halfW + notch, cy - halfH,
+        cx + halfW - notch, cy - halfH,
+        cx + halfW, cy,
+        cx + halfW - notch, cy + halfH,
+        cx - halfW + notch, cy + halfH,
+        cx - halfW, cy
+    )
+end
+
 -- Helper function to check if a point is inside a button
 function Menu:isPointInButton(px, py, cx, cy, w, h)
     local x = cx - w/2
@@ -727,30 +744,30 @@ end
 
 function Menu:getCharacterSelectLayout(w, h)
     local panelX = math.floor(w * 0.06)
-    local panelY = 102
+    local panelY = 132
     local panelW = w - panelX * 2
-    local panelH = h - panelY - 58
-    local pad = 24
-    local selectorH = 112
-    local portraitW = math.floor(panelW * 0.30)
+    local panelH = h - panelY - 52
+    local pad = 28
+    local selectorH = 120
+    local portraitW = math.floor(panelW * 0.31)
     local portraitX = panelX + pad
     local portraitY = panelY + pad
     local portraitH = panelH - selectorH - pad * 3
     local infoX = portraitX + portraitW + 28
     local infoY = portraitY
     local infoW = panelX + panelW - pad - infoX
-    local skillY = infoY + 200
+    local skillY = infoY + 214
     local skillGap = 12
     local skillW = math.floor((infoW - skillGap * 3) / 4)
     local skillH = 60
-    local tooltipY = skillY + skillH + 18
+    local tooltipY = skillY + skillH + 20
     local selectorY = panelY + panelH - selectorH - pad
     local tooltipH = selectorY - 18 - tooltipY
     local confirmW = 208
     local confirmH = 54
     local confirmX = panelX + panelW - pad - confirmW
     local confirmY = selectorY + selectorH - confirmH
-    local cardGap = 16
+    local cardGap = 18
     local cardAreaX = panelX + pad
     local cardAreaW = confirmX - 20 - cardAreaX
     local cardW = math.floor((cardAreaW - cardGap * 2) / 3)
@@ -1076,14 +1093,20 @@ function Menu:drawCharacterSelectorCard(classData, x, y, w, h, isSelected)
     local accent = classData.color
     local secondary = classData.secondaryColor or accent
     if isSelected then
-        love.graphics.setColor(accent[1], accent[2], accent[3], 0.12)
-        love.graphics.rectangle("fill", x - 4, y - 4, w + 8, h + 8, 14, 14)
+        love.graphics.setBlendMode("add", "alphamultiply")
+        love.graphics.setColor(accent[1], accent[2], accent[3], 0.18)
+        love.graphics.rectangle("fill", x - 8, y - 8, w + 16, h + 16, 16, 16)
+        love.graphics.setBlendMode("alpha")
     end
 
-    love.graphics.setColor(0.06, 0.09, 0.15, 0.96)
+    love.graphics.setColor(0.05, 0.07, 0.12, 0.98)
     love.graphics.rectangle("fill", x, y, w, h, 12, 12)
+    love.graphics.setColor(accent[1], accent[2], accent[3], 0.10 + (isSelected and 0.10 or 0.04))
+    love.graphics.rectangle("fill", x + 1, y + 1, w - 2, 34, 12, 12)
     love.graphics.setColor(accent[1], accent[2], accent[3], isSelected and 1 or 0.55)
     love.graphics.rectangle("line", x, y, w, h, 12, 12)
+    love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.16)
+    love.graphics.line(x + 14, y + h - 16, x + w - 14, y + h - 16)
 
     love.graphics.setColor(accent[1], accent[2], accent[3], 0.18)
     love.graphics.circle("fill", x + 44, y + h * 0.5, 26)
@@ -1124,7 +1147,7 @@ function Menu:drawCharacterSelectorCard(classData, x, y, w, h, isSelected)
     love.graphics.setColor(Palette.text)
     drawTextWithShadow(classData.name, x + 82, y + 16)
     love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(Palette.subtitle)
+    love.graphics.setColor(isSelected and Palette.title or Palette.subtitle)
     drawTextWithShadow((classData.role or "Hero"):upper(), x + 82, y + 40)
     love.graphics.setColor(0.82, 0.86, 0.92, 0.92)
     drawTextWithShadow(string.format("HP %d   ATK %d   SPD %d", classData.baseHP, classData.baseATK, classData.baseSpeed), x + 82, y + 62)
@@ -1142,24 +1165,46 @@ function Menu:drawCharacterSelect()
     local mx, my = love.mouse.getPosition()
     local confirmHovered = self:isPointInRect(mx, my, L.confirmX, L.confirmY, L.confirmW, L.confirmH)
 
+    love.graphics.setColor(0, 0, 0, 0.28)
+    drawHexPlate("fill", w * 0.5, 50, 272, 34, 22)
+    love.graphics.setColor(0.05, 0.08, 0.14, 0.96)
+    drawHexPlate("fill", w * 0.5, 46, 272, 34, 22)
+    love.graphics.setColor(0.80, 0.93, 1.0, 0.10)
+    drawHexPlate("fill", w * 0.5, 40, 234, 10, 12)
+    love.graphics.setColor(0.42, 0.78, 0.95, 0.55)
+    drawHexPlate("line", w * 0.5, 46, 272, 34, 22)
+    love.graphics.setColor(0.94, 0.80, 0.52, 0.95)
+    drawDiamond("fill", w * 0.5 - 220, 46, 7, 7)
+    drawDiamond("fill", w * 0.5 + 220, 46, 7, 7)
+
     love.graphics.setFont(self.headerFont)
     local header = "CHOOSE YOUR HERO"
     love.graphics.setColor(Palette.title)
-    drawTextWithShadow(header, w * 0.5 - self.headerFont:getWidth(header) * 0.5, 34)
+    drawTextWithShadow(header, w * 0.5 - self.headerFont:getWidth(header) * 0.5, 24)
 
     love.graphics.setFont(self.smallFont)
     love.graphics.setColor(Palette.subtitle)
     local helper = "Hover skills to inspect the kit. Click a hero, then continue."
-    drawTextWithShadow(helper, w * 0.5 - self.smallFont:getWidth(helper) * 0.5, 70)
+    drawTextWithShadow(helper, w * 0.5 - self.smallFont:getWidth(helper) * 0.5, 58)
 
-    love.graphics.setColor(0.03, 0.05, 0.10, 0.95)
+    love.graphics.setBlendMode("add", "alphamultiply")
+    love.graphics.setColor(accent[1], accent[2], accent[3], 0.08)
+    love.graphics.rectangle("fill", L.panelX - 12, L.panelY - 10, L.panelW + 24, L.panelH + 20, 28, 28)
+    love.graphics.setBlendMode("alpha")
+    love.graphics.setColor(0.03, 0.05, 0.10, 0.96)
     love.graphics.rectangle("fill", L.panelX, L.panelY, L.panelW, L.panelH, 22, 22)
-    love.graphics.setColor(accent[1], accent[2], accent[3], 0.16)
-    love.graphics.rectangle("fill", L.panelX + 1, L.panelY + 1, L.panelW - 2, 70, 22, 22)
-    love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.10)
-    love.graphics.rectangle("fill", L.panelX + 18, L.selectorY - 12, L.panelW - 36, 2)
-    love.graphics.setColor(0.22, 0.30, 0.42, 1)
+    love.graphics.setColor(accent[1], accent[2], accent[3], 0.14)
+    love.graphics.rectangle("fill", L.panelX + 1, L.panelY + 1, L.panelW - 2, 82, 22, 22)
+    love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.06)
+    love.graphics.rectangle("fill", L.panelX + 18, L.panelY + 94, L.panelW - 36, L.panelH - 112, 18, 18)
+    love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.16)
+    love.graphics.rectangle("line", L.panelX + 18, L.panelY + 94, L.panelW - 36, L.panelH - 112, 18, 18)
+    love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.14)
+    love.graphics.line(L.panelX + 28, L.selectorY - 10, L.panelX + L.panelW - 28, L.selectorY - 10)
+    love.graphics.setColor(0.22, 0.30, 0.42, 0.95)
     love.graphics.rectangle("line", L.panelX, L.panelY, L.panelW, L.panelH, 22, 22)
+    love.graphics.setColor(accent[1], accent[2], accent[3], 0.22)
+    love.graphics.rectangle("line", L.panelX + 8, L.panelY + 8, L.panelW - 16, L.panelH - 16, 18, 18)
 
     self:drawCharacterPortrait(classData, L.portraitX, L.portraitY, L.portraitW, L.portraitH)
 

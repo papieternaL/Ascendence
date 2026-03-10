@@ -237,6 +237,9 @@ Input → Player.update() → Movement
 10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
+- 2026-03-10: **Character select spacing/art-direction polish pass**:
+ - `ui/menu.lua`: moved the hero-select title plaque farther above the main selection frame so the top copy no longer clips or crowds the panel chrome.
+ - `ui/menu.lua`: added a stronger fantasy-blue presentation pass to the selection frame and bottom hero cards (title plaque chrome, layered panel fills, subtle accent glow, and richer selector-card treatment) to better match the target in-game art direction.
 - 2026-03-10: **Playable roster trim: Wizard removed, Knight renamed to Wind Star**:
  - Removed the Wizard from the playable hero roster so character select now shows three options: Archer, Spellblade, and Wind Star.
  - Renamed the old Knight slot's display name to `Wind Star` while keeping the internal `KNIGHT` key for compatibility with the current class-selection/runtime plumbing.
