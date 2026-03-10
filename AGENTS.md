@@ -237,6 +237,10 @@ Input → Player.update() → Movement
 10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
+- 2026-03-10: **Character select visual redesign + hoverable skill readouts**:
+  - `ui/menu.lua`: replaced the old generic three-card hero screen with a featured character-select layout that includes a large showcase portrait panel, richer stat treatment, bottom hero selector cards, a dedicated continue button, and hoverable skill chips that update an in-place detail panel.
+  - `ui/menu.lua`: added bespoke character art rendering for Archer/Wizard/Knight in the menu flow, including an Archer sprite-backed portrait and stylized class-specific silhouette/weapon compositions for the placeholder heroes so each class reads as a distinct character instead of a colored circle.
+  - `systems/game_state.lua`: expanded hero metadata with roles, accent colors, and full per-class skill preview data so the select screen can surface real hover descriptions and consistent `Q / SPACE / E / R` slot ordering across heroes.
 - 2026-03-06: **Forest grounding/art-direction pass + boss arena environment rebuild**:
   - `systems/forest_tilemap.lua`: removed the remaining screen-space ambient orb overlay entirely, replaced it with world-space composition layers (macro grass-value patches, edge framing, pebble/needle-bed decals), and added stronger contact shadows under trees, bushes, rocks, and blockers so props feel planted on the floor.
   - `scenes/boss_arena_scene.lua`: removed the placeholder Monochrome RPG edge-prop treatment and rebuilt the room as a dedicated forest arena with a central clearing, root-ring framing, stone/stump perimeter accents, and subdued edge dressing that fits the main game's current visual language.

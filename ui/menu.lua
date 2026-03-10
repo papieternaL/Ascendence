@@ -13,6 +13,8 @@ local Palette = {
     sliderFillSelected = {1.0, 0.82, 0.46, 1},
 }
 
+local CHARACTER_CLASSES = {"ARCHER", "WIZARD", "KNIGHT"}
+
 local SETTINGS_SECTION_TEMPLATES = {
     {
         title = "AUDIO",
@@ -70,6 +72,7 @@ function Menu:new(gameState)
         -- Button states
         hoveredButton = nil,
         selectedIndex = 1,
+        hoveredSkillIndex = nil,
         -- Animation
         titleBob = 0,
         titleBobSpeed = 2,
@@ -136,6 +139,19 @@ function Menu:init()
     self.visual.menuButtonImage = safeImage("assets/ui/menu/button_main.png")
     self.visual.settingsFrameImage = safeImage("assets/ui/settings/settings_frame.png")
     self.visual.backButtonImage = safeImage("assets/ui/settings/button_back.png")
+    self.visual.heroArt = {
+        archerSprite = safeImage("assets/Archer/spr_ArcherIdle_strip_NoBkg.png"),
+        bow = safeImage("assets/2D assets/Scribble Dungeons/PNG/Double (128px)/Items/weapon_bow.png"),
+        staff = safeImage("assets/2D assets/Scribble Dungeons/PNG/Double (128px)/Items/weapon_staff.png"),
+        sword = safeImage("assets/2D assets/Scribble Dungeons/PNG/Double (128px)/Items/weapon_longsword.png"),
+        shield = safeImage("assets/2D assets/Scribble Dungeons/PNG/Double (128px)/Items/shield_curved.png"),
+    }
+
+    if self.visual.heroArt.archerSprite then
+        local sprite = self.visual.heroArt.archerSprite
+        local frameSize = sprite:getHeight()
+        self.visual.heroArt.archerQuad = love.graphics.newQuad(0, 0, frameSize, frameSize, sprite:getWidth(), sprite:getHeight())
+    end
 end
 
 -- Helper: draw text with subtle shadow for readability
@@ -709,117 +725,502 @@ function Menu:drawKeybindRow(label, key, labelX, controlX, y, width, isSelected,
     drawTextWithShadow(displayKey, controlX + width / 2 - f:getWidth(displayKey) / 2, y + 5)
 end
 
-function Menu:drawCharacterSelect()
-    local w, h = love.graphics.getWidth(), love.graphics.getHeight()
-    
-    self:drawBackground()
-    
-    -- Header
-    love.graphics.setFont(self.headerFont)
-    local header = "CHOOSE YOUR HERO"
-    local headerW = self.headerFont:getWidth(header)
-    love.graphics.setColor(1, 0.9, 0.7, 1)
-    drawTextWithShadow(header, w/2 - headerW/2, 40)
-    
-    -- Character cards
-    local classes = {"ARCHER", "WIZARD", "KNIGHT"}
-    local cardWidth = 200
-    local cardHeight = 300
-    local spacing = 24
-    local totalWidth = #classes * cardWidth + (#classes - 1) * spacing
-    local startX = w/2 - totalWidth/2
-    
-    for i, classKey in ipairs(classes) do
-        local classData = self.gameState.HeroClasses[classKey]
-        local x = startX + (i - 1) * (cardWidth + spacing)
-        local y = h/2 - cardHeight/2
-        local isSelected = self.selectedIndex == i
-        
-        self:drawHeroCard(classData, x, y, cardWidth, cardHeight, isSelected)
+function Menu:getCharacterSelectLayout(w, h)
+    local panelX = math.floor(w * 0.06)
+    local panelY = 102
+    local panelW = w - panelX * 2
+    local panelH = h - panelY - 58
+    local pad = 24
+    local selectorH = 112
+    local portraitW = math.floor(panelW * 0.30)
+    local portraitX = panelX + pad
+    local portraitY = panelY + pad
+    local portraitH = panelH - selectorH - pad * 3
+    local infoX = portraitX + portraitW + 28
+    local infoY = portraitY
+    local infoW = panelX + panelW - pad - infoX
+    local skillY = infoY + 200
+    local skillGap = 12
+    local skillW = math.floor((infoW - skillGap * 3) / 4)
+    local skillH = 60
+    local tooltipY = skillY + skillH + 18
+    local selectorY = panelY + panelH - selectorH - pad
+    local tooltipH = selectorY - 18 - tooltipY
+    local confirmW = 208
+    local confirmH = 54
+    local confirmX = panelX + panelW - pad - confirmW
+    local confirmY = selectorY + selectorH - confirmH
+    local cardGap = 16
+    local cardAreaX = panelX + pad
+    local cardAreaW = confirmX - 20 - cardAreaX
+    local cardW = math.floor((cardAreaW - cardGap * 2) / 3)
+    local cardH = 92
+    local cardY = selectorY + selectorH - cardH
+
+    local cards = {}
+    for i = 1, #CHARACTER_CLASSES do
+        cards[i] = {
+            x = cardAreaX + (i - 1) * (cardW + cardGap),
+            y = cardY,
+            w = cardW,
+            h = cardH,
+        }
     end
-    
-    -- Back button hint
-    love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(0.65, 0.6, 0.55, 0.9)
-    drawTextWithShadow("ESC to go back | ENTER to select | Arrow keys to navigate", 20, h - 30)
+
+    local skillRects = {}
+    for i = 1, 4 do
+        skillRects[i] = {
+            x = infoX + (i - 1) * (skillW + skillGap),
+            y = skillY,
+            w = skillW,
+            h = skillH,
+        }
+    end
+
+    return {
+        panelX = panelX,
+        panelY = panelY,
+        panelW = panelW,
+        panelH = panelH,
+        portraitX = portraitX,
+        portraitY = portraitY,
+        portraitW = portraitW,
+        portraitH = portraitH,
+        infoX = infoX,
+        infoY = infoY,
+        infoW = infoW,
+        selectorY = selectorY,
+        selectorH = selectorH,
+        cards = cards,
+        skillRects = skillRects,
+        tooltipX = infoX,
+        tooltipY = tooltipY,
+        tooltipW = infoW,
+        tooltipH = tooltipH,
+        confirmX = confirmX,
+        confirmY = confirmY,
+        confirmW = confirmW,
+        confirmH = confirmH,
+    }
 end
 
-function Menu:drawHeroCard(classData, x, y, w, h, isSelected)
-    -- Card background with glow if selected
-    if isSelected then
-        -- Glow effect
-        for i = 3, 1, -1 do
-            love.graphics.setColor(classData.color[1], classData.color[2], classData.color[3], 0.1 * i)
-            love.graphics.rectangle("fill", x - i * 3, y - i * 3, w + i * 6, h + i * 6, 10, 10)
-        end
+function Menu:setSelectedCharacterIndex(index)
+    local clamped = math.max(1, math.min(#CHARACTER_CLASSES, index))
+    if self.selectedIndex ~= clamped then
+        self.hoveredSkillIndex = 1
     end
-    
-    -- Card background
-    love.graphics.setColor(0.1, 0.1, 0.15, 0.9)
-    love.graphics.rectangle("fill", x, y, w, h, 8, 8)
-    
-    -- Card border
-    if isSelected then
-        love.graphics.setColor(classData.color[1], classData.color[2], classData.color[3], 1)
-        love.graphics.setLineWidth(3)
+    self.selectedIndex = clamped
+end
+
+function Menu:getSelectedCharacterKey()
+    return CHARACTER_CLASSES[math.max(1, math.min(#CHARACTER_CLASSES, self.selectedIndex))]
+end
+
+function Menu:getCharacterSkillFocusIndex(classData)
+    local skills = classData and classData.skills or {}
+    if #skills == 0 then
+        return nil
+    end
+    local idx = self.hoveredSkillIndex or 1
+    return math.max(1, math.min(#skills, idx))
+end
+
+function Menu:confirmSelectedCharacter()
+    local States = self.gameState.States
+    self.gameState:selectHeroClass(self:getSelectedCharacterKey())
+    self.gameState:transitionTo(States.BIOME_SELECT)
+    self.selectedIndex = 1
+    self.hoveredSkillIndex = nil
+end
+
+function Menu:drawCharacterSkillIcon(skill, cx, cy, size, color)
+    local r, g, b = color[1], color[2], color[3]
+    love.graphics.push()
+    love.graphics.translate(cx, cy)
+    love.graphics.setLineWidth(2.4)
+    love.graphics.setColor(r, g, b, 1)
+
+    if skill.icon == "multi_shot" then
+        for i = -1, 1 do
+            local offset = i * size * 0.18
+            love.graphics.line(-size * 0.26, offset, size * 0.12, offset)
+            love.graphics.line(size * 0.12, offset, size * 0.30, offset - size * 0.10)
+            love.graphics.line(size * 0.12, offset, size * 0.30, offset + size * 0.10)
+        end
+    elseif skill.icon == "dash" or skill.icon == "bulwark_rush" then
+        for i = 0, 2 do
+            local ox = -size * 0.28 + i * size * 0.14
+            love.graphics.line(ox, size * 0.18, ox + size * 0.18, 0)
+            love.graphics.line(ox, -size * 0.18, ox + size * 0.18, 0)
+        end
+    elseif skill.icon == "arrow_volley" then
+        love.graphics.circle("line", 0, size * 0.14, size * 0.24)
+        for i = -1, 1 do
+            local ox = i * size * 0.16
+            love.graphics.line(ox, -size * 0.30, ox, size * 0.02)
+            love.graphics.line(ox, -size * 0.02, ox - size * 0.07, -size * 0.10)
+            love.graphics.line(ox, -size * 0.02, ox + size * 0.07, -size * 0.10)
+        end
+    elseif skill.icon == "frenzy" then
+        love.graphics.polygon("line",
+            -size * 0.06, -size * 0.30,
+            size * 0.12, -size * 0.08,
+            size * 0.04, 0,
+            size * 0.20, size * 0.28,
+            -size * 0.02, size * 0.10,
+            -size * 0.12, size * 0.30,
+            -size * 0.16, size * 0.04,
+            -size * 0.30, -size * 0.02
+        )
+    elseif skill.icon == "fireball" then
+        love.graphics.circle("line", size * 0.06, 0, size * 0.20)
+        love.graphics.line(-size * 0.30, 0, -size * 0.02, 0)
+        love.graphics.line(-size * 0.16, -size * 0.14, 0, 0)
+        love.graphics.line(-size * 0.16, size * 0.14, 0, 0)
+    elseif skill.icon == "ice_nova" then
+        for i = 0, 3 do
+            local angle = i * math.pi / 2
+            local dx = math.cos(angle) * size * 0.28
+            local dy = math.sin(angle) * size * 0.28
+            love.graphics.line(-dx, -dy, dx, dy)
+        end
+        love.graphics.circle("line", 0, 0, size * 0.08)
+    elseif skill.icon == "teleport" then
+        love.graphics.arc("line", "open", 0, 0, size * 0.28, math.pi * 0.2, math.pi * 1.8)
+        love.graphics.line(size * 0.12, -size * 0.28, size * 0.28, -size * 0.10)
+        love.graphics.line(size * 0.12, size * 0.28, size * 0.28, size * 0.10)
+    elseif skill.icon == "starfall" then
+        love.graphics.polygon("line",
+            0, -size * 0.32,
+            size * 0.10, -size * 0.08,
+            size * 0.32, 0,
+            size * 0.10, size * 0.08,
+            0, size * 0.32,
+            -size * 0.10, size * 0.08,
+            -size * 0.32, 0,
+            -size * 0.10, -size * 0.08
+        )
+    elseif skill.icon == "shield_bash" then
+        love.graphics.polygon("line",
+            -size * 0.18, -size * 0.26,
+            size * 0.18, -size * 0.26,
+            size * 0.24, -size * 0.04,
+            0, size * 0.30,
+            -size * 0.24, -size * 0.04
+        )
+        love.graphics.line(size * 0.12, 0, size * 0.32, 0)
+    elseif skill.icon == "whirlwind" then
+        love.graphics.arc("line", "open", -size * 0.06, 0, size * 0.24, -math.pi * 0.4, math.pi * 1.2)
+        love.graphics.arc("line", "open", size * 0.08, 0, size * 0.16, math.pi * 0.2, math.pi * 1.8)
+    elseif skill.icon == "fortress" then
+        love.graphics.rectangle("line", -size * 0.22, -size * 0.08, size * 0.44, size * 0.28)
+        love.graphics.line(-size * 0.28, size * 0.20, size * 0.28, size * 0.20)
+        love.graphics.line(-size * 0.18, -size * 0.08, -size * 0.18, -size * 0.24)
+        love.graphics.line(0, -size * 0.08, 0, -size * 0.28)
+        love.graphics.line(size * 0.18, -size * 0.08, size * 0.18, -size * 0.24)
     else
-        love.graphics.setColor(0.3, 0.3, 0.35, 1)
-        love.graphics.setLineWidth(1)
+        love.graphics.circle("line", 0, 0, size * 0.24)
     end
-    love.graphics.rectangle("line", x, y, w, h, 8, 8)
+
+    love.graphics.pop()
     love.graphics.setLineWidth(1)
-    
-    -- Class icon (colored circle for now)
-    local iconY = y + 50
-    love.graphics.setColor(classData.color[1], classData.color[2], classData.color[3], 1)
-    love.graphics.circle("fill", x + w/2, iconY, 30)
-    love.graphics.setColor(1, 1, 1, 0.3)
-    love.graphics.circle("fill", x + w/2 - 8, iconY - 8, 8)
-    
-    -- Class name
-    love.graphics.setFont(self.bodyFont)
-    local nameW = self.bodyFont:getWidth(classData.name)
-    love.graphics.setColor(1, 1, 1, 1)
-    drawTextWithShadow(classData.name, x + w/2 - nameW/2, y + 90)
-    
-    -- Description constrained to a few lines so stats stay inside the card.
-    love.graphics.setFont(self.smallFont)
-    love.graphics.setColor(0.78, 0.78, 0.75, 0.95)
-    local descLineHeight = 18
-    local descLines = self:wrapText(classData.description, w - 24)
-    local maxDescLines = 4
-    for i, line in ipairs(descLines) do
-        if i > maxDescLines then break end
-        if i == maxDescLines and #descLines > maxDescLines then
-            line = line:gsub("%s+$", "") .. "..."
-        end
-        local lineW = self.smallFont:getWidth(line)
-        drawTextWithShadow(line, x + w/2 - lineW/2, y + 125 + (i - 1) * descLineHeight)
+end
+
+function Menu:drawCharacterPortrait(classData, x, y, w, h)
+    local accent = classData.color
+    local secondary = classData.secondaryColor or classData.color
+    local art = self.visual.heroArt or {}
+
+    love.graphics.setColor(0.04, 0.06, 0.12, 0.96)
+    love.graphics.rectangle("fill", x, y, w, h, 18, 18)
+    love.graphics.setColor(accent[1], accent[2], accent[3], 0.20)
+    love.graphics.rectangle("fill", x + 1, y + 1, w - 2, 54, 18, 18)
+    love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.10)
+    for i = 0, 6 do
+        love.graphics.rectangle("line", x + 18 + i * 18, y + h - 72, 10, 46, 4, 4)
     end
-    
-    -- Stats (positioned below description with clear separation)
-    local statsY = y + 125 + math.min(#descLines, maxDescLines) * descLineHeight + 14
-    love.graphics.setColor(0.5, 0.5, 0.5, 1)
-    love.graphics.line(x + 20, statsY, x + w - 20, statsY)
-    
+    love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.18)
+    love.graphics.circle("fill", x + w * 0.52, y + h * 0.42, math.min(w, h) * 0.28)
+    love.graphics.setColor(accent[1], accent[2], accent[3], 0.12)
+    love.graphics.circle("line", x + w * 0.52, y + h * 0.42, math.min(w, h) * 0.36)
+    love.graphics.setColor(0.22, 0.28, 0.38, 0.75)
+    love.graphics.rectangle("fill", x + 28, y + h - 72, w - 56, 20, 10, 10)
+
+    local function drawItemImage(img, cx, cy, boxW, boxH, alpha, rot)
+        if not img then return end
+        local iw, ih = img:getWidth(), img:getHeight()
+        local scale = math.min(boxW / iw, boxH / ih)
+        love.graphics.setColor(1, 1, 1, alpha or 1)
+        love.graphics.draw(img, cx, cy, rot or 0, scale, scale, iw * 0.5, ih * 0.5)
+    end
+
+    love.graphics.setScissor(x, y, w, h)
+    if classData.id == "archer" and art.archerSprite and art.archerQuad then
+        local sprite = art.archerSprite
+        local frameSize = sprite:getHeight()
+        local scale = math.min((w * 0.66) / frameSize, (h * 0.74) / frameSize)
+        love.graphics.setColor(1, 1, 1, 1)
+        love.graphics.draw(sprite, art.archerQuad, x + w * 0.52, y + h * 0.56, 0, scale, scale, frameSize * 0.5, frameSize * 0.56)
+        drawItemImage(art.bow, x + w * 0.66, y + h * 0.54, w * 0.26, h * 0.26, 0.92, -0.22)
+        love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.30)
+        love.graphics.line(x + w * 0.18, y + h * 0.24, x + w * 0.74, y + h * 0.18)
+        love.graphics.line(x + w * 0.18, y + h * 0.30, x + w * 0.78, y + h * 0.24)
+    elseif classData.id == "wizard" then
+        love.graphics.setColor(0.14, 0.09, 0.24, 0.92)
+        love.graphics.polygon("fill",
+            x + w * 0.52, y + h * 0.22,
+            x + w * 0.34, y + h * 0.52,
+            x + w * 0.42, y + h * 0.80,
+            x + w * 0.62, y + h * 0.80,
+            x + w * 0.70, y + h * 0.52
+        )
+        love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.95)
+        love.graphics.circle("fill", x + w * 0.52, y + h * 0.26, w * 0.09)
+        love.graphics.setColor(accent[1], accent[2], accent[3], 1)
+        love.graphics.line(x + w * 0.69, y + h * 0.38, x + w * 0.80, y + h * 0.76)
+        love.graphics.circle("fill", x + w * 0.66, y + h * 0.34, w * 0.04)
+        love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.25)
+        love.graphics.circle("line", x + w * 0.66, y + h * 0.34, w * 0.12)
+        drawItemImage(art.staff, x + w * 0.78, y + h * 0.56, w * 0.26, h * 0.40, 0.90, -0.18)
+    else
+        love.graphics.setColor(0.20, 0.23, 0.28, 0.96)
+        love.graphics.circle("fill", x + w * 0.52, y + h * 0.24, w * 0.08)
+        love.graphics.polygon("fill",
+            x + w * 0.36, y + h * 0.48,
+            x + w * 0.68, y + h * 0.48,
+            x + w * 0.62, y + h * 0.78,
+            x + w * 0.42, y + h * 0.78
+        )
+        love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.95)
+        love.graphics.polygon("fill",
+            x + w * 0.38, y + h * 0.48,
+            x + w * 0.66, y + h * 0.48,
+            x + w * 0.62, y + h * 0.62,
+            x + w * 0.42, y + h * 0.62
+        )
+        love.graphics.setColor(accent[1], accent[2], accent[3], 1)
+        love.graphics.line(x + w * 0.70, y + h * 0.34, x + w * 0.78, y + h * 0.76)
+        love.graphics.line(x + w * 0.78, y + h * 0.76, x + w * 0.72, y + h * 0.72)
+        love.graphics.line(x + w * 0.78, y + h * 0.76, x + w * 0.84, y + h * 0.72)
+        drawItemImage(art.shield, x + w * 0.32, y + h * 0.58, w * 0.26, h * 0.32, 0.92, -0.10)
+        drawItemImage(art.sword, x + w * 0.76, y + h * 0.58, w * 0.24, h * 0.36, 0.92, 0.16)
+    end
+    love.graphics.setScissor()
+
+    love.graphics.setColor(accent[1], accent[2], accent[3], 1)
+    love.graphics.rectangle("line", x, y, w, h, 18, 18)
     love.graphics.setFont(self.smallFont)
-    -- HP
-    love.graphics.setColor(0.8, 0.3, 0.3, 1)
-    love.graphics.print("HP", x + 20, statsY + 10)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print(tostring(classData.baseHP), x + 60, statsY + 10)
-    
-    -- ATK
-    love.graphics.setColor(0.9, 0.6, 0.2, 1)
-    love.graphics.print("ATK", x + 20, statsY + 30)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print(tostring(classData.baseATK), x + 60, statsY + 30)
-    
-    -- Speed
-    love.graphics.setColor(0.3, 0.7, 0.9, 1)
-    love.graphics.print("SPD", x + 20, statsY + 50)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.print(tostring(classData.baseSpeed), x + 60, statsY + 50)
+    love.graphics.setColor(Palette.title)
+    drawTextWithShadow((classData.role or "Hero"):upper(), x + 18, y + 18)
+end
+
+function Menu:drawCharacterSelectorCard(classData, x, y, w, h, isSelected)
+    local accent = classData.color
+    local secondary = classData.secondaryColor or accent
+    if isSelected then
+        love.graphics.setColor(accent[1], accent[2], accent[3], 0.12)
+        love.graphics.rectangle("fill", x - 4, y - 4, w + 8, h + 8, 14, 14)
+    end
+
+    love.graphics.setColor(0.06, 0.09, 0.15, 0.96)
+    love.graphics.rectangle("fill", x, y, w, h, 12, 12)
+    love.graphics.setColor(accent[1], accent[2], accent[3], isSelected and 1 or 0.55)
+    love.graphics.rectangle("line", x, y, w, h, 12, 12)
+
+    love.graphics.setColor(accent[1], accent[2], accent[3], 0.18)
+    love.graphics.circle("fill", x + 44, y + h * 0.5, 26)
+
+    if classData.id == "wizard" then
+        love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.95)
+        love.graphics.circle("fill", x + 44, y + h * 0.5 - 2, 9)
+        love.graphics.setColor(accent[1], accent[2], accent[3], 0.95)
+        love.graphics.line(x + 44, y + h * 0.5 + 8, x + 44, y + h * 0.5 + 20)
+        love.graphics.line(x + 32, y + h * 0.5 + 6, x + 56, y + h * 0.5 + 6)
+    elseif classData.id == "knight" then
+        love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.95)
+        love.graphics.polygon("fill",
+            x + 36, y + h * 0.5 - 12,
+            x + 52, y + h * 0.5 - 12,
+            x + 58, y + h * 0.5,
+            x + 44, y + h * 0.5 + 16,
+            x + 30, y + h * 0.5
+        )
+    else
+        love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.95)
+        love.graphics.line(x + 28, y + h * 0.5 + 10, x + 56, y + h * 0.5 - 4)
+        love.graphics.line(x + 50, y + h * 0.5 - 16, x + 50, y + h * 0.5 + 10)
+    end
+
+    love.graphics.setFont(self.bodyFont)
+    love.graphics.setColor(Palette.text)
+    drawTextWithShadow(classData.name, x + 82, y + 16)
+    love.graphics.setFont(self.smallFont)
+    love.graphics.setColor(Palette.subtitle)
+    drawTextWithShadow((classData.role or "Hero"):upper(), x + 82, y + 40)
+    love.graphics.setColor(0.82, 0.86, 0.92, 0.92)
+    drawTextWithShadow(string.format("HP %d   ATK %d   SPD %d", classData.baseHP, classData.baseATK, classData.baseSpeed), x + 82, y + 62)
+end
+
+function Menu:drawCharacterSelect()
+    local w, h = love.graphics.getWidth(), love.graphics.getHeight()
+    local L = self:getCharacterSelectLayout(w, h)
+    local classKey = self:getSelectedCharacterKey()
+    local classData = self.gameState.HeroClasses[classKey]
+    local accent = classData.color
+    local secondary = classData.secondaryColor or accent
+    local focusedSkillIndex = self:getCharacterSkillFocusIndex(classData)
+    local focusedSkill = focusedSkillIndex and classData.skills[focusedSkillIndex] or nil
+    local mx, my = love.mouse.getPosition()
+    local confirmHovered = self:isPointInRect(mx, my, L.confirmX, L.confirmY, L.confirmW, L.confirmH)
+
+    love.graphics.setFont(self.headerFont)
+    local header = "CHOOSE YOUR HERO"
+    love.graphics.setColor(Palette.title)
+    drawTextWithShadow(header, w * 0.5 - self.headerFont:getWidth(header) * 0.5, 34)
+
+    love.graphics.setFont(self.smallFont)
+    love.graphics.setColor(Palette.subtitle)
+    local helper = "Hover skills to inspect the kit. Click a hero, then continue."
+    drawTextWithShadow(helper, w * 0.5 - self.smallFont:getWidth(helper) * 0.5, 70)
+
+    love.graphics.setColor(0.03, 0.05, 0.10, 0.95)
+    love.graphics.rectangle("fill", L.panelX, L.panelY, L.panelW, L.panelH, 22, 22)
+    love.graphics.setColor(accent[1], accent[2], accent[3], 0.16)
+    love.graphics.rectangle("fill", L.panelX + 1, L.panelY + 1, L.panelW - 2, 70, 22, 22)
+    love.graphics.setColor(secondary[1], secondary[2], secondary[3], 0.10)
+    love.graphics.rectangle("fill", L.panelX + 18, L.selectorY - 12, L.panelW - 36, 2)
+    love.graphics.setColor(0.22, 0.30, 0.42, 1)
+    love.graphics.rectangle("line", L.panelX, L.panelY, L.panelW, L.panelH, 22, 22)
+
+    self:drawCharacterPortrait(classData, L.portraitX, L.portraitY, L.portraitW, L.portraitH)
+
+    love.graphics.setFont(self.smallFont)
+    love.graphics.setColor(accent[1], accent[2], accent[3], 1)
+    drawTextWithShadow((classData.role or "Hero"):upper(), L.infoX, L.infoY + 2)
+
+    love.graphics.setFont(self.headerFont)
+    love.graphics.setColor(Palette.text)
+    drawTextWithShadow(classData.name:upper(), L.infoX, L.infoY + 20)
+
+    love.graphics.setFont(self.smallFont)
+    love.graphics.setColor(Palette.subtitle)
+    local descLines = self:wrapText(classData.description or "", L.infoW - 8)
+    for i = 1, math.min(#descLines, 2) do
+        drawTextWithShadow(descLines[i], L.infoX, L.infoY + 70 + (i - 1) * 18)
+    end
+    local loreLines = self:wrapText(classData.lore or "", L.infoW - 8)
+    love.graphics.setColor(0.72, 0.80, 0.92, 0.90)
+    for i = 1, math.min(#loreLines, 2) do
+        drawTextWithShadow(loreLines[i], L.infoX, L.infoY + 112 + (i - 1) * 18)
+    end
+
+    local statY = L.infoY + 150
+    local statGap = 12
+    local statW = math.floor((L.infoW - statGap * 3) / 4)
+    local stats = {
+        { label = "HP", value = classData.baseHP, color = {0.92, 0.38, 0.38} },
+        { label = "ATK", value = classData.baseATK, color = {0.96, 0.72, 0.34} },
+        { label = "SPD", value = classData.baseSpeed, color = {0.42, 0.90, 0.96} },
+        { label = "RNG", value = classData.attackRange, color = {0.74, 0.80, 0.98} },
+    }
+    for i, stat in ipairs(stats) do
+        local sx = L.infoX + (i - 1) * (statW + statGap)
+        love.graphics.setColor(0.07, 0.10, 0.17, 0.96)
+        love.graphics.rectangle("fill", sx, statY, statW, 52, 10, 10)
+        love.graphics.setColor(stat.color[1], stat.color[2], stat.color[3], 0.80)
+        love.graphics.rectangle("line", sx, statY, statW, 52, 10, 10)
+        love.graphics.setFont(self.smallFont)
+        love.graphics.setColor(stat.color[1], stat.color[2], stat.color[3], 1)
+        drawTextWithShadow(stat.label, sx + 12, statY + 8)
+        love.graphics.setFont(self.bodyFont)
+        love.graphics.setColor(Palette.text)
+        drawTextWithShadow(tostring(stat.value or 0), sx + 12, statY + 24)
+    end
+
+    love.graphics.setFont(self.smallFont)
+    love.graphics.setColor(Palette.section)
+    drawTextWithShadow("SIGNATURE SKILLS", L.infoX, L.infoY + 196)
+
+    for i, skill in ipairs(classData.skills or {}) do
+        local rect = L.skillRects[i]
+        if rect then
+            local isHovered = focusedSkillIndex == i
+            love.graphics.setColor(0.08, 0.11, 0.18, 0.98)
+            love.graphics.rectangle("fill", rect.x, rect.y, rect.w, rect.h, 12, 12)
+            love.graphics.setColor(accent[1], accent[2], accent[3], isHovered and 1 or 0.45)
+            love.graphics.rectangle("line", rect.x, rect.y, rect.w, rect.h, 12, 12)
+            love.graphics.setColor(accent[1], accent[2], accent[3], isHovered and 0.18 or 0.08)
+            love.graphics.rectangle("fill", rect.x + 1, rect.y + 1, rect.w - 2, rect.h - 2, 12, 12)
+
+            love.graphics.setColor(0.04, 0.06, 0.10, 0.95)
+            love.graphics.circle("fill", rect.x + 28, rect.y + rect.h * 0.5, 18)
+            self:drawCharacterSkillIcon(skill, rect.x + 28, rect.y + rect.h * 0.5, 24, isHovered and secondary or accent)
+
+            love.graphics.setFont(self.smallFont)
+            love.graphics.setColor(Palette.title)
+            drawTextWithShadow(skill.key, rect.x + rect.w - self.smallFont:getWidth(skill.key) - 12, rect.y + 10)
+            love.graphics.setColor(Palette.text)
+            drawTextWithShadow(self:truncateText(self.smallFont, skill.name, rect.w - 108), rect.x + 56, rect.y + 12)
+            love.graphics.setColor(Palette.subtitle)
+            drawTextWithShadow(self:truncateText(self.smallFont, skill.summary or "", rect.w - 108), rect.x + 56, rect.y + 30)
+        end
+    end
+
+    if focusedSkill then
+        love.graphics.setColor(0.06, 0.09, 0.15, 0.98)
+        love.graphics.rectangle("fill", L.tooltipX, L.tooltipY, L.tooltipW, L.tooltipH, 14, 14)
+        love.graphics.setColor(accent[1], accent[2], accent[3], 0.68)
+        love.graphics.rectangle("line", L.tooltipX, L.tooltipY, L.tooltipW, L.tooltipH, 14, 14)
+        love.graphics.setColor(0.04, 0.06, 0.10, 0.94)
+        love.graphics.circle("fill", L.tooltipX + 36, L.tooltipY + 36, 24)
+        self:drawCharacterSkillIcon(focusedSkill, L.tooltipX + 36, L.tooltipY + 36, 30, secondary)
+
+        love.graphics.setFont(self.bodyFont)
+        love.graphics.setColor(Palette.text)
+        drawTextWithShadow(focusedSkill.name, L.tooltipX + 72, L.tooltipY + 14)
+
+        local modeText = string.upper(focusedSkill.mode or "Skill")
+        local modeW = self.smallFont:getWidth(modeText) + 18
+        love.graphics.setColor(accent[1], accent[2], accent[3], 0.18)
+        love.graphics.rectangle("fill", L.tooltipX + L.tooltipW - modeW - 14, L.tooltipY + 12, modeW, 24, 8, 8)
+        love.graphics.setColor(accent[1], accent[2], accent[3], 0.85)
+        love.graphics.rectangle("line", L.tooltipX + L.tooltipW - modeW - 14, L.tooltipY + 12, modeW, 24, 8, 8)
+        love.graphics.setFont(self.smallFont)
+        love.graphics.setColor(Palette.title)
+        drawTextWithShadow(modeText, L.tooltipX + L.tooltipW - modeW - 14 + 9, L.tooltipY + 17)
+
+        love.graphics.setColor(Palette.subtitle)
+        drawTextWithShadow((focusedSkill.summary or ""):upper(), L.tooltipX + 72, L.tooltipY + 40)
+        love.graphics.setColor(0.86, 0.89, 0.95, 0.96)
+        local skillDescLines = self:wrapText(focusedSkill.description or "", L.tooltipW - 92)
+        for i = 1, math.min(#skillDescLines, 4) do
+            drawTextWithShadow(skillDescLines[i], L.tooltipX + 72, L.tooltipY + 60 + (i - 1) * 18)
+        end
+    end
+
+    for i, className in ipairs(CHARACTER_CLASSES) do
+        self:drawCharacterSelectorCard(
+            self.gameState.HeroClasses[className],
+            L.cards[i].x,
+            L.cards[i].y,
+            L.cards[i].w,
+            L.cards[i].h,
+            self.selectedIndex == i
+        )
+    end
+
+    love.graphics.setColor(confirmHovered and accent[1] or 0.10, confirmHovered and accent[2] or 0.16, confirmHovered and accent[3] or 0.24, 0.95)
+    love.graphics.rectangle("fill", L.confirmX, L.confirmY, L.confirmW, L.confirmH, 12, 12)
+    love.graphics.setColor(secondary[1], secondary[2], secondary[3], 1)
+    love.graphics.rectangle("line", L.confirmX, L.confirmY, L.confirmW, L.confirmH, 12, 12)
+    love.graphics.setFont(self.bodyFont)
+    love.graphics.setColor(Palette.title)
+    local continueLabel = "CONTINUE"
+    drawTextWithShadow(continueLabel, L.confirmX + L.confirmW * 0.5 - self.bodyFont:getWidth(continueLabel) * 0.5, L.confirmY + 15)
+
+    love.graphics.setFont(self.smallFont)
+    love.graphics.setColor(0.65, 0.6, 0.55, 0.9)
+    drawTextWithShadow("ESC to go back | ENTER to continue | Arrow keys to change hero", 20, h - 30)
 end
 
 function Menu:drawBiomeSelect()
@@ -1137,6 +1538,23 @@ function Menu:wrapText(text, maxWidth)
     return lines
 end
 
+function Menu:truncateText(font, text, maxWidth)
+    text = tostring(text or "")
+    if font:getWidth(text) <= maxWidth then
+        return text
+    end
+
+    local truncated = text
+    while #truncated > 0 and font:getWidth(truncated .. "...") > maxWidth do
+        truncated = truncated:sub(1, -2)
+    end
+
+    if truncated == "" then
+        return "..."
+    end
+    return truncated .. "..."
+end
+
 function Menu:keypressed(key)
     local state = self.gameState:getState()
     local States = self.gameState.States
@@ -1157,6 +1575,7 @@ function Menu:keypressed(key)
             if self.selectedIndex == 1 then
                 self.gameState:transitionTo(States.CHARACTER_SELECT)
                 self.selectedIndex = 1
+                self.hoveredSkillIndex = 1
             elseif self.selectedIndex == 2 then
                 self.gameState:selectHeroClass("ARCHER")
                 self.gameState:transitionTo(States.TUTORIAL)
@@ -1228,20 +1647,20 @@ function Menu:keypressed(key)
             self.selectedIndex = 4
         end
     elseif state == States.CHARACTER_SELECT then
-        local classes = {"ARCHER", "WIZARD", "KNIGHT"}
         if key == "left" then
-            self.selectedIndex = self.selectedIndex - 1
-            if self.selectedIndex < 1 then self.selectedIndex = #classes end
+            local nextIndex = self.selectedIndex - 1
+            if nextIndex < 1 then nextIndex = #CHARACTER_CLASSES end
+            self:setSelectedCharacterIndex(nextIndex)
         elseif key == "right" then
-            self.selectedIndex = self.selectedIndex + 1
-            if self.selectedIndex > #classes then self.selectedIndex = 1 end
+            local nextIndex = self.selectedIndex + 1
+            if nextIndex > #CHARACTER_CLASSES then nextIndex = 1 end
+            self:setSelectedCharacterIndex(nextIndex)
         elseif key == "return" or key == "space" then
-            self.gameState:selectHeroClass(classes[self.selectedIndex])
-            self.gameState:transitionTo(States.BIOME_SELECT)
-            self.selectedIndex = 1
+            self:confirmSelectedCharacter()
         elseif key == "escape" then
             self.gameState:transitionTo(States.MENU)
             self.selectedIndex = 1
+            self.hoveredSkillIndex = nil
         end
     elseif state == States.BIOME_SELECT then
         local biomes = {"DEEPWOOD", "GREY_HALLS", "ASH_CRAG"}
@@ -1292,6 +1711,7 @@ function Menu:mousepressed(x, y, button)
         if self:isPointInButton(x, y, w/2, h * 0.50, 200, 40) then
             self.gameState:transitionTo(States.CHARACTER_SELECT)
             self.selectedIndex = 1
+            self.hoveredSkillIndex = 1
         elseif self:isPointInButton(x, y, w/2, h * 0.56, 200, 40) then
             self.gameState:selectHeroClass("ARCHER")
             self.gameState:transitionTo(States.TUTORIAL)
@@ -1340,26 +1760,26 @@ function Menu:mousepressed(x, y, button)
             self.selectedIndex = 4
         end
     elseif state == States.CHARACTER_SELECT then
-        -- Check character cards
-        local classes = {"ARCHER", "WIZARD", "KNIGHT"}
-        local cardWidth = 200
-        local cardHeight = 300
-        local spacing = 24
-        local totalWidth = #classes * cardWidth + (#classes - 1) * spacing
-        local startX = w/2 - totalWidth/2
-        
-        for i, classKey in ipairs(classes) do
-            local cardX = startX + (i - 1) * (cardWidth + spacing)
-            local cardY = h/2 - cardHeight/2
-            
-            if x >= cardX and x <= cardX + cardWidth and y >= cardY and y <= cardY + cardHeight then
-                self.gameState:selectHeroClass(classKey)
-                self.gameState:transitionTo(States.BIOME_SELECT)
-                self.selectedIndex = 1
+        local L = self:getCharacterSelectLayout(w, h)
+        for i, rect in ipairs(L.cards) do
+            if self:isPointInRect(x, y, rect.x, rect.y, rect.w, rect.h) then
+                self:setSelectedCharacterIndex(i)
                 return
             end
         end
-        
+
+        local classData = self.gameState.HeroClasses[self:getSelectedCharacterKey()]
+        for i, rect in ipairs(L.skillRects) do
+            if classData and classData.skills and classData.skills[i] and self:isPointInRect(x, y, rect.x, rect.y, rect.w, rect.h) then
+                self.hoveredSkillIndex = i
+                return
+            end
+        end
+
+        if self:isPointInRect(x, y, L.confirmX, L.confirmY, L.confirmW, L.confirmH) then
+            self:confirmSelectedCharacter()
+            return
+        end
     elseif state == States.BIOME_SELECT then
         -- Check biome cards
         local biomes = {"DEEPWOOD", "GREY_HALLS", "ASH_CRAG"}
@@ -1424,23 +1844,23 @@ function Menu:mousemoved(x, y)
             self.selectedIndex = 1
         end
     elseif state == States.CHARACTER_SELECT then
-        local classes = {"ARCHER", "WIZARD", "KNIGHT"}
-        local cardWidth = 200
-        local cardHeight = 300
-        local spacing = 24
-        local totalWidth = #classes * cardWidth + (#classes - 1) * spacing
-        local startX = w/2 - totalWidth/2
-        
-        for i, classKey in ipairs(classes) do
-            local cardX = startX + (i - 1) * (cardWidth + spacing)
-            local cardY = h/2 - cardHeight/2
-            
-            if x >= cardX and x <= cardX + cardWidth and y >= cardY and y <= cardY + cardHeight then
-                self.selectedIndex = i
+        local L = self:getCharacterSelectLayout(w, h)
+        self.hoveredSkillIndex = nil
+
+        for i, rect in ipairs(L.cards) do
+            if self:isPointInRect(x, y, rect.x, rect.y, rect.w, rect.h) then
+                self:setSelectedCharacterIndex(i)
                 return
             end
         end
-        
+
+        local classData = self.gameState.HeroClasses[self:getSelectedCharacterKey()]
+        for i, rect in ipairs(L.skillRects) do
+            if classData and classData.skills and classData.skills[i] and self:isPointInRect(x, y, rect.x, rect.y, rect.w, rect.h) then
+                self.hoveredSkillIndex = i
+                return
+            end
+        end
     elseif state == States.BIOME_SELECT then
         local biomes = {"DEEPWOOD", "GREY_HALLS", "ASH_CRAG"}
         local cardWidth = 220
