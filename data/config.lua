@@ -206,8 +206,8 @@ Config.ForestScene = {
 
 -- World Size
 Config.World = {
-  width = 2640,
-  height = 1760,
+  width = 3200,
+  height = 2160,
   enemyScale = 1.18,
   playerMoveSpeedScale = 1.05,
   enemyMoveSpeedScale = 1.05,

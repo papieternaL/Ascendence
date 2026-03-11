@@ -47,6 +47,15 @@ local function safeImage(path)
     return img
 end
 
+local function drawRotatedEllipse(mode, x, y, rx, ry, angle)
+    love.graphics.push()
+    love.graphics.translate(x, y)
+    love.graphics.rotate(angle or 0)
+    love.graphics.scale(rx, ry)
+    love.graphics.circle(mode, 0, 0, 1)
+    love.graphics.pop()
+end
+
 function ForestTilemap:new()
     local tilemap = {
         tileSize = 32,
@@ -65,6 +74,7 @@ function ForestTilemap:new()
         -- Layered world-space ground dressing.
         macroPatches = {},
         storyDecals = {},
+        storyRegions = {},
         groundDecor = {},
 
         -- Optional art-driven assets.
@@ -220,6 +230,7 @@ function ForestTilemap:generate()
     if self.generated then return end
 
     local worldW, worldH = worldSize()
+    local areaScale = (worldW * worldH) / (2640 * 1760)
     local centerX, centerY = worldW * 0.5, worldH * 0.5
     local centerPlayRx = 250
     local centerPlayRy = 180
@@ -227,6 +238,12 @@ function ForestTilemap:generate()
     local laneHalfH = 74
     local laneReachX = math.floor(worldW * 0.34)
     local laneReachY = math.floor(worldH * 0.32)
+    local storyRegions = {
+        { kind = "shrine_glade", x = centerX, y = centerY - worldH * 0.18, rx = 188, ry = 122 },
+        { kind = "logging_camp", x = centerX + worldW * 0.18, y = centerY + 64, rx = 214, ry = 144 },
+        { kind = "flower_meadow", x = centerX - worldW * 0.18, y = centerY + worldH * 0.15, rx = 214, ry = 146 },
+        { kind = "fallen_hollow", x = centerX - worldW * 0.17, y = centerY - worldH * 0.13, rx = 184, ry = 132 },
+    }
     local clusterAnchors = {
         { x = 170, y = 170, rx = 160, ry = 120 },
         { x = worldW - 170, y = 170, rx = 160, ry = 120 },
@@ -248,6 +265,11 @@ function ForestTilemap:generate()
         end
         if math.abs(y - centerY) <= (laneHalfH + padding) and math.abs(x - centerX) <= (laneReachX + padding) then
             return true
+        end
+        for _, region in ipairs(storyRegions) do
+            if inEllipse(x, y, region.x, region.y, region.rx * 0.62 + padding, region.ry * 0.62 + padding) then
+                return true
+            end
         end
         return false
     end
@@ -271,6 +293,16 @@ function ForestTilemap:generate()
         return false
     end
 
+    local function nearStoryRegionRim(x, y)
+        for _, region in ipairs(storyRegions) do
+            if inEllipse(x, y, region.x, region.y, region.rx * 1.18, region.ry * 1.18)
+                and not inEllipse(x, y, region.x, region.y, region.rx * 0.72, region.ry * 0.72) then
+                return true
+            end
+        end
+        return false
+    end
+
     self.trees = {}
     self.smallTrees = {}
     self.bushes = {}
@@ -281,6 +313,7 @@ function ForestTilemap:generate()
     self.collisionBlockers = {}
     self.macroPatches = {}
     self.storyDecals = {}
+    self.storyRegions = storyRegions
     self.groundDecor = {}
 
     local usingWinluTrees = self.assets.winluTreeSheet ~= nil
@@ -317,11 +350,11 @@ function ForestTilemap:generate()
             { key = "winlu_rock_3", ox = 24, oy = 48, scale = 0.84, blockerScale = 2.35, blockerRadius = 40, collisionOffsetY = -18, drawOffsetY = 14 },
         }
     end
-    local treeCount = usingWinluTrees and 7 or 18
-    local smallTreeCount = usingWinluTrees and 10 or 20
-    local bushCount = usingWinluDecor and 14 or 34
-    local rockCount = usingWinluDecor and 18 or 24
-    local largeBlockerCount = usingWinluDecor and 7 or 8
+    local treeCount = math.floor((usingWinluTrees and 7 or 18) * areaScale + 0.5)
+    local smallTreeCount = math.floor((usingWinluTrees and 10 or 20) * areaScale + 0.5)
+    local bushCount = math.floor((usingWinluDecor and 14 or 34) * areaScale + 0.5)
+    local rockCount = math.floor((usingWinluDecor and 18 or 24) * areaScale + 0.5)
+    local largeBlockerCount = math.floor((usingWinluDecor and 7 or 8) * math.max(1.0, areaScale * 0.92) + 0.5)
     local function addScattered(list, count, minDist, margin, makeItem)
         local tries = count * 20
         while #list < count and tries > 0 do
@@ -337,6 +370,9 @@ function ForestTilemap:generate()
             local weight = edgeWeight(x, y)
             if favoredZone then
                 weight = math.min(1.0, weight + 0.35)
+            end
+            if nearStoryRegionRim(x, y) then
+                weight = math.min(1.0, weight + 0.24)
             end
             if math.random() > weight then
                 goto continue
@@ -484,7 +520,7 @@ function ForestTilemap:generate()
         self.collisionBlockers[#self.collisionBlockers + 1] = blk
     end
 
-    local function addMacroPatch(kind, count, marginX, marginY, minRX, maxRX, minRY, maxRY)
+    local function addMacroPatch(kind, count, marginX, marginY, minRX, maxRX, minRY, maxRY, angle)
         for i = 1, count do
             local x = math.random(marginX, worldW - marginX)
             local y = math.random(marginY, worldH - marginY)
@@ -498,6 +534,26 @@ function ForestTilemap:generate()
                 y = y,
                 rx = math.random(minRX, maxRX),
                 ry = math.random(minRY, maxRY),
+                angle = angle or 0,
+            }
+        end
+    end
+
+    local function addTrail(x1, y1, x2, y2, rx, ry)
+        local dx = x2 - x1
+        local dy = y2 - y1
+        local angle = math.atan2(dy, dx)
+        local dist = math.sqrt(dx * dx + dy * dy)
+        local steps = math.max(2, math.floor(dist / 130))
+        for i = 0, steps do
+            local t = i / steps
+            self.macroPatches[#self.macroPatches + 1] = {
+                kind = "trail",
+                x = x1 + dx * t,
+                y = y1 + dy * t,
+                rx = rx + math.random(-8, 8),
+                ry = ry + math.random(-4, 4),
+                angle = angle,
             }
         end
     end
@@ -525,16 +581,41 @@ function ForestTilemap:generate()
         rx = laneReachX + 22,
         ry = laneHalfH + 18,
     }
+    for _, region in ipairs(storyRegions) do
+        self.macroPatches[#self.macroPatches + 1] = {
+            kind = region.kind,
+            x = region.x,
+            y = region.y,
+            rx = region.rx,
+            ry = region.ry,
+            angle = region.angle or 0,
+        }
+        addTrail(centerX, centerY, region.x, region.y, 84, 20)
+    end
+    addTrail(storyRegions[1].x, storyRegions[1].y, storyRegions[4].x, storyRegions[4].y, 58, 16)
+    addTrail(storyRegions[4].x, storyRegions[4].y, storyRegions[3].x, storyRegions[3].y, 54, 16)
+    addTrail(storyRegions[2].x, storyRegions[2].y, storyRegions[3].x, storyRegions[3].y, 64, 18)
 
-    local function addStoryDecal(kind, x, y, radius)
-        self.storyDecals[#self.storyDecals + 1] = {
+    local function addStoryDecal(kind, x, y, radius, extra)
+        local decal = {
             kind = kind,
             x = x,
             y = y,
             radius = radius,
             phase = math.random() * math.pi * 2,
         }
+        if extra then
+            for key, value in pairs(extra) do
+                decal[key] = value
+            end
+        end
+        self.storyDecals[#self.storyDecals + 1] = decal
     end
+
+    addStoryDecal("stone_ring", centerX, centerY - 26, 34)
+    addStoryDecal("shrine_core", centerX, centerY - 26, 12)
+    addStoryDecal("trail_marks", centerX - 120, centerY + 82, 32, { angle = -0.62 })
+    addStoryDecal("trail_marks", centerX + 136, centerY + 28, 38, { angle = 0.08 })
 
     for _, blk in ipairs(self.largeBlockers) do
         addStoryDecal("pebbles", blk.x + math.random(-28, 28), (blk.drawY or blk.y) + math.random(18, 34), 14 + math.random() * 8)
@@ -542,6 +623,34 @@ function ForestTilemap:generate()
     for _, tree in ipairs(self.trees) do
         if math.random() < 0.6 then
             addStoryDecal("needle_bed", tree.x + math.random(-8, 8), tree.y + math.random(4, 14), 18 + math.random() * 10)
+        end
+    end
+    for _, region in ipairs(storyRegions) do
+        if region.kind == "logging_camp" then
+            for i = 1, 5 do
+                addStoryDecal("log_cluster", region.x + math.random(-90, 90), region.y + math.random(-54, 54), 18 + math.random() * 10)
+            end
+            for i = 1, 4 do
+                addStoryDecal("stump_cluster", region.x + math.random(-110, 110), region.y + math.random(-62, 62), 12 + math.random() * 8)
+            end
+            addStoryDecal("trail_marks", region.x - 58, region.y + 18, 36, { angle = 0.10 })
+        elseif region.kind == "flower_meadow" then
+            for i = 1, 12 do
+                addStoryDecal("flower_patch", region.x + math.random(-120, 120), region.y + math.random(-84, 84), 16 + math.random() * 16)
+            end
+        elseif region.kind == "shrine_glade" then
+            addStoryDecal("stone_ring", region.x, region.y, 42)
+            addStoryDecal("shrine_core", region.x, region.y, 14)
+            for i = 1, 4 do
+                addStoryDecal("flower_patch", region.x + math.random(-70, 70), region.y + math.random(-46, 46), 12 + math.random() * 10)
+            end
+        elseif region.kind == "fallen_hollow" then
+            for i = 1, 5 do
+                addStoryDecal("fallen_log", region.x + math.random(-100, 100), region.y + math.random(-70, 70), 18 + math.random() * 14)
+            end
+            for i = 1, 4 do
+                addStoryDecal("needle_bed", region.x + math.random(-110, 110), region.y + math.random(-72, 72), 22 + math.random() * 12)
+            end
         end
     end
 
@@ -593,10 +702,20 @@ local function drawMacroPatch(patch)
         love.graphics.setColor(0.42, 0.64, 0.38, 0.035)
     elseif patch.kind == "clearing" then
         love.graphics.setColor(0.48, 0.70, 0.44, 0.03)
+    elseif patch.kind == "trail" then
+        love.graphics.setColor(0.38, 0.34, 0.22, 0.125)
+    elseif patch.kind == "logging_camp" then
+        love.graphics.setColor(0.42, 0.36, 0.24, 0.10)
+    elseif patch.kind == "flower_meadow" then
+        love.graphics.setColor(0.54, 0.74, 0.46, 0.075)
+    elseif patch.kind == "shrine_glade" then
+        love.graphics.setColor(0.46, 0.66, 0.48, 0.085)
+    elseif patch.kind == "fallen_hollow" then
+        love.graphics.setColor(0.32, 0.38, 0.24, 0.095)
     else
         return
     end
-    love.graphics.ellipse("fill", patch.x, patch.y, patch.rx, patch.ry)
+    drawRotatedEllipse("fill", patch.x, patch.y, patch.rx, patch.ry, patch.angle)
 end
 
 local function drawStoryDecal(decal)
@@ -615,6 +734,73 @@ local function drawStoryDecal(decal)
             local x = decal.x + i * (decal.radius * 0.18)
             love.graphics.line(x, decal.y + decal.radius * 0.18, x - 2, decal.y - decal.radius * 0.16)
         end
+    elseif decal.kind == "log_cluster" or decal.kind == "fallen_log" then
+        local angle = decal.phase
+        local length = decal.radius * (decal.kind == "fallen_log" and 1.7 or 1.35)
+        local width = decal.radius * 0.28
+        love.graphics.push()
+        love.graphics.translate(decal.x, decal.y)
+        love.graphics.rotate(angle)
+        love.graphics.setColor(0.34, 0.22, 0.12, 0.9)
+        love.graphics.rectangle("fill", -length * 0.5, -width, length, width * 2, width, width)
+        love.graphics.setColor(0.46, 0.30, 0.18, 0.55)
+        love.graphics.rectangle("fill", -length * 0.42, -width * 0.55, length * 0.84, width * 1.1, width * 0.7, width * 0.7)
+        love.graphics.setColor(0.62, 0.48, 0.28, 0.65)
+        love.graphics.circle("line", -length * 0.5, 0, width * 0.85)
+        love.graphics.circle("line", length * 0.5, 0, width * 0.85)
+        love.graphics.pop()
+    elseif decal.kind == "stump_cluster" then
+        love.graphics.setColor(0.34, 0.24, 0.16, 0.88)
+        for i = 1, 3 do
+            local a = decal.phase + i * 2.1
+            local rr = decal.radius * (0.25 + i * 0.15)
+            local x = decal.x + math.cos(a) * rr
+            local y = decal.y + math.sin(a) * rr * 0.7
+            love.graphics.circle("fill", x, y, 4 + i)
+            love.graphics.setColor(0.70, 0.56, 0.36, 0.45)
+            love.graphics.circle("line", x, y, 3 + i)
+            love.graphics.setColor(0.34, 0.24, 0.16, 0.88)
+        end
+    elseif decal.kind == "flower_patch" then
+        for i = 1, 8 do
+            local a = decal.phase + i * 0.8
+            local rr = decal.radius * (0.18 + (i % 4) * 0.18)
+            local x = decal.x + math.cos(a) * rr
+            local y = decal.y + math.sin(a) * rr * 0.72
+            love.graphics.setColor(0.92, 0.82, 0.56, 0.34)
+            love.graphics.circle("fill", x, y, 1.5)
+            love.graphics.setColor(0.84, 0.94, 1.0, 0.26)
+            love.graphics.circle("fill", x + 2, y - 1, 1.2)
+            love.graphics.setColor(0.96, 0.72, 0.84, 0.22)
+            love.graphics.circle("fill", x - 1, y + 2, 1.1)
+        end
+    elseif decal.kind == "stone_ring" then
+        love.graphics.setColor(0.34, 0.38, 0.40, 0.82)
+        for i = 0, 7 do
+            local a = decal.phase + i * (math.pi * 2 / 8)
+            local x = decal.x + math.cos(a) * decal.radius
+            local y = decal.y + math.sin(a) * decal.radius * 0.74
+            love.graphics.circle("fill", x, y, 3.5)
+        end
+        love.graphics.setColor(0.78, 0.86, 0.94, 0.20)
+        love.graphics.circle("line", decal.x, decal.y, decal.radius * 0.68)
+    elseif decal.kind == "shrine_core" then
+        love.graphics.setBlendMode("add", "alphamultiply")
+        love.graphics.setColor(0.74, 0.92, 1.0, 0.32)
+        love.graphics.circle("fill", decal.x, decal.y, decal.radius * 1.4)
+        love.graphics.setBlendMode("alpha")
+        love.graphics.setColor(0.70, 0.84, 0.96, 0.88)
+        love.graphics.circle("line", decal.x, decal.y, decal.radius)
+        love.graphics.line(decal.x - decal.radius * 0.8, decal.y, decal.x + decal.radius * 0.8, decal.y)
+        love.graphics.line(decal.x, decal.y - decal.radius * 0.8, decal.x, decal.y + decal.radius * 0.8)
+    elseif decal.kind == "trail_marks" then
+        love.graphics.push()
+        love.graphics.translate(decal.x, decal.y)
+        love.graphics.rotate(decal.angle or 0)
+        love.graphics.setColor(0.34, 0.30, 0.20, 0.30)
+        love.graphics.rectangle("fill", -decal.radius * 0.75, -decal.radius * 0.18, decal.radius * 1.5, decal.radius * 0.12, 2, 2)
+        love.graphics.rectangle("fill", -decal.radius * 0.75, decal.radius * 0.08, decal.radius * 1.5, decal.radius * 0.12, 2, 2)
+        love.graphics.pop()
     end
 end
 
