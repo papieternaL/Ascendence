@@ -237,6 +237,9 @@ Input → Player.update() → Movement
 10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
+- 2026-03-11: **Forest scale-up + authored environmental storytelling pass**:
+ - `data/config.lua`: increased the world size again so the forest has more room for authored composition rather than feeling cramped and repetitive.
+ - `systems/forest_tilemap.lua`: reworked the forest generation into clearer story regions near the central play space, including a shrine-like focal glade, logging scars with felled-log clusters, a flower meadow beat, a fallen hollow, and more readable connecting ground trails so the level tells a stronger spatial story.
 - 2026-03-11: **Archer fire-attunement expansion pass**:
  - Added three Fire-only follow-up upgrades in `data/upgrades_archer.lua`: `Wildfire` (burn spreads on contact at reduced strength/duration), `Fire Spread` (burning deaths leave a small damaging fire circle), and `Explosion` (burning deaths trigger a larger AOE blast).
  - `systems/player_stats.lua`, `systems/status_effects.lua`, `scenes/game_scene.lua`, and `scenes/boss_arena_scene.lua` now support the new fire-synergy runtime: reduced-strength spread burns, persistent ground fire patches, burn-death explosion damage, and non-repeatable gating for those high-power upgrades.
