@@ -329,8 +329,8 @@ function ForestTilemap:generate()
     if usingWinluTrees then
         treeTypes = {
             -- Match the provided reference: one tall pine + one rounded tree.
-            { key = "winlu_tree_3", ox = 96, oy = 288, scale = 0.40, smallScale = 0.23, collisionRadius = 14, collisionOffsetY = -10 },
-            { key = "winlu_tree_4", ox = 96, oy = 288, scale = 0.36, smallScale = 0.21, collisionRadius = 18, collisionOffsetY = -12 },
+            { key = "winlu_tree_3", ox = 96, oy = 288, scale = 0.40, smallScale = 0.23, collisionRadius = 14, collisionOffsetY = -10, drawOffsetY = 18, smallDrawOffsetY = 10 },
+            { key = "winlu_tree_4", ox = 96, oy = 288, scale = 0.36, smallScale = 0.21, collisionRadius = 18, collisionOffsetY = -12, drawOffsetY = 16, smallDrawOffsetY = 9 },
         }
     end
     local bushTypes = { "bush_1", "bush_2", "bush_3" }
@@ -395,6 +395,8 @@ function ForestTilemap:generate()
             spriteOy = spriteDef.oy,
             spriteScale = spriteDef.scale,
             spriteSmallScale = spriteDef.smallScale,
+            drawOffsetY = spriteDef.drawOffsetY or 0,
+            smallDrawOffsetY = spriteDef.smallDrawOffsetY or 0,
             collisionRadius = spriteDef.collisionRadius,
             collisionOffsetY = spriteDef.collisionOffsetY,
             trunkW = 7 + math.random(0, 3),
@@ -414,6 +416,8 @@ function ForestTilemap:generate()
             spriteOy = spriteDef.oy,
             spriteScale = spriteDef.scale,
             spriteSmallScale = spriteDef.smallScale,
+            drawOffsetY = spriteDef.drawOffsetY or 0,
+            smallDrawOffsetY = spriteDef.smallDrawOffsetY or 0,
             trunkW = 5 + math.random(0, 2),
             trunkH = 10 + math.random(0, 4),
             crownR = 12 + math.random(0, 7),
@@ -558,8 +562,6 @@ function ForestTilemap:generate()
         end
     end
 
-    addMacroPatch("clearing", 4, 140, 120, 100, 200, 70, 120)
-
     self.macroPatches[#self.macroPatches + 1] = {
         kind = "playfield",
         x = centerX,
@@ -582,14 +584,6 @@ function ForestTilemap:generate()
         ry = laneHalfH + 18,
     }
     for _, region in ipairs(storyRegions) do
-        self.macroPatches[#self.macroPatches + 1] = {
-            kind = region.kind,
-            x = region.x,
-            y = region.y,
-            rx = region.rx,
-            ry = region.ry,
-            angle = region.angle or 0,
-        }
         addTrail(centerX, centerY, region.x, region.y, 84, 20)
     end
     addTrail(storyRegions[1].x, storyRegions[1].y, storyRegions[4].x, storyRegions[4].y, 58, 16)
@@ -692,7 +686,9 @@ function ForestTilemap:update(dt)
 end
 
 local function drawGroundShadow(x, y, rx, ry, alpha)
-    return
+    love.graphics.setColor(0.06, 0.10, 0.05, alpha or 0.14)
+    love.graphics.ellipse("fill", x, y, rx, ry)
+    love.graphics.setColor(1, 1, 1, 1)
 end
 
 local function drawMacroPatch(patch)
@@ -700,18 +696,8 @@ local function drawMacroPatch(patch)
         love.graphics.setColor(0.44, 0.68, 0.40, 0.05)
     elseif patch.kind == "lane" then
         love.graphics.setColor(0.42, 0.64, 0.38, 0.035)
-    elseif patch.kind == "clearing" then
-        love.graphics.setColor(0.48, 0.70, 0.44, 0.03)
     elseif patch.kind == "trail" then
         love.graphics.setColor(0.38, 0.34, 0.22, 0.125)
-    elseif patch.kind == "logging_camp" then
-        love.graphics.setColor(0.42, 0.36, 0.24, 0.10)
-    elseif patch.kind == "flower_meadow" then
-        love.graphics.setColor(0.54, 0.74, 0.46, 0.075)
-    elseif patch.kind == "shrine_glade" then
-        love.graphics.setColor(0.46, 0.66, 0.48, 0.085)
-    elseif patch.kind == "fallen_hollow" then
-        love.graphics.setColor(0.32, 0.38, 0.24, 0.095)
     else
         return
     end
@@ -988,16 +974,17 @@ end
 function ForestTilemap:getTreesForSorting()
     local result = {}
     for _, tree in ipairs(self.trees) do
+        local drawY = tree.y + (tree.drawOffsetY or 0)
         result[#result + 1] = {
             x = tree.x,
-            y = tree.y,
+            y = drawY,
             draw = function()
                 local sway = math.sin(love.timer.getTime() * 0.6 + tree.swayOffset) * 1.2
-                drawGroundShadow(tree.x, tree.y + 3, 18, 5, 0.18)
+                drawGroundShadow(tree.x, drawY + 5, 24, 7, 0.14)
                 local drewSprite = self:drawSprite(
                     tree.sprite,
                     tree.x + sway,
-                    tree.y,
+                    drawY,
                     tree.spriteOx or 32,
                     tree.spriteOy or 96,
                     tree.spriteScale or 1.0
@@ -1039,16 +1026,17 @@ end
 function ForestTilemap:getSmallTreesForSorting()
     local result = {}
     for _, tree in ipairs(self.smallTrees) do
+        local drawY = tree.y + (tree.smallDrawOffsetY or tree.drawOffsetY or 0)
         result[#result + 1] = {
             x = tree.x,
-            y = tree.y,
+            y = drawY,
             draw = function()
                 local sway = math.sin(love.timer.getTime() * 0.9 + tree.swayOffset) * 0.9
-                drawGroundShadow(tree.x, tree.y + 3, 14, 4, 0.16)
+                drawGroundShadow(tree.x, drawY + 4, 16, 5, 0.12)
                 local drewSprite = self:drawSprite(
                     tree.sprite,
                     tree.x + sway,
-                    tree.y + 4,
+                    drawY + 4,
                     tree.spriteOx or 32,
                     tree.spriteOy or 96,
                     tree.spriteSmallScale or tree.spriteScale or 0.72

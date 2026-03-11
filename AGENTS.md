@@ -237,6 +237,9 @@ Input → Player.update() → Movement
 10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
+- 2026-03-11: **Forest cleanup: removed green circle artifacts + grounded trees**:
+ - `systems/forest_tilemap.lua`: removed the broad story-region macro fills that were reading as random green circles on the floor, while keeping the stronger authored decals, shrine beat, and trails.
+ - `systems/forest_tilemap.lua`: re-enabled subtle contact shadows and nudged tree draw offsets so the trees and surrounding props sit on the terrain more convincingly instead of floating.
 - 2026-03-11: **Forest scale-up + authored environmental storytelling pass**:
  - `data/config.lua`: increased the world size again so the forest has more room for authored composition rather than feeling cramped and repetitive.
  - `systems/forest_tilemap.lua`: reworked the forest generation into clearer story regions near the central play space, including a shrine-like focal glade, logging scars with felled-log clusters, a flower meadow beat, a fallen hollow, and more readable connecting ground trails so the level tells a stronger spatial story.
