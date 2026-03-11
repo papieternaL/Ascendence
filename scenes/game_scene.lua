@@ -16,6 +16,7 @@ local SmallTreent = require("entities.small_treent")
 local BarkProjectile = require("entities.bark_projectile")
 local Arrow = require("entities.arrow")
 local ArrowVolley = require("entities.arrow_volley")
+local FirePatch = require("entities.fire_patch")
 local EnemySpawner = require("systems.enemy_spawner")
 local Particles = require("systems.particles")
 local ScreenShake = require("systems.screen_shake")
@@ -114,6 +115,7 @@ function GameScene:new(gameState)
 
         -- Arrow Volley (falling-arrow impact zones)
         arrowVolleys = {},
+        firePatches = {},
         bossPortal = nil,
         bossPortalSpawned = false,
 
@@ -667,11 +669,7 @@ function GameScene:update(dt)
                             self.screenShake:add(3, 0.12)
                             self:spawnEnemyXpDrop(ex, ey, 8 + math.random(0, 5))
                             self:addMajorProgress(self.majorProgressPerKill)
-                            -- Check hemorrhage proc on bleed-kill
-                            local killActions = self.procEngine:onKill(self.playerStats, { isCrit = false, target = tick.entity })
-                            for _, action in ipairs(killActions) do
-                                self:executeAction(action)
-                            end
+                            self:triggerKillActions(tick.entity, false)
                         end
                     end
                 end
@@ -988,14 +986,7 @@ function GameScene:update(dt)
                                     end
                                     self.frenzyCharge = math.min(self.frenzyChargeMax, self.frenzyCharge + killGain)
                                 end
-
-                                -- On-kill procs (hemorrhage, crit-kill buffs)
-                                if self.procEngine then
-                                    local killActions = self.procEngine:onKill(self.playerStats, { isCrit = isCrit, target = enemy })
-                                    for _, ka in ipairs(killActions) do
-                                        self:executeAction(ka)
-                                    end
-                                end
+                                self:triggerKillActions(enemy, isCrit)
                             elseif doCosmetic then
                                 self.screenShake:add(2, 0.1)
                             end
@@ -1062,6 +1053,8 @@ function GameScene:update(dt)
                                 if died then
                                     if self.enemySpawner then self.enemySpawner:onEnemyDeath() end
                                     self:spawnEnemyXpDrop(ex, ey, 12 + math.random(0, 8))
+                                    self:addMajorProgress(self.majorProgressPerKill)
+                                    self:triggerKillActions(enemy, false)
                                 end
                             end
                         end
@@ -1107,6 +1100,9 @@ function GameScene:update(dt)
                 end
             end
         end
+
+        self:updateWildfireSpread(dt)
+        self:updateFirePatches(dt)
 
         -- Build Frenzy charge from "being in combat" (simple: any living enemies)
         if not self.frenzyActive then
@@ -1451,6 +1447,9 @@ function GameScene:showUpgradeSelection()
 end
 
 function GameScene:isUpgradeAllowedForRun(upgrade, nextStage)
+    if upgrade.non_repeat and self.playerStats and self.playerStats:hasUpgrade(upgrade.id) then
+        return false
+    end
     if self.player and self.player.heroClass == "spellblade" then
         if upgrade.requires_upgrade and self.playerStats and not self.playerStats:hasUpgrade(upgrade.requires_upgrade) then
             return false
@@ -1724,6 +1723,101 @@ function GameScene:resolvePlayerBlockers()
     end
 end
 
+function GameScene:triggerKillActions(target, isCrit)
+    if not self.procEngine or not self.playerStats or not target then
+        return
+    end
+    local killActions = self.procEngine:onKill(self.playerStats, { isCrit = isCrit or false, target = target })
+    for _, action in ipairs(killActions) do
+        self:executeAction(action)
+    end
+end
+
+function GameScene:spawnFirePatch(x, y, radius, damage, duration, tickInterval)
+    self.firePatches[#self.firePatches + 1] = FirePatch:new(x, y, radius, damage, duration, tickInterval)
+end
+
+function GameScene:fireDeathExplosion(target, radius, primaryDamageMul)
+    if not target then return end
+    local tx, ty = target:getPosition()
+    local damage = (self.player.attackDamage or 10) * self.difficultyMult.playerDamageMult * (primaryDamageMul or 2.5)
+    self:aoeDamage(tx, ty, radius or 92, damage)
+    self.particles:createExplosion(tx, ty, {1.0, 0.42, 0.12})
+    self.screenShake:add(7, 0.22)
+    self:hitFreeze(0.05)
+end
+
+function GameScene:updateWildfireSpread(dt)
+    if not self.playerStats or self.playerStats.activePrimaryElement ~= "fire" then return end
+    if not self.playerStats:getElementMod("fire", "wildfire_enabled", false) then return end
+
+    local all = self:getFlattenedEnemies()
+    local spreadDuration = 3.0 * (self.playerStats:getElementMod("fire", "wildfire_duration_mul", 0.5) or 0.5)
+    local spreadDamageMul = self.playerStats:getElementMod("fire", "wildfire_damage_mul", 0.5) or 0.5
+
+    for _, source in ipairs(all) do
+        if source.isAlive and StatusEffects.has(source, "burn") then
+            source._wildfireSpreadCooldown = math.max(0, (source._wildfireSpreadCooldown or 0) - dt)
+            if source._wildfireSpreadCooldown <= 0 then
+                local sx, sy = source:getPosition()
+                local sr = source:getSize()
+                for _, other in ipairs(all) do
+                    if other ~= source and other.isAlive and not StatusEffects.has(other, "burn") then
+                        local ox, oy = other:getPosition()
+                        local dx = ox - sx
+                        local dy = oy - sy
+                        local touchR = sr + other:getSize()
+                        if dx * dx + dy * dy <= touchR * touchR then
+                            StatusEffects.apply(other, "burn", 1, spreadDuration, { damageMul = spreadDamageMul })
+                            source._wildfireSpreadCooldown = 0.18
+                            self.particles:createBurnFlare(ox, oy - other:getSize() * 0.2, 0.9)
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function GameScene:updateFirePatches(dt)
+    for i = #self.firePatches, 1, -1 do
+        local patch = self.firePatches[i]
+        patch:update(dt)
+        if patch:isAlive() then
+            local px, py = patch.x, patch.y
+            for _, list in ipairs(self:getAllEnemyLists()) do
+                for _, enemy in ipairs(list) do
+                    if enemy.isAlive and patch:canHit(enemy) then
+                        local ex, ey = enemy:getPosition()
+                        local dx = ex - px
+                        local dy = ey - py
+                        local r = patch.radius + enemy:getSize()
+                        if dx * dx + dy * dy <= r * r then
+                            patch:markHit(enemy)
+                            local died = enemy:takeDamage(patch.damage, px, py, 40)
+                            self:applyFrenzyLifesteal(patch.damage)
+                            if self.damageNumbers then
+                                self.damageNumbers:add(ex, ey - enemy:getSize(), patch.damage, { isCrit = false, color = {1.0, 0.52, 0.14} })
+                            end
+                            self.particles:createBurnFlare(ex, ey - enemy:getSize() * 0.2, 0.9)
+                            if died then
+                                if self.enemySpawner then self.enemySpawner:onEnemyDeath() end
+                                self:spawnEnemyXpDrop(ex, ey, 8 + math.random(0, 5))
+                                self:addMajorProgress(self.majorProgressPerKill)
+                                self:triggerKillActions(enemy, false)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        if not patch:isAlive() then
+            table.remove(self.firePatches, i)
+        end
+    end
+end
+
 ---------------------------------------------------------------------------
 -- HELPER: get all enemy lists for iteration
 ---------------------------------------------------------------------------
@@ -1915,6 +2009,8 @@ function GameScene:aoeDamage(cx, cy, radius, damage)
                         self.screenShake:add(4, 0.15)
                         local xpValue = 10 + math.random(0, 5)
                         self:spawnEnemyXpDrop(ex, ey, xpValue)
+                        self:addMajorProgress(self.majorProgressPerKill)
+                        self:triggerKillActions(e, false)
                     end
                 end
             end
@@ -1965,6 +2061,8 @@ function GameScene:chainDamage(startEnemy, jumps, jumpRange, damage)
                 self.particles:createExplosion(nx, ny, {0.35, 0.6, 1.0})
                 self.screenShake:add(4, 0.14)
                 self:spawnEnemyXpDrop(nx, ny, 10 + math.random(0, 5))
+                self:addMajorProgress(self.majorProgressPerKill)
+                self:triggerKillActions(next, false)
             end
         end
         current = next
@@ -2126,6 +2224,17 @@ function GameScene:executeAction(action)
             self:iceBlastOnDeath(action.target, apply.radius or 70, apply.damage_mul_of_target_maxhp or 0.05)
         end
 
+    elseif apply.kind == "fire_patch" then
+        if action.target then
+            local tx, ty = action.target:getPosition()
+            self:spawnFirePatch(tx, ty, apply.radius or 42, apply.damage or 8, apply.duration or 4.0, apply.tick_interval or 0.35)
+        end
+
+    elseif apply.kind == "fire_explosion" then
+        if action.target then
+            self:fireDeathExplosion(action.target, apply.radius or 92, apply.primary_damage_mul or 2.5)
+        end
+
     elseif apply.kind == "buff" then
         if self.playerStats then
             local name = apply.name or "unnamed_buff"
@@ -2169,6 +2278,9 @@ function GameScene:draw()
     -- Draw Arrow Volleys (falling arrows + impact zones)
     for _, volley in ipairs(self.arrowVolleys) do
         volley:draw()
+    end
+    for _, firePatch in ipairs(self.firePatches) do
+        firePatch:draw()
     end
     if self.spellblade then
         self.spellblade:drawGround(self)

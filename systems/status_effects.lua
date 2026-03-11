@@ -99,7 +99,7 @@ function StatusEffects.update(entity, dt, baseDamagePerBleedStack, burnDamagePer
         s.tickTimer = s.tickTimer + dt
         while s.tickTimer >= 0.5 do
           s.tickTimer = s.tickTimer - 0.5
-          local burnDmg = s.stacks * burnDamagePerStack
+          local burnDmg = s.stacks * burnDamagePerStack * (s.damageMul or 1.0)
           ticks[#ticks + 1] = { entity = entity, damage = burnDmg, status = "burn" }
         end
       end

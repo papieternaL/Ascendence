@@ -6,7 +6,7 @@ PlayerStats.__index = PlayerStats
 
 -- Element upgrade IDs (switching element removes the other elements' upgrades)
 PlayerStats.elementUpgradeIds = {
-  fire = { "arch_c_fire_attunement", "arch_r_fire_intensity" },
+  fire = { "arch_c_fire_attunement", "arch_r_fire_intensity", "arch_r_wildfire", "arch_e_fire_spread", "arch_e_fire_explosion" },
   ice = { "arch_c_ice_attunement", "arch_r_ice_depth", "arch_r_freeze_spread", "arch_r_ice_blast" },
   lightning = { "arch_c_lightning_attunement", "arch_r_lightning_reach" },
 }

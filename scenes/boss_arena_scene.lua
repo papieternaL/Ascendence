@@ -6,6 +6,7 @@ local TreentOverlord = require("entities.treent_overlord")
 local BarkProjectile = require("entities.bark_projectile")
 local Arrow = require("entities.arrow")
 local ArrowVolley = require("entities.arrow_volley")
+local FirePatch = require("entities.fire_patch")
 local Lunger = require("entities.lunger")
 local Wizard = require("entities.wizard")
 local Config = require("data.config")
@@ -115,6 +116,7 @@ function BossArenaScene:new(player, playerStats, gameState, xpSystem, rarityChar
 
         -- Arrow Volley (falling arrows, impact-timed)
         arrowVolleys = {},
+        firePatches = {},
 
         -- Bark Volley AOE (circular zones near player)
         barkVolleyAoEs = {},
@@ -480,11 +482,17 @@ function BossArenaScene:update(dt)
         end
         for _, tick in ipairs(ticks) do
             if tick.entity.isAlive then
-                tick.entity:takeDamage(tick.damage, nil, nil, 0)
+                local died = tick.entity:takeDamage(tick.damage, nil, nil, 0)
                 self:applyFrenzyLifesteal(tick.damage)
                 local ex, ey = tick.entity:getPosition()
                 if tick.status == "burn" and self.particles then
                     self.particles:createBurnFlare(ex, ey - tick.entity:getSize() * 0.2, 1.0 + StatusEffects.getStacks(tick.entity, "burn") * 0.18)
+                end
+                if died then
+                    self:triggerKillActions(tick.entity, false)
+                    if tick.entity ~= self.boss and self.xpSystem then
+                        self.xpSystem:spawnOrb(ex, ey, 20 + math.random(0, 10))
+                    end
                 end
             end
         end
@@ -694,6 +702,9 @@ function BossArenaScene:update(dt)
                     table.remove(self.arrowVolleys, i)
                 end
             end
+
+            self:updateWildfireSpread(dt)
+            self:updateFirePatches(dt)
         end
         
         -- Update boss
@@ -1118,10 +1129,7 @@ function BossArenaScene:update(dt)
                                 local died = add:takeDamage(dmg, ax, ay, arrow.knockback)
                                 self:applyFrenzyLifesteal(dmg)
                                 if died then
-                                    local killActions = self.procEngine:onKill(self.playerStats, { isCrit = isCrit, target = add })
-                                    for _, action in ipairs(killActions) do
-                                        self:executeAction(action)
-                                    end
+                                    self:triggerKillActions(add, isCrit)
                                     self.particles:createExplosion(adx, ady, {0.6, 0.3, 0.8})
                                     self.screenShake:add(4, 0.12)
                                     self.xpSystem:spawnOrb(adx, ady, 25 + math.random(0, 15))
@@ -1289,6 +1297,9 @@ function BossArenaScene:draw()
         if entry.volley then
             entry.volley:draw()
         end
+    end
+    for _, firePatch in ipairs(self.firePatches) do
+        firePatch:draw()
     end
     if self.spellblade then
         self.spellblade:drawGround(self)
@@ -1614,6 +1625,7 @@ function BossArenaScene:iceDissolveBlast(x, y)
                         self.damageNumbers:add(ex, ey - add:getSize(), baseDmg, { isCrit = false })
                     end
                     if died then
+                        self:triggerKillActions(add, false)
                         self.particles:createExplosion(ex, ey, {1, 0.5, 0.1})
                         self.screenShake:add(4, 0.15)
                         self.xpSystem:spawnOrb(ex, ey, 25 + math.random(0, 15))
@@ -1716,6 +1728,11 @@ function BossArenaScene:executeAction(action)
         self:iceBlastOnDeath(action.target, apply.radius or 70, apply.damage_mul_of_target_maxhp or 0.05)
     elseif apply.kind == "aoe_explosion" and action.target then
         -- Hemorrhage: would need hemorrhageExplosion helper; skip for boss arena (no bleed on adds typically)
+    elseif apply.kind == "fire_patch" and action.target then
+        local tx, ty = action.target:getPosition()
+        self:spawnFirePatch(tx, ty, apply.radius or 42, apply.damage or 8, apply.duration or 4.0, apply.tick_interval or 0.35)
+    elseif apply.kind == "fire_explosion" and action.target then
+        self:fireDeathExplosion(action.target, apply.radius or 92, apply.primary_damage_mul or 2.5)
     end
 end
 
@@ -1745,6 +1762,125 @@ function BossArenaScene:findNearestBossTargetTo(x, y, maxRange, excludeSet)
         end
     end
     return best
+end
+
+function BossArenaScene:getAllFireTargets()
+    local targets = {}
+    for _, add in ipairs(self.bossAdds or {}) do
+        if add.isAlive then
+            targets[#targets + 1] = add
+        end
+    end
+    if self.boss and self.boss.isAlive then
+        targets[#targets + 1] = self.boss
+    end
+    return targets
+end
+
+function BossArenaScene:triggerKillActions(target, isCrit)
+    if not self.procEngine or not self.playerStats or not target then
+        return
+    end
+    local killActions = self.procEngine:onKill(self.playerStats, { isCrit = isCrit or false, target = target })
+    for _, action in ipairs(killActions) do
+        self:executeAction(action)
+    end
+end
+
+function BossArenaScene:spawnFirePatch(x, y, radius, damage, duration, tickInterval)
+    self.firePatches[#self.firePatches + 1] = FirePatch:new(x, y, radius, damage, duration, tickInterval)
+end
+
+function BossArenaScene:fireDeathExplosion(target, radius, primaryDamageMul)
+    if not target then return end
+    local tx, ty = target:getPosition()
+    local damage = (self.player and self.player.attackDamage or 10) * (primaryDamageMul or 2.5)
+    for _, other in ipairs(self:getAllFireTargets()) do
+        if other.isAlive and other ~= target then
+            local ox, oy = other:getPosition()
+            local dx = ox - tx
+            local dy = oy - ty
+            if math.sqrt(dx * dx + dy * dy) <= (radius or 92) then
+                local died = other:takeDamage(damage, tx, ty, 80)
+                self:applyFrenzyLifesteal(damage)
+                if self.damageNumbers then
+                    self.damageNumbers:add(ox, oy - other:getSize(), damage, { isCrit = false })
+                end
+                if died then
+                    self:triggerKillActions(other, false)
+                end
+            end
+        end
+    end
+    self.particles:createExplosion(tx, ty, {1.0, 0.42, 0.12})
+    self.screenShake:add(7, 0.22)
+    JuiceManager.freezeTime(0.05)
+end
+
+function BossArenaScene:updateWildfireSpread(dt)
+    if not self.playerStats or self.playerStats.activePrimaryElement ~= "fire" then return end
+    if not self.playerStats:getElementMod("fire", "wildfire_enabled", false) then return end
+
+    local targets = self:getAllFireTargets()
+    local spreadDuration = 3.0 * (self.playerStats:getElementMod("fire", "wildfire_duration_mul", 0.5) or 0.5)
+    local spreadDamageMul = self.playerStats:getElementMod("fire", "wildfire_damage_mul", 0.5) or 0.5
+
+    for _, source in ipairs(targets) do
+        if source.isAlive and StatusEffects.has(source, "burn") then
+            source._wildfireSpreadCooldown = math.max(0, (source._wildfireSpreadCooldown or 0) - dt)
+            if source._wildfireSpreadCooldown <= 0 then
+                local sx, sy = source:getPosition()
+                local sr = source:getSize()
+                for _, other in ipairs(targets) do
+                    if other ~= source and other.isAlive and not StatusEffects.has(other, "burn") then
+                        local ox, oy = other:getPosition()
+                        local dx = ox - sx
+                        local dy = oy - sy
+                        local touchR = sr + other:getSize()
+                        if dx * dx + dy * dy <= touchR * touchR then
+                            StatusEffects.apply(other, "burn", 1, spreadDuration, { damageMul = spreadDamageMul })
+                            source._wildfireSpreadCooldown = 0.18
+                            self.particles:createBurnFlare(ox, oy - other:getSize() * 0.2, 0.9)
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function BossArenaScene:updateFirePatches(dt)
+    for i = #self.firePatches, 1, -1 do
+        local patch = self.firePatches[i]
+        patch:update(dt)
+        if patch:isAlive() then
+            local px, py = patch.x, patch.y
+            for _, target in ipairs(self:getAllFireTargets()) do
+                if target.isAlive and patch:canHit(target) then
+                    local tx, ty = target:getPosition()
+                    local dx = tx - px
+                    local dy = ty - py
+                    local r = patch.radius + target:getSize()
+                    if dx * dx + dy * dy <= r * r then
+                        patch:markHit(target)
+                        local died = target:takeDamage(patch.damage, px, py, 40)
+                        self:applyFrenzyLifesteal(patch.damage)
+                        if self.damageNumbers then
+                            self.damageNumbers:add(tx, ty - target:getSize(), patch.damage, { isCrit = false, color = {1.0, 0.52, 0.14} })
+                        end
+                        self.particles:createBurnFlare(tx, ty - target:getSize() * 0.2, 0.9)
+                        if died then
+                            self:triggerKillActions(target, false)
+                        end
+                    end
+                end
+            end
+        end
+        if not patch:isAlive() then
+            table.remove(self.firePatches, i)
+        end
+    end
 end
 
 -- Apply Frenzy lifesteal from outgoing player damage.

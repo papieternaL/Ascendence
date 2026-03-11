@@ -165,6 +165,18 @@ U.list = {
     effects={ { kind="element_mod", element="fire", mod="burn_damage_mul", value=1.25 } }
   },
   {
+    id="arch_r_wildfire", name="Wildfire", rarity="rare",
+    description="Burning enemies spread fire on contact for 50% damage and 50% duration",
+    tags={ "element", "fire", "dot", "spread" },
+    requires_upgrade = "arch_c_fire_attunement",
+    non_repeat = true,
+    effects={
+      { kind="element_mod", element="fire", mod="wildfire_enabled", value=true },
+      { kind="element_mod", element="fire", mod="wildfire_damage_mul", value=0.50 },
+      { kind="element_mod", element="fire", mod="wildfire_duration_mul", value=0.50 }
+    }
+  },
+  {
     id="arch_r_ice_depth", name="Ice Depth", rarity="rare",
     description="Chill lasts 1s longer and slows 10% more",
     tags={ "element", "ice", "cc" },
@@ -235,6 +247,30 @@ U.list = {
         },
         rules={ break_on_hit_taken=true, disabled_during_frenzy=true }
       } }
+    }
+  },
+  {
+    id="arch_e_fire_spread", name="Fire Spread", rarity="epic",
+    description="Enemies that die while burning leave behind a small fire circle",
+    tags={ "element", "fire", "aoe" },
+    requires_upgrade = "arch_c_fire_attunement",
+    non_repeat = true,
+    effects={
+      { kind="proc", trigger="on_kill_target_with_status", status="burn", chance=1.0,
+        apply={ kind="fire_patch", radius=42, duration=4.0, tick_interval=0.35, damage=8 }
+      }
+    }
+  },
+  {
+    id="arch_e_fire_explosion", name="Explosion", rarity="epic",
+    description="Enemies explode on death while burning, dealing big AOE damage",
+    tags={ "element", "fire", "aoe" },
+    requires_upgrade = "arch_c_fire_attunement",
+    non_repeat = true,
+    effects={
+      { kind="proc", trigger="on_kill_target_with_status", status="burn", chance=1.0,
+        apply={ kind="fire_explosion", radius=92, primary_damage_mul=2.5 }
+      }
     }
   },
 }

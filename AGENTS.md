@@ -237,6 +237,10 @@ Input → Player.update() → Movement
 10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
+- 2026-03-11: **Archer fire-attunement expansion pass**:
+ - Added three Fire-only follow-up upgrades in `data/upgrades_archer.lua`: `Wildfire` (burn spreads on contact at reduced strength/duration), `Fire Spread` (burning deaths leave a small damaging fire circle), and `Explosion` (burning deaths trigger a larger AOE blast).
+ - `systems/player_stats.lua`, `systems/status_effects.lua`, `scenes/game_scene.lua`, and `scenes/boss_arena_scene.lua` now support the new fire-synergy runtime: reduced-strength spread burns, persistent ground fire patches, burn-death explosion damage, and non-repeatable gating for those high-power upgrades.
+ - Added `entities/fire_patch.lua` as the reusable ground-fire entity used by the new burning-death upgrade path.
 - 2026-03-10: **Character select spacing/art-direction polish pass**:
  - `ui/menu.lua`: moved the hero-select title plaque farther above the main selection frame so the top copy no longer clips or crowds the panel chrome.
  - `ui/menu.lua`: added a stronger fantasy-blue presentation pass to the selection frame and bottom hero cards (title plaque chrome, layered panel fills, subtle accent glow, and richer selector-card treatment) to better match the target in-game art direction.
