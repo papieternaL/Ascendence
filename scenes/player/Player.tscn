@@ -1,6 +1,7 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/player/player.gd" id="1_player"]
+[ext_resource type="PackedScene" path="res://scenes/abilities/ArcaneMissiles.tscn" id="2_arcane_missiles"]
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_body"]
 radius = 8.0
@@ -33,3 +34,5 @@ monitoring = true
 shape = SubResource("CircleShape2D_hurtbox")
 
 [node name="AbilityAnchor" type="Node2D" parent="."]
+
+[node name="ArcaneMissiles" parent="AbilityAnchor" instance=ExtResource("2_arcane_missiles")]

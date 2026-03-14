@@ -17,8 +17,9 @@ func _physics_process(_delta: float) -> void:
 	# TODO(Migration): Replace with full movement + aiming + dash/frenzy pipeline.
 	var input_vector := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 	velocity = input_vector * move_speed
-	if input_vector.length_squared() > 0.0:
-		weapon_pivot.rotation = input_vector.angle()
+	var aim_dir := global_position.direction_to(get_global_mouse_position())
+	if aim_dir.length_squared() > 0.0:
+		weapon_pivot.rotation = aim_dir.angle()
 	move_and_slide()
 
 func get_muzzle_global_position() -> Vector2:

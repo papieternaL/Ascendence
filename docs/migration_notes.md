@@ -95,6 +95,13 @@ This pass creates a **Godot-native project skeleton only**. Gameplay systems are
 - Bound `HUD` to instantiated `Player` in `scripts/main/main.gd` for a clean scene-level contract without full gameplay porting.
 - Added `docs/godot_mcp_setup.md` with recommended scene validation flow when using `godot-mcp`.
 
+## Phase 2 implementation (current)
+- Added Arcane Pistol primary fire flow in `scripts/main/main.gd` using `primary_fire` input and cooldown-gated projectile spawning.
+- Implemented Arcane Missiles cast flow wired from `ability_2` (`E`) into `scripts/abilities/arcane_missiles.gd` with multi-target missile spawning.
+- Upgraded cooldown handling via `scripts/systems/cooldown_system.gd` (`_process`, `is_ready`, `get_remaining`).
+- Added hit feedback via enemy sprite flash on damage and impact ring VFX (`scenes/effects/HitEffect.tscn` + `scripts/effects/hit_effect.gd`).
+- Extended simple HUD to display health and Arcane Missiles readiness/countdown text plus a basic primary-fire readiness bar.
+
 ## Next migration checkpoints
 - Wire main-scene systems into gameplay loops and decide final autoload surface beyond `game_events.gd`.
 - Replace placeholder collision shapes/sprites with imported assets.

@@ -237,6 +237,11 @@ Input → Player.update() → Movement
 10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
+- 2026-03-14: **Godot Phase 2 combat foundation (primary/missiles/cooldowns/HUD)**:
+  - Implemented Arcane Pistol primary fire in `scripts/main/main.gd` with cooldown-gated bullet spawning and nearest-enemy targeting behavior.
+  - Implemented Arcane Missiles casting pipeline (`ability_2`/E) via `scenes/abilities/ArcaneMissiles.tscn` + `scripts/abilities/arcane_missiles.gd`, spawning homing missiles against sorted nearby targets.
+  - Upgraded `scripts/systems/cooldown_system.gd` to run per-frame ticking and expose `is_ready()` / `get_remaining()` for gameplay and HUD use.
+  - Added hit feedback through enemy damage flash (`scripts/enemies/enemy_base.gd`) and reusable impact ring VFX (`scenes/effects/HitEffect.tscn`, `scripts/effects/hit_effect.gd`), and expanded `scripts/ui/hud.gd` for health + cooldown display.
 - 2026-03-14: **Godot scene-structure correctness pass (post-feedback)**:
   - Reworked `scenes/main/Main.tscn` into a deterministic composition tree with pre-instanced `Player` and `HUD`, plus a visible `Systems` subtree (`DamageSystem`, `CooldownSystem`, `Spawner`) for cleaner scene-first migration workflows.
   - Added concrete collision `Shape2D` sub-resources to player/enemy/projectile scenes so baseline scenes load without missing-shape warnings and are safer to validate in-editor.
