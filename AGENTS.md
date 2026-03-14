@@ -237,6 +237,27 @@ Input → Player.update() → Movement
 10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
+- 2026-03-14: **Godot combat hit-contract fix + authored HUD pass**:
+  - Fixed the Arcane Pistol damage path in `scripts/systems/damage_system.gd` plus `scripts/projectiles/bullet.gd`, `scripts/projectiles/missile.gd`, and `scripts/projectiles/sniper_shot.gd`: player projectiles now react to enemy hurtbox `Area2D` collisions, resolve the owning damageable node, preserve sniper pierce tracking, and keep hit VFX emission through the existing signal path.
+  - `scripts/main/main.gd` now exposes HUD-facing run state beyond the original debug strings: current/max health, run timer, and objective progress values, while still driving the existing forest/core/boss flow and cooldown hooks.
+  - Rebuilt `scenes/ui/HUD.tscn` and `scripts/ui/hud.gd` into a full-screen authored layout with a top-left timer plaque, top-center objective/boss panel, bottom-center ability plate, separate bottom health panel, left level badge, and bottom XP strip, replacing the previous stacked debug-label presentation.
+  - Validation note: this shell still cannot run Godot, so the pass was checked with static script/scene inspection and `git diff --check`; live in-editor validation is still required for collision feel and UI placement.
+- 2026-03-14: **Godot forest run slice milestone (Arcane Pistol first pass)**:
+  - Expanded the Godot `Main.tscn` loop into a real forest-run slice in `scripts/main/main.gd`: nearest-target Arcane Pistol combat, level-up pause/selection flow, forest-wave progression into a core objective, Treent boss spawn, boss bark-shot/root wiring, objective/boss HUD state, and restart/victory messaging.
+  - `scripts/main/arena.gd` now draws a larger authored forest clearing with fixed player/core/boss anchor positions and exposes clamp/spawn helper methods so the run takes place in a bounded forest arena instead of a blank test scene.
+  - Added `scripts/enemies/objective_core.gd` + `scenes/enemies/ObjectiveCore.tscn` for destructible forest cores, and `scripts/enemies/treent_boss.gd` + `scenes/enemies/TreentBoss.tscn` for a first Treent Overlord pass with lunge, bark barrage, and phase-two Encompass Root / territory pressure hooks.
+  - Added `scripts/projectiles/enemy_bark_shot.gd` + `scenes/projectiles/EnemyBarkShot.tscn` for boss projectile pressure, and extended `scripts/player/player.gd` / `scenes/player/Player.tscn` with root-state handling plus a smoothing `Camera2D`.
+  - `scripts/enemies/enemy_base.gd` now exposes `display_name` / `enemy_kind` and groups enemies by kind so objectives, boss logic, and HUD targeting can share the same damage/death contract.
+  - `scripts/ui/hud.gd` now surfaces objective and boss state alongside the existing HP/XP/cooldown/runtime labels for the forest slice.
+  - Validation note: this shell still cannot launch Godot, so the slice was verified by code-path inspection and `git diff --check`, not by running `Main.tscn` in-editor.
+- 2026-03-14: **Godot loop tranche after syncing local `ascendence-0.5` to origin**:
+  - Discarded the dirty local Love2D/web pivot state and hard-synced the repo to `origin/ascendence-0.5`, making the upstream Godot 4 + GDScript project the active migration baseline.
+  - `scripts/main/main.gd`: replaced the fixed demo-only behavior with a fuller Arcane Pistol gameplay loop: nearest-enemy lock for primary fire with mouse fallback, Arcane Sniper ultimate activation on `R`, enemy contact damage, death/restart flow, XP gain from kills, simple level-up upgrade picks, and timed enemy spawning.
+  - `scripts/player/player.gd`, `scripts/enemies/enemy_base.gd`, `scripts/enemies/chaser_enemy.gd`, and `scripts/enemies/dummy_enemy.gd`: added procedural placeholder rendering, player damage/invulnerability/death signaling, enemy contact damage/xp rewards, and more usable chase behavior.
+  - `scripts/projectiles/bullet.gd`, `scripts/projectiles/missile.gd`, and `scripts/projectiles/sniper_shot.gd`: upgraded projectile readability and gameplay behavior with procedural draw passes, sniper piercing, and shared hit signaling.
+  - Added `scripts/systems/experience_system.gd` and `scripts/systems/upgrade_catalog.gd` for a lightweight Godot-native XP/level-up pipeline, plus `scripts/effects/trail_effect.gd` and `scripts/effects/death_effect.gd` with matching scene wiring for better fire/death feedback.
+  - `scripts/ui/hud.gd` now surfaces runtime loop state beyond the original health/cooldown bars: level/xp, wave/enemy count, target label, sniper status, upgrade prompt, and game-over prompt.
+  - Validation note: Godot is not installed in this shell (`godot`/`godot4` unavailable), so this tranche was validated by static scene/script inspection and repo consistency checks rather than an editor/runtime launch.
 - 2026-03-14: **Godot Phase 2 combat foundation (primary/missiles/cooldowns/HUD)**:
   - Implemented Arcane Pistol primary fire in `scripts/main/main.gd` with cooldown-gated bullet spawning and nearest-enemy targeting behavior.
   - Implemented Arcane Missiles casting pipeline (`ability_2`/E) via `scenes/abilities/ArcaneMissiles.tscn` + `scripts/abilities/arcane_missiles.gd`, spawning homing missiles against sorted nearby targets.

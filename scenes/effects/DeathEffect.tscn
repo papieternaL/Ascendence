@@ -1,3 +1,6 @@
-[gd_scene format=3]
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/effects/death_effect.gd" id="1_death"]
 
 [node name="DeathEffect" type="Node2D"]
+script = ExtResource("1_death")

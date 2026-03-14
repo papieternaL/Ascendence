@@ -61,9 +61,9 @@ This pass creates a **Godot-native project skeleton only**. Gameplay systems are
 
 ### Abilities
 - `scenes/abilities/ArcaneMissiles.tscn`
-- `scenes/abilities/ArcaneOverwatch.tscn`
+- `scenes/abilities/ArcaneSniper.tscn`
 - `scripts/abilities/arcane_missiles.gd`
-- `scripts/abilities/arcane_overwatch.gd`
+- `scripts/abilities/arcane_sniper.gd`
 
 ### UI
 - `scenes/ui/HUD.tscn`
