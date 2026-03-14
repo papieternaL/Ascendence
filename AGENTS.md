@@ -237,6 +237,15 @@ Input → Player.update() → Movement
 10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
 
 ## Changelog
+- 2026-03-14: **Godot scene-structure correctness pass (post-feedback)**:
+  - Reworked `scenes/main/Main.tscn` into a deterministic composition tree with pre-instanced `Player` and `HUD`, plus a visible `Systems` subtree (`DamageSystem`, `CooldownSystem`, `Spawner`) for cleaner scene-first migration workflows.
+  - Added concrete collision `Shape2D` sub-resources to player/enemy/projectile scenes so baseline scenes load without missing-shape warnings and are safer to validate in-editor.
+  - Updated runtime scaffolding (`scripts/main/main.gd`, `scripts/player/player.gd`, `scripts/enemies/enemy_base.gd`, projectile scripts, and `project.godot` autoload) to better align with Godot node contracts while staying feature-light.
+  - Added `docs/godot_mcp_setup.md` and expanded migration notes with a scene validation checklist for Godot-MCP-based editor verification.
+- 2026-03-14: **Godot 4 migration skeleton scaffold pass**:
+  - Added a full `project.godot` bootstrap and Godot-first directory scaffolding (`scripts/`, `resources/configs/`, and scene domains under `scenes/`) while keeping the existing Love2D folders intact for staged migration.
+  - Created starter reusable scenes for main flow, player, enemy variants, projectile variants, abilities, HUD widgets, and effects, each with matching script stubs and TODO-safe migration hooks.
+  - Added baseline config resources (`player_stats`, `weapon_stats`, `missile_stats`, `enemy_stats`) plus `docs/migration_notes.md` documenting folder mapping rules and phased migration plan.
 - 2026-03-06: **Forest grounding/art-direction pass + boss arena environment rebuild**:
   - `systems/forest_tilemap.lua`: removed the remaining screen-space ambient orb overlay entirely, replaced it with world-space composition layers (macro grass-value patches, edge framing, pebble/needle-bed decals), and added stronger contact shadows under trees, bushes, rocks, and blockers so props feel planted on the floor.
   - `scenes/boss_arena_scene.lua`: removed the placeholder Monochrome RPG edge-prop treatment and rebuilt the room as a dedicated forest arena with a central clearing, root-ring framing, stone/stump perimeter accents, and subdued edge dressing that fits the main game's current visual language.

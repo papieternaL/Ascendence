@@ -1,0 +1,3 @@
+[gd_scene format=3]
+
+[node name="DeathEffect" type="Node2D"]
