@@ -1,9 +1,8 @@
 [gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/player/player.gd" id="1_player"]
-[ext_resource type="PackedScene" path="res://scenes/abilities/PowerShot.tscn" id="2_power_shot"]
-[ext_resource type="PackedScene" path="res://scenes/abilities/ArrowVolley.tscn" id="3_arrow_volley"]
-[ext_resource type="PackedScene" path="res://scenes/abilities/Frenzy.tscn" id="4_frenzy"]
+[ext_resource type="PackedScene" path="res://scenes/abilities/ArcaneMissiles.tscn" id="2_arcane_missiles"]
+[ext_resource type="PackedScene" path="res://scenes/abilities/ArcaneSniper.tscn" id="3_arcane_sniper"]
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_body"]
 radius = 8.0
@@ -16,7 +15,7 @@ radius = 10.0
 collision_layer = 1
 collision_mask = 6
 script = ExtResource("1_player")
-weapon_style = "bow"
+weapon_style = "pistol"
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
 
@@ -44,8 +43,6 @@ shape = SubResource("CircleShape2D_hurtbox")
 
 [node name="AbilityAnchor" type="Node2D" parent="."]
 
-[node name="PowerShot" parent="AbilityAnchor" instance=ExtResource("2_power_shot")]
+[node name="ArcaneMissiles" parent="AbilityAnchor" instance=ExtResource("2_arcane_missiles")]
 
-[node name="ArrowVolley" parent="AbilityAnchor" instance=ExtResource("3_arrow_volley")]
-
-[node name="Frenzy" parent="AbilityAnchor" instance=ExtResource("4_frenzy")]
+[node name="ArcaneSniper" parent="AbilityAnchor" instance=ExtResource("3_arcane_sniper")]

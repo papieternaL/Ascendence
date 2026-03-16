@@ -1,0 +1,77 @@
+[gd_scene load_steps=8 format=3]
+
+[ext_resource type="Script" path="res://scripts/main/tutorial_main.gd" id="1_main"]
+[ext_resource type="PackedScene" path="res://scenes/main/Arena.tscn" id="2_arena"]
+[ext_resource type="PackedScene" path="res://scenes/player/Player.tscn" id="3_player"]
+[ext_resource type="PackedScene" path="res://scenes/ui/HUD.tscn" id="4_hud"]
+[ext_resource type="Script" path="res://scripts/systems/spawn_system.gd" id="5_spawn_system"]
+[ext_resource type="Script" path="res://scripts/systems/damage_system.gd" id="6_damage_system"]
+[ext_resource type="Script" path="res://scripts/systems/cooldown_system.gd" id="7_cooldown_system"]
+
+[node name="TutorialMain" type="Node"]
+script = ExtResource("1_main")
+
+[node name="Arena" parent="." instance=ExtResource("2_arena")]
+
+[node name="Entities" type="Node2D" parent="."]
+
+[node name="Player" parent="Entities" instance=ExtResource("3_player")]
+
+[node name="Projectiles" type="Node2D" parent="."]
+
+[node name="Effects" type="Node2D" parent="."]
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="HUD" parent="UI" instance=ExtResource("4_hud")]
+offset_left = 13.0
+offset_top = 2.0
+offset_right = 13.0
+offset_bottom = 2.0
+
+[node name="TutorialOverlay" type="MarginContainer" parent="UI"]
+layout_mode = 1
+offset_left = 26.0
+offset_top = 98.0
+offset_right = 526.0
+offset_bottom = 338.0
+
+[node name="TutorialPanel" type="PanelContainer" parent="UI/TutorialOverlay"]
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="UI/TutorialOverlay/TutorialPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 16
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 16
+
+[node name="VBox" type="VBoxContainer" parent="UI/TutorialOverlay/TutorialPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="UI/TutorialOverlay/TutorialPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 22
+text = "Tutorial"
+
+[node name="Body" type="Label" parent="UI/TutorialOverlay/TutorialPanel/Margin/VBox"]
+layout_mode = 2
+autowrap_mode = 3
+text = ""
+
+[node name="Footer" type="Label" parent="UI/TutorialOverlay/TutorialPanel/Margin/VBox"]
+layout_mode = 2
+autowrap_mode = 3
+text = ""
+
+[node name="Systems" type="Node" parent="."]
+
+[node name="DamageSystem" type="Node" parent="Systems"]
+script = ExtResource("6_damage_system")
+
+[node name="CooldownSystem" type="Node" parent="Systems"]
+script = ExtResource("7_cooldown_system")
+
+[node name="Spawner" type="Node" parent="Systems"]
+script = ExtResource("5_spawn_system")

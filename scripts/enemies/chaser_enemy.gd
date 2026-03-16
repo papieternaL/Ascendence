@@ -10,6 +10,10 @@ func _ready() -> void:
 	super._ready()
 
 func _physics_process(_delta: float) -> void:
+	if is_rooted():
+		velocity = Vector2.ZERO
+		move_and_slide()
+		return
 	var target: Node2D = get_node_or_null(target_path) as Node2D
 	if target == null:
 		target = get_tree().get_first_node_in_group("player") as Node2D

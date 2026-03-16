@@ -1,7 +1,7 @@
 extends Node2D
 
 @export var missiles_per_cast: int = 3
-@export var spread_degrees: float = 16.0
+@export var spread_degrees: float = 12.0
 
 func cast(source: Node2D, missile_scene: PackedScene, projectile_parent: Node, targets: Array[Node2D]) -> int:
 	if source == null or missile_scene == null or projectile_parent == null:

@@ -1,13 +1,13 @@
-[gd_scene load_steps=9 format=3 uid="uid://bpkvuattnjvx8"]
+[gd_scene load_steps=9 format=3]
 
-[ext_resource type="Script" uid="uid://ona4taly68j6" path="res://scripts/main/main.gd" id="1_main"]
+[ext_resource type="Script" path="res://scripts/main/arcane_pistol_runtime.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://scenes/main/Arena.tscn" id="2_arena"]
-[ext_resource type="PackedScene" path="res://scenes/player/Player.tscn" id="3_player"]
-[ext_resource type="PackedScene" uid="uid://0tcok3tyrapv" path="res://scenes/ui/HUD.tscn" id="4_hud"]
-[ext_resource type="Script" uid="uid://duotlskfqwbt8" path="res://scripts/systems/spawn_system.gd" id="5_spawn_system"]
-[ext_resource type="Script" uid="uid://4o2dbetxo4" path="res://scripts/systems/damage_system.gd" id="6_damage_system"]
-[ext_resource type="Script" uid="uid://cda5m2h8lw60c" path="res://scripts/systems/cooldown_system.gd" id="7_cooldown_system"]
+[ext_resource type="PackedScene" path="res://scenes/player/ArcanePistolPlayer.tscn" id="3_player"]
+[ext_resource type="PackedScene" path="res://scenes/ui/HUD.tscn" id="4_hud"]
 [ext_resource type="PackedScene" path="res://scenes/main/BossArena.tscn" id="8_boss_arena"]
+[ext_resource type="Script" path="res://scripts/systems/spawn_system.gd" id="5_spawn_system"]
+[ext_resource type="Script" path="res://scripts/systems/damage_system.gd" id="6_damage_system"]
+[ext_resource type="Script" path="res://scripts/systems/cooldown_system.gd" id="7_cooldown_system"]
 
 [node name="Main" type="Node"]
 script = ExtResource("1_main")

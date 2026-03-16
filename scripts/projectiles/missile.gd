@@ -4,10 +4,12 @@ const DAMAGE_SYSTEM = preload("res://scripts/systems/damage_system.gd")
 
 signal hit(at: Vector2)
 
-@export var speed: float = 340.0
+@export var speed: float = 300.0
 @export var turn_rate: float = 8.0
 @export var lifetime: float = 3.0
-@export var damage: float = 24.0
+@export var damage: float = 20.0
+@export var crit_chance: float = 0.0
+@export var crit_multiplier: float = 1.5
 var direction: Vector2 = Vector2.RIGHT
 var target: Node2D
 
@@ -38,7 +40,8 @@ func _on_area_entered(area: Area2D) -> void:
 	_attempt_hit(area)
 
 func _attempt_hit(target: Node) -> void:
-	if not DAMAGE_SYSTEM.apply_hit(target, damage):
+	var payload: Dictionary = DAMAGE_SYSTEM.build_hit_payload(damage, crit_chance, crit_multiplier)
+	if DAMAGE_SYSTEM.apply_hit(target, payload).is_empty():
 		return
 	hit.emit(global_position)
 	queue_free()

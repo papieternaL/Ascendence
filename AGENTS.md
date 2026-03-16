@@ -76,6 +76,20 @@ This file is the **single source of truth** for coordination between multiple Cu
 - **Boss arenas**: same-map "sealed arena" feel.
 - **Run stats page**: show **permanent values only** (base + upgrades; exclude temporary buffs).
 
+### Godot Architecture Rules
+- **Reusable objects are scenes**. Player, enemies, projectiles, pickups, abilities, objectives, bosses, and UI panels should all exist as separate scenes.
+- **The root script owns that scene's behavior**. Do not spread a scene's core logic across unrelated controller scripts when the scene itself can own it.
+- **Shared global state stays minimal** and belongs in autoload only when it is truly global (for example, event bus / global save state).
+- **Prefer signals for runtime events**. The expected signal vocabulary includes: `enemy_died`, `player_damaged`, `ability_used`, `xp_collected`, and `wave_started`.
+- **Use exported variables or resources for tuning** so combat values, cooldowns, enemy stats, boss timings, and progression knobs are data-driven.
+- **UI reads gameplay state via signals or explicit update calls**. UI should never own gameplay resolution logic.
+- **Keep systems small and specific**:
+  - `spawn_system`: spawn timing and placement
+  - `cooldown_system`: cooldown helpers/state
+  - `damage_system`: shared damage resolution helpers
+- **Main scene assembles the game**. It should compose the run from scenes/systems and coordinate high-level flow, but it should not become the container for all gameplay logic.
+- **Prefer composition over inheritance** unless inheritance clearly removes duplication without hiding behavior.
+
 ## Code Status (implemented)
 ### Run Stats Overlay (Tab)
 - **Toggle**: `Tab` in `PLAYING` opens/closes overlay.
@@ -225,18 +239,70 @@ Input → Player.update() → Movement
 - (none right now)
 
 ## Next Steps (suggested, prioritized)
-1. **MCM designation + EXP burst**: Tag Treent (and future enemies) as MCM; grant massive XP on kill to teach boss mechanics.
-2. **Boss arena + Treent Overlord encounter**: Build separate arena scene; implement two-phase boss (Lunge + Bark Barrage → Encompass Root + Territory Control).
-3. **Auto-target priority override**: During root phase, auto-aim targets roots first so player can escape.
-4. **Major/Minor Level system**: Detect Major Levels (1,5,10,15,20,25); roll mechanical augments at Major, stats/luck at Minor.
-5. **Reroll system**: Add 3-reroll budget; wire reroll button into `UpgradeUI` (re-rolls all 3 cards, consumes 1 charge).
-6. **Elemental Attunement pre-run UI**: Add attunement selection screen before run starts (Fire/Poison/Dark for Archer).
-7. **Meta-progression scaffold**: Add gear profile screen (Universal + Class relics); wire win/loss → keep/lose relics.
-8. **Visual overhaul Phase 1**: Implement canvas rendering + post-processing pipeline.
-9. **Proc trigger engine**: Build runtime proc checker for combat loop.
-10. **Status effect system**: Implement bleed, marked, shattered_armor statuses.
+1. **Godot scene-ownership refactor**: Split the oversized `scripts/main/main.gd` run logic into scene-owned components (`player`, `boss`, `objective_core`, `upgrade_overlay`, `wave_controller`) so the main scene returns to assembly/orchestration rather than owning all behavior.
+2. **Signal contract pass**: Standardize Godot runtime events around `enemy_died`, `player_damaged`, `ability_used`, `xp_collected`, and `wave_started`, and update HUD/runtime wiring to consume those instead of polling where appropriate.
+3. **Upgrade scene pass**: Keep iterating the new card-based level-up flow as a dedicated UI scene with explicit input/update APIs, rather than rebuilding upgrade behavior inside `main.gd`.
+4. **MCM designation + EXP burst**: Tag Treent (and future enemies) as MCM; grant massive XP on kill to teach boss mechanics.
+5. **Auto-target priority override**: During root phase, auto-aim targets roots first so player can escape.
+6. **Major/Minor Level system**: Detect Major Levels (1,5,10,15,20,25); roll mechanical augments at Major, stats/luck at Minor.
+7. **Reroll system**: Add 3-reroll budget; wire reroll button into the Godot upgrade-card UI (re-rolls all 3 cards, consumes 1 charge).
+8. **Elemental Attunement pre-run UI**: Add attunement selection screen before run starts (Fire/Poison/Dark for Archer).
+9. **Meta-progression scaffold**: Add gear profile screen (Universal + Class relics); wire win/loss → keep/lose relics.
+10. **Proc trigger engine + statuses**: Build the runtime proc checker plus missing status effects like bleed, marked, and shattered armor.
 
 ## Changelog
+- 2026-03-16: **Archer runtime correction pass: Arrow Volley swap, bow visuals, and hard upgrade pause**:
+  - Replaced the remaining Archer-side `Entangle` runtime with `Arrow Volley`: added `scenes/abilities/ArrowVolley.tscn` + `scripts/abilities/arrow_volley.gd`, rewired `scenes/player/Player.tscn`, and updated `scripts/main/main.gd`, `scripts/main/tutorial_main.gd`, `scripts/systems/run_config.gd`, and `scripts/systems/upgrade_catalog.gd` so Archer stays purely ranged while Arcane Pistol remains preserved separately.
+  - `scripts/player/player.gd` now supports class-specific weapon presentation through `weapon_style`, drawing Archer with a visible bow/string/loaded-arrow silhouette and keeping Arcane Pistol on its own pistol presentation via `scenes/player/ArcanePistolPlayer.tscn`.
+  - `scripts/projectiles/bullet.gd`, `scripts/projectiles/sniper_shot.gd`, and `scripts/effects/hit_effect.gd` now support arrow-specific visuals (`arrow`, `arrow_volley`, `power_arrow`) plus muzzle-flash and arrow-impact styling; Archer primary, Power Shot, and Arrow Volley all drive those effects from the Archer runtime and tutorial runtime.
+  - Archer level-up handling now hard-pauses immediately through `_open_upgrade_overlay()` in `scripts/main/main.gd`, including kill-earned level-ups triggered during `_on_enemy_killed`, so the run cannot continue until an upgrade card is chosen.
+- 2026-03-16: **Godot frontend + Archer selection correctness pass**:
+  - Fixed the new frontend state flow so class/map hover only previews and click commits selection; `CharacterSelect` and `MapSelect` no longer mutate `RunConfig` on hover, which stops Archer runs from accidentally inheriting Arcane Pistol state and vice versa.
+  - Preserved Arcane Pistol as class two while bringing it onto the same HUD/runtime contract as Archer: both runtimes now expose `ability_slot_data`, generic ability labels, progress-panel values, upgrade-card display arrays, and pause/upgrade request methods so the shared HUD can stay class-agnostic.
+  - Reworked `scripts/ui/hud.gd` around a shared display contract and added reusable procedural placeholder glyphs via `scripts/ui/icon_glyph.gd` + `scenes/ui/IconGlyph.tscn`; bottom ability slots, upgrade cards, and class ability previews now show distinct no-asset icons instead of pure text.
+  - `scripts/systems/upgrade_catalog.gd` now branches by selected class, keeping the Archer pool intact while adding an Arcane Pistol pool that matches the preserved Arcane runtime ids (`charged_rounds`, `quickdraw`, `spellclock`, `satellite_volley`, `phase_stride`, `deadeye`).
+  - `scripts/main/arena.gd` now constrains tree sampling to upright source regions only, normalizes tree/rock draw sizes closer to native 1x presentation, and expands the Deepwood arena bounds/core spacing again for the 1920x1080 pass.
+  - Archer and Arcane runtimes now expose a real top-middle progress panel contract (`progress_panel_title`, `progress_panel_detail`, `progress_panel_value`) so the HUD can show progression-to-boss during waves/cores and swap to boss health/progress once the boss is active.
+- 2026-03-16: **Godot frontend flow expansion: class select, map select, and Archer tutorial**:
+  - Added `scripts/systems/run_config.gd` as a minimal autoload for cross-scene frontend state (`selected_class_id`, `selected_map_id`, `tutorial_requested`) so the UI flow can move between main menu, class select, map select, tutorial, and the chosen run scene without hardcoding one class/scene path.
+  - Rebuilt `scenes/ui/CharacterSelect.tscn` + `scripts/ui/character_select.gd` into a real multi-class selection page with Archer and Arcane Pistol cards, hover-to-preview behavior, clickable class selection, and per-ability hover details so the class page starts reading closer to the Love2D menu flow.
+  - Added `scenes/ui/MapSelect.tscn` + `scripts/ui/map_select.gd` for a dedicated biome/map selection step; Deepwood is playable, a second map slot is present as a locked future page, and the preview panel shows route/objective/boss details on hover.
+  - Added a first-pass playable Archer tutorial in `scenes/main/TutorialMain.tscn` + `scripts/main/tutorial_main.gd`, covering movement, auto-fire, Dash, auto abilities, and Frenzy, then routing back into map selection on completion.
+  - `scenes/ui/MainMenu.tscn` + `scripts/ui/main_menu.gd` now expose both the normal start flow (`Main Menu -> Class Select -> Map Select -> Run`) and a direct `Tutorial` entry for the Archer onboarding path.
+- 2026-03-15: **Archer-first parity pivot without deleting Arcane Pistol**:
+  - Preserved the current Arcane Pistol prototype as dedicated Godot files instead of overwriting it: added `scripts/main/arcane_pistol_runtime.gd`, `scenes/player/ArcanePistolPlayer.tscn`, and `scenes/main/ArcanePistolMain.tscn` so the second class path remains in-repo and runnable later.
+  - Kept the active runtime moving toward Archer parity in `scripts/main/main.gd`, including Archer cooldown labels, major-progress-based forest flow, and upgrade-pause handling that now hard-pauses immediately when kill-earned level-ups create the 3-card overlay.
+  - Updated the active UI copy to Archer-first in `scripts/ui/character_select.gd`, `scenes/ui/CharacterSelect.tscn`, and `scripts/ui/main_menu.gd`; Character Select now explicitly states Archer is the active parity target while Arcane Pistol is still preserved as the second class path.
+  - `scripts/ui/hud.gd` now presents the current Archer kit more coherently: `Q` shows Power Shot, `SPACE` shows Dash, `E` shows Entangle, and `R` shows Frenzy/ultimate state instead of the old Arcane Pistol labels.
+- 2026-03-15: **Godot spawn-telegraph + crit path + menu/front-end pass**:
+  - `scripts/main/main.gd` now slows Arcane Pistol primary cadence further, adds pre-spawn telegraphs through a reusable `SpawnIndicator` scene, routes damage through crit-capable payloads, and spawns floating damage numbers from a shared enemy damage signal.
+  - Added `scenes/effects/SpawnIndicator.tscn` + `scripts/effects/spawn_indicator.gd` for the Archero-style red warning marker before enemy spawns, and `scenes/effects/DamageNumber.tscn` + `scripts/effects/damage_number.gd` for floating hit numbers with crit emphasis.
+  - `scripts/systems/damage_system.gd`, `scripts/projectiles/bullet.gd`, `scripts/projectiles/missile.gd`, `scripts/projectiles/sniper_shot.gd`, and `scripts/enemies/enemy_base.gd` now support crit-ready hit payloads and emit damage events suitable for future combat VFX / status systems.
+  - `scripts/main/arena.gd` expands the forest playfield again with wider core spacing and more edge dressing so the run has more traversal room at 1920x1080.
+  - `scenes/ui/MainMenu.tscn` + `scripts/ui/main_menu.gd` received a first visual art pass, and the flow now goes through a new `scenes/ui/CharacterSelect.tscn` + `scripts/ui/character_select.gd` screen before entering the run.
+- 2026-03-15: **Godot Esc-menu + blink + primary auto-fire parity pass**:
+  - `project.godot` now explicitly maps `ui_cancel` to `Esc`, so the in-run pause/menu flow can actually be triggered from keyboard instead of only through the HUD button.
+  - `scripts/main/main.gd` now treats Arcane Pistol primary as true auto-fire through a dedicated `_should_auto_fire_primary()` path, keeps the in-run pause state synchronized when toggled/resumed, and exposes lightweight pause/overlay query methods for the HUD layer.
+  - `scripts/player/player.gd` remains on the instant-reposition Arcane Blink implementation rather than the old travel dash, preserving the blink-style utility identity during the Godot port.
+- 2026-03-14: **Godot forest cleanup + pause/menu + upgrade interaction fix pass**:
+  - `scripts/main/arena.gd` no longer tiles the transparent forest floor texture region that was creating visible dark checker squares and hole-like gaps; the ground now uses a solid authored grass pass with layered value patches while keeping the pixel-art tree/rock dressing.
+  - `scripts/main/main.gd` now auto-casts Arcane Missiles whenever the cooldown is ready and valid targets exist, adds manual in-run pause/menu control, and exposes hover-selection support for the upgrade cards.
+  - `scenes/ui/HUD.tscn` and `scripts/ui/hud.gd` now include an in-run `Menu` button, a pause panel with resume/return-to-menu actions, upgrade-card hover preview, and click-to-pick support through explicit game callbacks.
+  - Upgrade selection remains a hard pause state: once upgrade cards are visible, the run stays paused and the player can only resolve that overlay until a card is chosen.
+- 2026-03-14: **Godot menu/boss-portal/parity pass started**:
+  - `project.godot` now boots into a dedicated Godot main menu scene instead of dropping straight into gameplay, and `scenes/ui/MainMenu.tscn` plus `scripts/ui/main_menu.gd` provide the first pass of Start/Settings/Quit flow with a display-mode toggle and the 1920x1080 target called out explicitly.
+  - Added a separate boss-travel path in Godot instead of spawning Treent directly into the forest: `scenes/main/BossPortal.tscn` + `scripts/main/boss_portal.gd` introduce the portal interaction, while `scenes/main/BossArena.tscn` + `scripts/main/boss_arena.gd` establish a distinct boss space with different arena dressing.
+  - `scripts/main/main.gd` now begins transitioning the forest slice toward the intended run flow: larger mixed opening waves, portal phase before boss, boss-area transfer, broader enemy-spawn mix, XP curve closer to the LÖVE build, and a first implementation of Arcane Blink on `Space` with cooldown wiring.
+  - `scripts/main/arena.gd` now uses the same Winlu forest asset sheets already referenced by the LÖVE project for floor/tree/rock dressing, so the Godot forest is starting to read as an actual pixel-art map rather than only vector placeholder shapes.
+  - Added the first extra monster scenes beyond dummy/chaser (`LungerEnemy`, `TreentEnemy`) and extended `GameEvents` with the architecture-rule signal vocabulary (`enemy_died`, `ability_used`, `xp_collected`, `wave_started`) so future HUD/runtime work can move further away from polling.
+- 2026-03-14: **Godot architecture rules locked**:
+  - Added explicit Godot-side architecture constraints to AGENTS.md: reusable objects should be scenes, root scripts own scene behavior, shared global state stays minimal, runtime flow should prefer signals, tuning should live in exports/resources, UI must stay presentation-only, systems should remain narrow, main scene should assemble rather than own all gameplay, and composition is preferred over inheritance.
+  - Documented the immediate implication for follow-up work: `scripts/main/main.gd` is currently too large for the desired structure and should be broken into scene-owned or small-system-owned responsibilities in the next refactor pass.
+- 2026-03-14: **Godot 1080p forest expansion + authored upgrade-card overlay**:
+  - `project.godot` now targets a native `1920x1080` viewport, launches in fullscreen, and uses expand-aspect canvas stretching so the current Godot slice fills the display cleanly.
+  - `scripts/main/arena.gd` expands the forest playfield with a much larger arena rectangle, wider spawn/core/boss anchor positions, camera limits, and a denser full-screen forest composition so the run no longer feels boxed into the old prototype footprint.
+  - `scripts/main/main.gd` now exposes upgrade-card data and selected-card state directly to the HUD, supports click-to-select level-up cards, and applies the new arena camera limits on startup.
+  - `scenes/ui/HUD.tscn` and `scripts/ui/hud.gd` replace the old multiline level-up drop-down prompt with a centered three-card upgrade overlay that preserves keyboard selection while adding direct mouse selection.
 - 2026-03-14: **Godot combat hit-contract fix + authored HUD pass**:
   - Fixed the Arcane Pistol damage path in `scripts/systems/damage_system.gd` plus `scripts/projectiles/bullet.gd`, `scripts/projectiles/missile.gd`, and `scripts/projectiles/sniper_shot.gd`: player projectiles now react to enemy hurtbox `Area2D` collisions, resolve the owning damageable node, preserve sniper pierce tracking, and keep hit VFX emission through the existing signal path.
   - `scripts/main/main.gd` now exposes HUD-facing run state beyond the original debug strings: current/max health, run timer, and objective progress values, while still driving the existing forest/core/boss flow and cooldown hooks.

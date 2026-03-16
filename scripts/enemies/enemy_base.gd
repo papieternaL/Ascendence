@@ -1,6 +1,8 @@
 extends CharacterBody2D
 class_name EnemyBase
 
+signal damage_taken(world_position: Vector2, amount: float, is_crit: bool)
+
 @export var max_health: float = 25.0
 @export var move_speed: float = 90.0
 @export var body_color: Color = Color(0.94, 0.6, 0.56, 1.0)
@@ -14,6 +16,7 @@ class_name EnemyBase
 
 var health: float
 var _flash_remaining: float = 0.0
+var rooted_remaining: float = 0.0
 
 func _ready() -> void:
 	add_to_group("enemies")
@@ -26,17 +29,36 @@ func _process(delta: float) -> void:
 	if _flash_remaining > 0.0:
 		_flash_remaining = max(_flash_remaining - delta, 0.0)
 		queue_redraw()
+	if rooted_remaining > 0.0:
+		rooted_remaining = max(rooted_remaining - delta, 0.0)
 
-func take_damage(amount: float) -> void:
-	health = max(health - amount, 0.0)
+func apply_root(duration: float) -> void:
+	rooted_remaining = max(rooted_remaining, duration)
+
+func is_rooted() -> bool:
+	return rooted_remaining > 0.0
+
+func take_damage(attack: Variant) -> void:
+	var damage_amount: float = 0.0
+	var is_crit: bool = false
+	if attack is Dictionary:
+		damage_amount = float((attack as Dictionary).get("amount", 0.0))
+		is_crit = bool((attack as Dictionary).get("is_crit", false))
+	else:
+		damage_amount = float(attack)
+	if damage_amount <= 0.0 or health <= 0.0:
+		return
+	health = max(health - damage_amount, 0.0)
 	_hit_feedback()
 	_update_health_bar()
+	damage_taken.emit(global_position + Vector2(0.0, -18.0), damage_amount, is_crit)
 	if health <= 0.0:
 		die()
 
 func die() -> void:
 	if has_node("/root/GameEvents"):
 		GameEvents.enemy_killed.emit(self)
+		GameEvents.enemy_died.emit(self)
 	queue_free()
 
 func _update_health_bar() -> void:
