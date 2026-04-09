@@ -6,6 +6,10 @@ tmpclaude-*
 # Editor directories
 .cursor/
 .claude/
+.godot/
+
+# Local tooling (CI / agents)
+.tools/
 
 # LÖVE build files
 *.love

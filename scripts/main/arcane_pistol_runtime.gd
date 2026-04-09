@@ -1087,8 +1087,8 @@ func _use_hotbar_slot(slot: int) -> void:
 	var item_id: String = str(item_data.get("id", ""))
 	if item_id == "hp_potion":
 		var heal_amount: float = float(item_data.get("heal_amount", 250.0))
-		if _player != null and _player.has_method("heal"):
-			_player.heal(heal_amount)
+		if player != null and player.has_method("heal"):
+			player.heal(heal_amount)
 			AudioDirector.play_ui("ui_confirm", -2.0) if AudioDirector != null else null
 
 func request_resume_game() -> void:
