@@ -168,7 +168,14 @@ func _draw() -> void:
 
 func _draw_floor() -> void:
 	var clearing: Vector2 = scale_map_point(Vector2(1000, 780))
-	draw_rect(ARENA_RECT, Color(0.31, 0.60, 0.34, 1.0), true)
+	draw_rect(ARENA_RECT, Color(0.27, 0.51, 0.29, 1.0), true)
+	for patch in [
+		{"position": scale_map_point(Vector2(-120, 80)), "radius": Vector2(360.0, 170.0) * MAP_SCALE, "color": Color(0.14, 0.24, 0.14, 0.20)},
+		{"position": scale_map_point(Vector2(2140, 110)), "radius": Vector2(330.0, 160.0) * MAP_SCALE, "color": Color(0.14, 0.24, 0.14, 0.18)},
+		{"position": scale_map_point(Vector2(40, 1420)), "radius": Vector2(360.0, 170.0) * MAP_SCALE, "color": Color(0.14, 0.24, 0.14, 0.18)},
+		{"position": scale_map_point(Vector2(2050, 1420)), "radius": Vector2(350.0, 170.0) * MAP_SCALE, "color": Color(0.14, 0.24, 0.14, 0.16)},
+	]:
+		_draw_soft_patch(patch.position, patch.radius, patch.color)
 	for patch in [
 		{"position": Vector2(90, 90), "radius": Vector2(220, 88), "color": Color(0.23, 0.48, 0.27, 0.18)},
 		{"position": Vector2(1880, 84), "radius": Vector2(180, 84), "color": Color(0.23, 0.48, 0.27, 0.16)},
@@ -179,19 +186,53 @@ func _draw_floor() -> void:
 	]:
 		_draw_soft_patch(scale_map_point(patch.position), patch.radius * MAP_SCALE, patch.color)
 	for patch in [
-		{"position": clearing + Vector2(0, -320) * MAP_SCALE, "radius": Vector2(150, 60) * MAP_SCALE, "color": Color(0.48, 0.56, 0.34, 0.10)},
-		{"position": clearing + Vector2(0, -120) * MAP_SCALE, "radius": Vector2(200, 82) * MAP_SCALE, "color": Color(0.46, 0.54, 0.32, 0.10)},
-		{"position": clearing + Vector2(0, 120) * MAP_SCALE, "radius": Vector2(210, 88) * MAP_SCALE, "color": Color(0.46, 0.54, 0.32, 0.08)},
+		{"position": clearing + Vector2(0, -360) * MAP_SCALE, "radius": Vector2(190, 76) * MAP_SCALE, "color": Color(0.47, 0.55, 0.31, 0.10)},
+		{"position": clearing + Vector2(0, -140) * MAP_SCALE, "radius": Vector2(250, 96) * MAP_SCALE, "color": Color(0.49, 0.57, 0.34, 0.11)},
+		{"position": clearing + Vector2(0, 140) * MAP_SCALE, "radius": Vector2(260, 100) * MAP_SCALE, "color": Color(0.47, 0.55, 0.32, 0.09)},
+		{"position": clearing + Vector2(-260, -40) * MAP_SCALE, "radius": Vector2(134, 72) * MAP_SCALE, "color": Color(0.44, 0.53, 0.31, 0.08)},
+		{"position": clearing + Vector2(260, -20) * MAP_SCALE, "radius": Vector2(138, 74) * MAP_SCALE, "color": Color(0.44, 0.53, 0.31, 0.08)},
 	]:
 		_draw_soft_patch(patch.position, patch.radius, patch.color)
-	_draw_path_strip(scale_map_point(Vector2(1000, 150)), scale_map_point(Vector2(1000, 1380)), 72.0 * MAP_SCALE, Color(0.45, 0.52, 0.31, 0.10))
-	_draw_path_strip(scale_map_point(Vector2(760, 760)), scale_map_point(Vector2(1240, 760)), 82.0 * MAP_SCALE, Color(0.45, 0.52, 0.31, 0.08))
+	_draw_worn_trail(
+		scale_map_point(Vector2(1000, 120)),
+		scale_map_point(Vector2(1000, 1420)),
+		78.0 * MAP_SCALE,
+		Color(0.39, 0.34, 0.20, 0.095),
+		Color(0.24, 0.22, 0.14, 0.05)
+	)
+	_draw_worn_trail(
+		scale_map_point(Vector2(720, 760)),
+		scale_map_point(Vector2(1280, 760)),
+		88.0 * MAP_SCALE,
+		Color(0.39, 0.34, 0.20, 0.080),
+		Color(0.24, 0.22, 0.14, 0.045)
+	)
+	_draw_worn_trail(
+		scale_map_point(Vector2(470, 420)),
+		scale_map_point(Vector2(760, 760)),
+		60.0 * MAP_SCALE,
+		Color(0.36, 0.31, 0.19, 0.050),
+		Color(0.20, 0.19, 0.12, 0.032)
+	)
+	_draw_worn_trail(
+		scale_map_point(Vector2(1530, 420)),
+		scale_map_point(Vector2(1240, 760)),
+		60.0 * MAP_SCALE,
+		Color(0.36, 0.31, 0.19, 0.050),
+		Color(0.20, 0.19, 0.12, 0.032)
+	)
+	_draw_soft_patch(clearing + Vector2(0.0, 20.0), Vector2(172.0, 82.0) * MAP_SCALE, Color(0.57, 0.60, 0.36, 0.055))
 	for pos in [
 		Vector2(220, 180), Vector2(420, 260), Vector2(620, 1160), Vector2(860, 220),
 		Vector2(1140, 260), Vector2(1380, 1180), Vector2(1580, 260), Vector2(1820, 180),
 		Vector2(240, 1300), Vector2(1780, 1320), Vector2(2140, 760), Vector2(-120, 760)
 	]:
 		_draw_grass_tuft(scale_map_point(pos), 14.0 * MAP_SCALE)
+	for pos in [
+		Vector2(70, 140), Vector2(1960, 120), Vector2(160, 1360), Vector2(1840, 1380),
+		Vector2(320, 360), Vector2(1680, 360), Vector2(260, 1110), Vector2(1760, 1120)
+	]:
+		_draw_grass_tuft(scale_map_point(pos), 20.0 * MAP_SCALE)
 
 func _draw_path_strip(from: Vector2, to: Vector2, width: float, color: Color) -> void:
 	var dir: Vector2 = (to - from).normalized()
@@ -206,6 +247,19 @@ func _draw_path_strip(from: Vector2, to: Vector2, width: float, color: Color) ->
 	for step in range(7):
 		var t: float = float(step) / 6.0
 		_draw_soft_patch(from.lerp(to, t), Vector2(width * 0.9, width * 0.46), Color(color.r, color.g, color.b, color.a * 0.9))
+
+func _draw_worn_trail(from: Vector2, to: Vector2, width: float, center_color: Color, edge_color: Color) -> void:
+	_draw_path_strip(from, to, width * 1.16, edge_color)
+	_draw_path_strip(from, to, width, center_color)
+	var dir: Vector2 = (to - from).normalized()
+	var normal: Vector2 = Vector2(-dir.y, dir.x)
+	for step in range(6):
+		var t: float = (float(step) + 0.5) / 6.0
+		var center: Vector2 = from.lerp(to, t)
+		var edge_offset: Vector2 = normal * width * (0.68 if step % 2 == 0 else -0.68)
+		_draw_soft_patch(center + edge_offset, Vector2(width * 0.18, width * 0.08), Color(0.23, 0.39, 0.19, 0.045))
+	_draw_soft_patch(from, Vector2(width * 0.58, width * 0.22), Color(center_color.r, center_color.g, center_color.b, center_color.a * 0.8))
+	_draw_soft_patch(to, Vector2(width * 0.62, width * 0.24), Color(center_color.r, center_color.g, center_color.b, center_color.a * 0.75))
 
 func _draw_soft_patch(position: Vector2, radius: Vector2, color: Color) -> void:
 	for ring in range(4, 0, -1):

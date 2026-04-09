@@ -886,6 +886,7 @@ func _load_optional_texture(resource_path: String) -> Texture2D:
 func _draw() -> void:
 	_draw_cobble_floor()
 	_draw_floor_warmth()
+	_draw_plaza_wear()
 	_draw_dirt_paths()
 	_draw_ground_contact()
 	_draw_asset_grounding()
@@ -893,6 +894,27 @@ func _draw() -> void:
 func _draw_floor_warmth() -> void:
 	var floor_r: Rect2 = _floor_draw_rect()
 	draw_rect(floor_r, Color(0.94, 0.88, 0.78, 0.07), true)
+	for patch in [
+		{"position": floor_r.position + Vector2(floor_r.size.x * 0.18, floor_r.size.y * 0.16), "radius": Vector2(220.0, 132.0), "color": Color(0.52, 0.42, 0.28, 0.04)},
+		{"position": floor_r.position + Vector2(floor_r.size.x * 0.84, floor_r.size.y * 0.22), "radius": Vector2(250.0, 144.0), "color": Color(0.46, 0.38, 0.27, 0.04)},
+		{"position": floor_r.position + Vector2(floor_r.size.x * 0.28, floor_r.size.y * 0.82), "radius": Vector2(260.0, 156.0), "color": Color(0.48, 0.39, 0.28, 0.035)},
+		{"position": floor_r.position + Vector2(floor_r.size.x * 0.78, floor_r.size.y * 0.78), "radius": Vector2(280.0, 164.0), "color": Color(0.48, 0.39, 0.28, 0.035)},
+	]:
+		_draw_soft_patch(patch["position"], patch["radius"], patch["color"])
+
+
+func _draw_plaza_wear() -> void:
+	for patch in [
+		{"position": HUB_CENTER + Vector2(0.0, 12.0), "radius": Vector2(226.0, 138.0), "color": Color(0.44, 0.36, 0.27, 0.050)},
+		{"position": HUB_CENTER + Vector2(0.0, 18.0), "radius": Vector2(186.0, 110.0), "color": Color(0.66, 0.58, 0.44, 0.035)},
+		{"position": HUB_CENTER + Vector2(-178.0, -156.0), "radius": Vector2(92.0, 46.0), "color": Color(0.40, 0.31, 0.22, 0.045)},
+		{"position": HUB_CENTER + Vector2(190.0, -144.0), "radius": Vector2(86.0, 42.0), "color": Color(0.40, 0.31, 0.22, 0.045)},
+		{"position": HUB_CENTER + Vector2(-210.0, 120.0), "radius": Vector2(98.0, 48.0), "color": Color(0.40, 0.31, 0.22, 0.038)},
+		{"position": HUB_CENTER + Vector2(206.0, 132.0), "radius": Vector2(94.0, 46.0), "color": Color(0.40, 0.31, 0.22, 0.038)},
+	]:
+		_draw_soft_patch(patch["position"], patch["radius"], patch["color"])
+	draw_arc(HUB_CENTER + Vector2(0.0, 8.0), 172.0, 0.0, TAU, 44, Color(0.70, 0.62, 0.50, 0.06), 2.0, true)
+	draw_arc(HUB_CENTER + Vector2(0.0, 10.0), 108.0, 0.0, TAU, 36, Color(0.28, 0.23, 0.18, 0.06), 1.4, true)
 
 
 ## Soft contact shadow / packed dirt under major props (matches EsseloriaHub positions).
@@ -933,14 +955,12 @@ func _draw_cobble_floor() -> void:
 
 ## Packed-earth tint between cobble paths (reference hub dirt between stones).
 func _draw_dirt_paths() -> void:
-	var dirt: Color = Color(0.38, 0.31, 0.22, 0.14)
-	var moss: Color = Color(0.23, 0.29, 0.18, 0.05)
 	var south_from: Vector2 = HUB_CENTER + Vector2(0.0, OUTER_RING_RADIUS)
 	var south_to: Vector2 = PORTAL_POINT + Vector2(0.0, -52.0)
-	_draw_path_strip(HUB_CENTER + Vector2(0.0, -OUTER_RING_RADIUS), HUB_CENTER + Vector2(0.0, -360.0), PATH_WIDTH + 24.0, dirt, dirt)
-	_draw_path_strip(HUB_CENTER + Vector2(OUTER_RING_RADIUS, 0.0), HUB_CENTER + Vector2(360.0, 0.0), PATH_WIDTH + 24.0, dirt, dirt)
-	_draw_path_strip(south_from, south_to, PATH_WIDTH + 36.0, dirt, dirt)
-	_draw_path_strip(HUB_CENTER + Vector2(-OUTER_RING_RADIUS, 0.0), HUB_CENTER + Vector2(-360.0, 0.0), PATH_WIDTH + 24.0, dirt, dirt)
+	_draw_worn_hub_path(HUB_CENTER + Vector2(0.0, -OUTER_RING_RADIUS), HUB_CENTER + Vector2(0.0, -360.0), PATH_WIDTH + 24.0, 0.95)
+	_draw_worn_hub_path(HUB_CENTER + Vector2(OUTER_RING_RADIUS, 0.0), HUB_CENTER + Vector2(360.0, 0.0), PATH_WIDTH + 24.0, 0.88)
+	_draw_worn_hub_path(south_from, south_to, PATH_WIDTH + 36.0, 1.15)
+	_draw_worn_hub_path(HUB_CENTER + Vector2(-OUTER_RING_RADIUS, 0.0), HUB_CENTER + Vector2(-360.0, 0.0), PATH_WIDTH + 24.0, 0.92)
 	for point in [
 		HUB_CENTER + Vector2(-244.0, -294.0),
 		HUB_CENTER + Vector2(292.0, -278.0),
@@ -948,7 +968,27 @@ func _draw_dirt_paths() -> void:
 		HUB_CENTER + Vector2(404.0, 46.0),
 		PORTAL_POINT + Vector2(0.0, -6.0),
 	]:
-		_draw_soft_patch(point, Vector2(76.0, 28.0), moss)
+		_draw_soft_patch(point, Vector2(82.0, 30.0), Color(0.34, 0.27, 0.20, 0.08))
+		_draw_soft_patch(point + Vector2(0.0, 2.0), Vector2(58.0, 20.0), Color(0.22, 0.29, 0.18, 0.06))
+
+
+func _draw_worn_hub_path(from: Vector2, to: Vector2, width: float, strength: float = 1.0) -> void:
+	var shoulder_fill: Color = Color(0.34, 0.27, 0.20, 0.10 * strength)
+	var shoulder_highlight: Color = Color(0.48, 0.39, 0.30, 0.045 * strength)
+	var center_fill: Color = Color(0.44, 0.35, 0.25, 0.12 * strength)
+	var center_highlight: Color = Color(0.63, 0.54, 0.41, 0.05 * strength)
+	_draw_path_strip(from, to, width + 34.0, shoulder_fill, shoulder_highlight)
+	_draw_path_strip(from, to, width + 10.0, center_fill, center_highlight)
+	var direction: Vector2 = (to - from).normalized()
+	var normal: Vector2 = direction.orthogonal()
+	for step in range(6):
+		var t: float = (float(step) + 0.5) / 6.0
+		var center: Vector2 = from.lerp(to, t)
+		var offset_scale: float = 0.68 if step % 2 == 0 else -0.72
+		var edge_offset: Vector2 = normal * width * offset_scale
+		_draw_soft_patch(center + edge_offset + Vector2(0.0, 5.0), Vector2(width * 0.18, width * 0.07), Color(0.24, 0.31, 0.18, 0.05 * strength))
+	_draw_soft_patch(from + Vector2(0.0, 4.0), Vector2(width * 0.56, width * 0.18), Color(0.42, 0.33, 0.24, 0.06 * strength))
+	_draw_soft_patch(to + Vector2(0.0, 6.0), Vector2(width * 0.62, width * 0.20), Color(0.42, 0.33, 0.24, 0.07 * strength))
 
 func _draw_paths() -> void:
 	# Cobblestone-style mid greys; south strip links statue to Ascension Portal.
