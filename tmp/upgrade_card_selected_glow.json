@@ -1,0 +1,14 @@
+{
+    "prompt":  "selected overlay for sleek fantasy pixel upgrade card, soft cyan white magical edge glow hugging a tall minimal card silhouette, transparent center, understated but premium, no interior art, transparent background",
+    "width":  248,
+    "height":  340,
+    "variations":  1,
+    "pixel":  true,
+    "bg_mode":  "transparent",
+    "theme":  "dark fantasy roguelite UI",
+    "style":  "minimalist sleek pixel HUD chrome",
+    "smart_crop":  false,
+    "mode":  "ui",
+    "resolution":  "1K",
+    "reference_asset_id":  "c8293391-e864-41a6-af13-8247133c3129"
+}

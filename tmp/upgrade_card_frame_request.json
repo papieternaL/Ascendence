@@ -1,0 +1,13 @@
+{
+  "prompt": "sleek tall fantasy pixel upgrade card frame, dark obsidian gunmetal body with restrained silver corners, open center area, subtle lower rarity plaque space, elegant minimalist roguelite card, not ornate, transparent background, no text",
+  "width": 248,
+  "height": 340,
+  "variations": 1,
+  "pixel": true,
+  "bg_mode": "transparent",
+  "theme": "dark fantasy roguelite UI",
+  "style": "minimalist sleek pixel HUD chrome",
+  "smart_crop": false,
+  "mode": "ui",
+  "resolution": "1K"
+}

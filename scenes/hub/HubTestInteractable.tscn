@@ -1,0 +1,17 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="Script" path="res://scripts/hub/hub_test_interactable.gd" id="1_test"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_interaction"]
+radius = 68.0
+
+[node name="HubTestInteractable" type="Area2D"]
+collision_layer = 16
+collision_mask = 0
+script = ExtResource("1_test")
+interactable_name = "CENTRAL DISTRICT PLAQUE"
+prompt_label = "READ"
+interaction_radius = 68.0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_interaction")

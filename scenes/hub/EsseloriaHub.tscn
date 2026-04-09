@@ -1,0 +1,653 @@
+[gd_scene load_steps=42 format=3 uid="uid://c2kh46wieuhtq"]
+
+[ext_resource type="Script" uid="uid://dm28pyc7ntk3o" path="res://scripts/hub/hub_controller.gd" id="1_hub"]
+[ext_resource type="PackedScene" path="res://scenes/hub/HubInteractionPrompt.tscn" id="3_prompt"]
+[ext_resource type="PackedScene" path="res://scenes/hub/WeaponStation.tscn" id="4_weapon"]
+[ext_resource type="PackedScene" path="res://scenes/hub/VirtueStatue.tscn" id="5_virtue"]
+[ext_resource type="PackedScene" path="res://scenes/hub/QuestBoard.tscn" id="6_quest"]
+[ext_resource type="PackedScene" path="res://scenes/hub/AscensionPortal.tscn" id="7_portal"]
+[ext_resource type="Texture2D" uid="uid://n0m3t686xthi" path="res://art/hub/cobble_tile.png" id="8_cobble"]
+[ext_resource type="PackedScene" uid="uid://0tcok3tyrapv" path="res://scenes/ui/HUD.tscn" id="8_hud"]
+[ext_resource type="Texture2D" uid="uid://v3fw4bnfmk2m" path="res://art/hub/weapon_pillar_bow.png" id="9_bow"]
+[ext_resource type="Texture2D" uid="uid://c3calpxw6sl6i" path="res://art/hub/weapon_pillar_pistol.png" id="10_pistol"]
+[ext_resource type="Texture2D" uid="uid://de1wabjkrqdaj" path="res://art/hub/hub_entrance_sign_arch.png" id="16_sign_arch"]
+[ext_resource type="Texture2D" uid="uid://blfqymu0whx8t" path="res://art/hub/hub_lantern_post.png" id="17_lantern"]
+[ext_resource type="Texture2D" uid="uid://dxyjq535cukyk" path="res://art/hub/hub_cargo_cluster.png" id="18_cargo"]
+[ext_resource type="Texture2D" uid="uid://c1nio4yicr1eg" path="res://art/hub/hub_quest_giver_npc.png" id="19_quest_npc"]
+[ext_resource type="Texture2D" uid="uid://g5dx5hf6dcj0" path="res://art/hub/hub_merchant_npc.png" id="21_merchant_npc"]
+[ext_resource type="Texture2D" uid="uid://x07ky8ipwnby" path="res://art/hub/hub_merchant_stock_cluster.png" id="22_merchant_stock"]
+[ext_resource type="Texture2D" uid="uid://befax0t7uf1je" path="res://art/hub/hub_training_props.png" id="23_training"]
+[ext_resource type="Texture2D" uid="uid://c3i6rn0kqwgeo" path="res://art/hub/hub_trainee_npc.png" id="24_trainee"]
+[ext_resource type="Texture2D" uid="uid://8harnev0f6s8" path="res://art/hub/hub_plaza_anchor_planter.png" id="25_anchor"]
+[ext_resource type="Texture2D" uid="uid://dn1848svpi103" path="res://art/hub/hub_weapon_corner_props.png" id="26_weapon_props"]
+[ext_resource type="Script" path="res://scripts/hub/ambient_sprite_motion.gd" id="27_ambient"]
+[ext_resource type="Script" uid="uid://cknl23s4mkyf2" path="res://scripts/hub/npc_interaction.gd" id="28_npc_interaction"]
+[ext_resource type="Script" uid="uid://c7barfwtu54fm" path="res://scripts/hub/hub_practice_runtime.gd" id="32_practice_runtime"]
+[ext_resource type="Script" uid="uid://cda5m2h8lw60c" path="res://scripts/systems/cooldown_system.gd" id="33_cooldowns"]
+[ext_resource type="PackedScene" path="res://scenes/props/CookSpriteCurvedTree.tscn" id="34_tree_curved_scene"]
+[ext_resource type="PackedScene" path="res://scenes/props/CookSpriteLuminousTree.tscn" id="35_tree_luminous_scene"]
+[ext_resource type="Texture2D" uid="uid://c6ensaptts0sx" path="res://art/hub/hub_bush_round.png" id="36_bush_round"]
+[ext_resource type="PackedScene" path="res://scenes/props/CookSpriteWillowTree.tscn" id="37_tree_willow_scene"]
+[ext_resource type="PackedScene" path="res://scenes/props/CookSpriteMegaTree.tscn" id="38_tree_mega_scene"]
+[ext_resource type="PackedScene" path="res://scenes/props/CookSpriteSwirlingTree.tscn" id="39_tree_swirling_scene"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_sign_post"]
+size = Vector2(24, 42)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_lantern_post"]
+size = Vector2(28, 38)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_cargo_cluster"]
+size = Vector2(100, 36)
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_pillar"]
+radius = 20.0
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_merchant_left"]
+size = Vector2(84, 44)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_merchant_center"]
+size = Vector2(86, 56)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_merchant_right"]
+size = Vector2(88, 40)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_training_front"]
+size = Vector2(76, 61)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_weapon_cache"]
+size = Vector2(126, 44)
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_npc_interaction"]
+radius = 26.627054
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_npc_footprint"]
+size = Vector2(13, 12)
+
+[node name="HubRoot" type="Node2D"]
+y_sort_enabled = true
+script = ExtResource("1_hub")
+cobble_floor_texture = ExtResource("8_cobble")
+cobble_tile_px = 128
+
+[node name="NorthArrival" type="Node2D" parent="."]
+modulate = Color(0.92, 0.94, 0.98, 1)
+y_sort_enabled = true
+
+[node name="SignArch" type="Node2D" parent="NorthArrival"]
+position = Vector2(1000, 961.9375)
+
+[node name="ArtSprite" type="Sprite2D" parent="NorthArrival/SignArch"]
+position = Vector2(-1, -59.9375)
+scale = Vector2(1.28, 1.28)
+texture = ExtResource("16_sign_arch")
+
+[node name="Blocker" type="StaticBody2D" parent="NorthArrival/SignArch"]
+position = Vector2(-5, -55.9375)
+scale = Vector2(1.36, 1)
+collision_mask = 0
+
+[node name="LeftPost" type="CollisionShape2D" parent="NorthArrival/SignArch/Blocker"]
+position = Vector2(-64, 50)
+shape = SubResource("RectangleShape2D_sign_post")
+
+[node name="RightPost" type="CollisionShape2D" parent="NorthArrival/SignArch/Blocker"]
+position = Vector2(64, 50)
+shape = SubResource("RectangleShape2D_sign_post")
+
+[node name="LanternPostLeft" type="Node2D" parent="NorthArrival"]
+position = Vector2(832, 965)
+
+[node name="ArtSprite" type="Sprite2D" parent="NorthArrival/LanternPostLeft"]
+position = Vector2(0, -60)
+scale = Vector2(0.88, 0.88)
+texture = ExtResource("17_lantern")
+
+[node name="Blocker" type="StaticBody2D" parent="NorthArrival/LanternPostLeft"]
+position = Vector2(0, -60)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="NorthArrival/LanternPostLeft/Blocker"]
+position = Vector2(0, 60)
+shape = SubResource("RectangleShape2D_lantern_post")
+
+[node name="LanternPostRight" type="Node2D" parent="NorthArrival"]
+position = Vector2(1145, 975.68176)
+
+[node name="ArtSprite" type="Sprite2D" parent="NorthArrival/LanternPostRight"]
+position = Vector2(0, -65.68182)
+scale = Vector2(-0.88, 0.88)
+texture = ExtResource("17_lantern")
+
+[node name="Blocker" type="StaticBody2D" parent="NorthArrival/LanternPostRight"]
+position = Vector2(-4.5454545, -60)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="NorthArrival/LanternPostRight/Blocker"]
+position = Vector2(0, 60)
+shape = SubResource("RectangleShape2D_lantern_post")
+
+[node name="ArrivalCargoLeft" type="Node2D" parent="NorthArrival"]
+position = Vector2(774, 298)
+
+[node name="ArtSprite" type="Sprite2D" parent="NorthArrival/ArrivalCargoLeft"]
+position = Vector2(0, -48)
+scale = Vector2(0.66, 0.66)
+texture = ExtResource("18_cargo")
+
+[node name="Blocker" type="StaticBody2D" parent="NorthArrival/ArrivalCargoLeft"]
+position = Vector2(0, -48)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="NorthArrival/ArrivalCargoLeft/Blocker"]
+position = Vector2(-3, 32)
+shape = SubResource("RectangleShape2D_cargo_cluster")
+
+[node name="ArrivalCargoRight" type="Node2D" parent="NorthArrival"]
+position = Vector2(1226, 298)
+
+[node name="ArtSprite" type="Sprite2D" parent="NorthArrival/ArrivalCargoRight"]
+position = Vector2(0, -48)
+scale = Vector2(-0.66, 0.66)
+texture = ExtResource("18_cargo")
+
+[node name="Blocker" type="StaticBody2D" parent="NorthArrival/ArrivalCargoRight"]
+position = Vector2(0, -48)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="NorthArrival/ArrivalCargoRight/Blocker"]
+position = Vector2(-1, 33)
+shape = SubResource("RectangleShape2D_cargo_cluster")
+
+[node name="CentralPlaza" type="Node2D" parent="."]
+y_sort_enabled = true
+
+[node name="Ground" type="Node2D" parent="CentralPlaza"]
+
+[node name="Blockers" type="Node2D" parent="CentralPlaza"]
+
+[node name="NorthWestPillar" type="StaticBody2D" parent="CentralPlaza/Blockers"]
+position = Vector2(823, 543)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="CentralPlaza/Blockers/NorthWestPillar"]
+shape = SubResource("CircleShape2D_pillar")
+
+[node name="NorthEastPillar" type="StaticBody2D" parent="CentralPlaza/Blockers"]
+position = Vector2(1180, 537)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="CentralPlaza/Blockers/NorthEastPillar"]
+shape = SubResource("CircleShape2D_pillar")
+
+[node name="SouthWestPillar" type="StaticBody2D" parent="CentralPlaza/Blockers"]
+position = Vector2(818, 777)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="CentralPlaza/Blockers/SouthWestPillar"]
+shape = SubResource("CircleShape2D_pillar")
+
+[node name="SouthEastPillar" type="StaticBody2D" parent="CentralPlaza/Blockers"]
+position = Vector2(1188, 783)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="CentralPlaza/Blockers/SouthEastPillar"]
+position = Vector2(0, -1)
+shape = SubResource("CircleShape2D_pillar")
+
+[node name="Decor" type="Node2D" parent="CentralPlaza"]
+modulate = Color(0.92, 0.94, 0.98, 1)
+y_sort_enabled = true
+
+[node name="MerchantArea" type="Node2D" parent="CentralPlaza/Decor"]
+y_sort_enabled = true
+position = Vector2(1452, 286)
+
+[node name="MerchantStock" type="Node2D" parent="CentralPlaza/Decor/MerchantArea"]
+position = Vector2(17, 104)
+
+[node name="ArtSprite" type="Sprite2D" parent="CentralPlaza/Decor/MerchantArea/MerchantStock"]
+position = Vector2(0, -42)
+scale = Vector2(0.78, 0.78)
+texture = ExtResource("22_merchant_stock")
+
+[node name="Blocker" type="StaticBody2D" parent="CentralPlaza/Decor/MerchantArea/MerchantStock"]
+position = Vector2(0, -42)
+collision_mask = 0
+
+[node name="LeftShape" type="CollisionShape2D" parent="CentralPlaza/Decor/MerchantArea/MerchantStock/Blocker"]
+position = Vector2(-96, 42)
+shape = SubResource("RectangleShape2D_merchant_left")
+
+[node name="CenterShape" type="CollisionShape2D" parent="CentralPlaza/Decor/MerchantArea/MerchantStock/Blocker"]
+position = Vector2(-8, 30)
+shape = SubResource("RectangleShape2D_merchant_center")
+
+[node name="RightShape" type="CollisionShape2D" parent="CentralPlaza/Decor/MerchantArea/MerchantStock/Blocker"]
+position = Vector2(92, 42)
+shape = SubResource("RectangleShape2D_merchant_right")
+
+[node name="MerchantCargo" type="Node2D" parent="CentralPlaza/Decor/MerchantArea"]
+position = Vector2(190, 253.00002)
+
+[node name="ArtSprite" type="Sprite2D" parent="CentralPlaza/Decor/MerchantArea/MerchantCargo"]
+position = Vector2(0, -48)
+scale = Vector2(0.68, 0.68)
+texture = ExtResource("18_cargo")
+
+[node name="Blocker" type="StaticBody2D" parent="CentralPlaza/Decor/MerchantArea/MerchantCargo"]
+position = Vector2(0, -48)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="CentralPlaza/Decor/MerchantArea/MerchantCargo/Blocker"]
+position = Vector2(0, 24)
+shape = SubResource("RectangleShape2D_cargo_cluster")
+
+[node name="SouthEastCanal" type="Node2D" parent="CentralPlaza/Decor"]
+
+[node name="PlazaAnchors" type="Node2D" parent="CentralPlaza/Decor"]
+
+[node name="AnchorNorthWest" type="Node2D" parent="CentralPlaza/Decor/PlazaAnchors"]
+position = Vector2(823, 497)
+
+[node name="ArtSprite" type="Sprite2D" parent="CentralPlaza/Decor/PlazaAnchors/AnchorNorthWest"]
+position = Vector2(0, -18)
+scale = Vector2(0.88, 0.88)
+texture = ExtResource("25_anchor")
+
+[node name="AnchorNorthEast" type="Node2D" parent="CentralPlaza/Decor/PlazaAnchors"]
+position = Vector2(1180, 490.99997)
+
+[node name="ArtSprite" type="Sprite2D" parent="CentralPlaza/Decor/PlazaAnchors/AnchorNorthEast"]
+position = Vector2(0, -18)
+scale = Vector2(0.88, 0.88)
+texture = ExtResource("25_anchor")
+
+[node name="AnchorSouthWest" type="Node2D" parent="CentralPlaza/Decor/PlazaAnchors"]
+position = Vector2(818, 731)
+
+[node name="ArtSprite" type="Sprite2D" parent="CentralPlaza/Decor/PlazaAnchors/AnchorSouthWest"]
+position = Vector2(0, -18)
+scale = Vector2(0.88, 0.88)
+texture = ExtResource("25_anchor")
+
+[node name="AnchorSouthEast" type="Node2D" parent="CentralPlaza/Decor/PlazaAnchors"]
+position = Vector2(1188, 737)
+
+[node name="ArtSprite" type="Sprite2D" parent="CentralPlaza/Decor/PlazaAnchors/AnchorSouthEast"]
+position = Vector2(0, -18)
+scale = Vector2(0.88, 0.88)
+texture = ExtResource("25_anchor")
+
+[node name="TrainingArea" type="Node2D" parent="CentralPlaza/Decor"]
+y_sort_enabled = true
+position = Vector2(1510, 862)
+
+[node name="TrainingProps" type="Node2D" parent="CentralPlaza/Decor/TrainingArea"]
+position = Vector2(129, 48)
+
+[node name="ArtSprite" type="Sprite2D" parent="CentralPlaza/Decor/TrainingArea/TrainingProps"]
+position = Vector2(0, -98)
+scale = Vector2(0.9, 0.9)
+texture = ExtResource("23_training")
+
+[node name="Blocker" type="StaticBody2D" parent="CentralPlaza/Decor/TrainingArea/TrainingProps"]
+position = Vector2(0, -98)
+collision_mask = 0
+
+[node name="FrontCrates" type="CollisionShape2D" parent="CentralPlaza/Decor/TrainingArea/TrainingProps/Blocker"]
+position = Vector2(127, 46.5)
+shape = SubResource("RectangleShape2D_training_front")
+
+[node name="WeaponCornerDecor" type="Node2D" parent="CentralPlaza/Decor"]
+y_sort_enabled = true
+
+[node name="WeaponCache" type="Node2D" parent="CentralPlaza/Decor/WeaponCornerDecor"]
+position = Vector2(240, 642.97675)
+
+[node name="ArtSprite" type="Sprite2D" parent="CentralPlaza/Decor/WeaponCornerDecor/WeaponCache"]
+position = Vector2(10.96, -53.436745)
+scale = Vector2(0.945625, 0.91046876)
+texture = ExtResource("26_weapon_props")
+
+[node name="Blocker" type="StaticBody2D" parent="CentralPlaza/Decor/WeaponCornerDecor/WeaponCache"]
+position = Vector2(-3.4883723, -40)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="CentralPlaza/Decor/WeaponCornerDecor/WeaponCache/Blocker"]
+position = Vector2(0, 40)
+shape = SubResource("RectangleShape2D_weapon_cache")
+
+[node name="WeaponCargo" type="Node2D" parent="CentralPlaza/Decor/WeaponCornerDecor"]
+position = Vector2(309.99997, 932.00006)
+
+[node name="ArtSprite" type="Sprite2D" parent="CentralPlaza/Decor/WeaponCornerDecor/WeaponCargo"]
+position = Vector2(11.999988, -55.00009)
+scale = Vector2(0.8617187, 0.7328128)
+texture = ExtResource("18_cargo")
+
+[node name="Blocker" type="StaticBody2D" parent="CentralPlaza/Decor/WeaponCornerDecor/WeaponCargo"]
+position = Vector2(0, -48)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="CentralPlaza/Decor/WeaponCornerDecor/WeaponCargo/Blocker"]
+position = Vector2(12.0000305, 17.999939)
+shape = SubResource("RectangleShape2D_cargo_cluster")
+
+[node name="TownGreenery" type="Node2D" parent="CentralPlaza/Decor"]
+y_sort_enabled = true
+
+[node name="OakNW" parent="CentralPlaza/Decor/TownGreenery" instance=ExtResource("37_tree_willow_scene")]
+position = Vector2(572, 238)
+phase_offset = 0.705629385640826
+
+[node name="PineNE" parent="CentralPlaza/Decor/TownGreenery" instance=ExtResource("35_tree_luminous_scene")]
+position = Vector2(1664, 240)
+phase_offset = 3.2304440784612396
+
+[node name="BushNE" type="Node2D" parent="CentralPlaza/Decor/TownGreenery"]
+position = Vector2(1470, 318)
+
+[node name="ArtSprite" type="Sprite2D" parent="CentralPlaza/Decor/TownGreenery/BushNE"]
+position = Vector2(0, -8)
+scale = Vector2(0.3, 0.24)
+texture = ExtResource("36_bush_round")
+
+[node name="OakSW" parent="CentralPlaza/Decor/TownGreenery" instance=ExtResource("34_tree_curved_scene")]
+position = Vector2(206, 905)
+phase_offset = 2.750444078461239
+
+[node name="PineSE" parent="CentralPlaza/Decor/TownGreenery" instance=ExtResource("38_tree_mega_scene")]
+position = Vector2(1826, 759)
+phase_offset = 1.8240734641020708
+
+[node name="OakQuestPath" parent="CentralPlaza/Decor/TownGreenery" instance=ExtResource("39_tree_swirling_scene")]
+position = Vector2(334, 306)
+phase_offset = 2.6736293856408277
+
+[node name="PineWeaponPath" parent="CentralPlaza/Decor/TownGreenery" instance=ExtResource("37_tree_willow_scene")]
+position = Vector2(133, 556)
+phase_offset = 0.71044407846124
+
+[node name="PineNorthEntrance" parent="CentralPlaza/Decor/TownGreenery" instance=ExtResource("35_tree_luminous_scene")]
+position = Vector2(796, 158)
+phase_offset = 2.073629385640828
+
+[node name="OakNorthEntrance" parent="CentralPlaza/Decor/TownGreenery" instance=ExtResource("34_tree_curved_scene")]
+position = Vector2(1149, 171)
+phase_offset = 5.4336293856408275
+
+[node name="HubTreePine" parent="CentralPlaza/Decor/TownGreenery" instance=ExtResource("39_tree_swirling_scene")]
+position = Vector2(1764, 510)
+phase_offset = 5.887258771281655
+
+[node name="WeaponStation1" parent="." instance=ExtResource("4_weapon")]
+modulate = Color(0.92, 0.94, 0.98, 1)
+position = Vector2(496, 552)
+scale = Vector2(0.8, 0.8)
+bound_class_id = "archer"
+pillar_texture = ExtResource("9_bow")
+interactable_name = "HUNTER'S BOW"
+
+[node name="ArtSprite2" type="Sprite2D" parent="WeaponStation1"]
+scale = Vector2(0.5, 0.625)
+
+[node name="WeaponStation2" parent="." instance=ExtResource("4_weapon")]
+modulate = Color(0.92, 0.94, 0.98, 1)
+position = Vector2(499, 730)
+bound_class_id = "arcane_pistol"
+pillar_texture = ExtResource("10_pistol")
+interactable_name = "ARCANE PISTOL"
+
+[node name="VirtueStatue" parent="." instance=ExtResource("5_virtue")]
+modulate = Color(0.92, 0.94, 0.98, 1)
+position = Vector2(1000, 620)
+
+[node name="QuestArea" type="Node2D" parent="."]
+modulate = Color(0.92, 0.94, 0.98, 1)
+y_sort_enabled = true
+
+[node name="QuestFrontageClutter" type="Node2D" parent="QuestArea"]
+position = Vector2(256, 358)
+
+[node name="ArtSprite" type="Sprite2D" parent="QuestArea/QuestFrontageClutter"]
+position = Vector2(0, -48)
+scale = Vector2(0.74, 0.74)
+texture = ExtResource("18_cargo")
+
+[node name="Blocker" type="StaticBody2D" parent="QuestArea/QuestFrontageClutter"]
+position = Vector2(0, -48)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="QuestArea/QuestFrontageClutter/Blocker"]
+position = Vector2(0, 48)
+shape = SubResource("RectangleShape2D_cargo_cluster")
+
+[node name="QuestBoard" parent="QuestArea" instance=ExtResource("6_quest")]
+position = Vector2(480, 300)
+interaction_enabled = false
+
+[node name="AscensionPortal" parent="." instance=ExtResource("7_portal")]
+modulate = Color(0.92, 0.94, 0.98, 1)
+position = Vector2(984, 116)
+
+[node name="NPCs" type="Node2D" parent="."]
+y_sort_enabled = true
+
+[node name="QuestGiver" type="Area2D" parent="NPCs"]
+position = Vector2(429, 392)
+collision_layer = 16
+collision_mask = 0
+script = ExtResource("28_npc_interaction")
+hub_method_name = "open_quest_scroll"
+interactable_name = "QUEST GIVER"
+prompt_label = "QUESTS"
+interaction_radius = 82.0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="NPCs/QuestGiver"]
+position = Vector2(-20, -44)
+shape = SubResource("CircleShape2D_npc_interaction")
+
+[node name="Blocker" type="StaticBody2D" parent="NPCs/QuestGiver"]
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="NPCs/QuestGiver/Blocker"]
+position = Vector2(-7.5, -36)
+shape = SubResource("RectangleShape2D_npc_footprint")
+
+[node name="MotionRoot" type="Node2D" parent="NPCs/QuestGiver"]
+position = Vector2(-24, -3)
+script = ExtResource("27_ambient")
+bob_amplitude = 1.0
+bob_speed = 1.2
+sway_degrees = 0.9
+sway_speed = 1.0
+phase_offset = 0.4
+
+[node name="ArtSprite" type="Sprite2D" parent="NPCs/QuestGiver/MotionRoot"]
+position = Vector2(0, -58)
+scale = Vector2(0.38499996, 0.400625)
+texture = ExtResource("19_quest_npc")
+
+[node name="MerchantKeeper" type="Area2D" parent="NPCs"]
+position = Vector2(1398, 426)
+collision_layer = 16
+collision_mask = 0
+script = ExtResource("28_npc_interaction")
+hub_method_name = "open_merchant_shop"
+interactable_name = "MERCHANT"
+prompt_label = "SHOP"
+interaction_radius = 84.0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="NPCs/MerchantKeeper"]
+shape = SubResource("CircleShape2D_npc_interaction")
+
+[node name="Blocker" type="StaticBody2D" parent="NPCs/MerchantKeeper"]
+position = Vector2(1, 0)
+scale = Vector2(1.0941999, 1)
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="NPCs/MerchantKeeper/Blocker"]
+shape = SubResource("RectangleShape2D_npc_footprint")
+
+[node name="MotionRoot" type="Node2D" parent="NPCs/MerchantKeeper"]
+position = Vector2(-3, -1)
+scale = Vector2(1.04, 1)
+script = ExtResource("27_ambient")
+bob_amplitude = 0.9
+bob_speed = 1.1
+sway_degrees = 0.7
+sway_speed = 0.9
+phase_offset = 1.7
+
+[node name="ArtSprite" type="Sprite2D" parent="NPCs/MerchantKeeper/MotionRoot"]
+position = Vector2(0, -46)
+scale = Vector2(0.41406292, 0.359375)
+texture = ExtResource("21_merchant_npc")
+
+[node name="Trainee" type="Node2D" parent="NPCs"]
+position = Vector2(1657, 817)
+script = ExtResource("27_ambient")
+bob_amplitude = 0.9
+sway_degrees = 1.3
+phase_offset = 2.5
+
+[node name="Blocker" type="StaticBody2D" parent="NPCs/Trainee"]
+collision_mask = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="NPCs/Trainee/Blocker"]
+position = Vector2(0, 58)
+shape = SubResource("RectangleShape2D_npc_footprint")
+
+[node name="Visual" type="Sprite2D" parent="NPCs/Trainee"]
+position = Vector2(6.1035156e-05, -4.9999847)
+scale = Vector2(0.5004688, 0.48484367)
+texture = ExtResource("24_trainee")
+
+[node name="PlayerSpawn" type="Marker2D" parent="."]
+position = Vector2(1000, 724)
+
+[node name="PracticeDummySpawn" type="Marker2D" parent="."]
+position = Vector2(1580, 912)
+
+[node name="Entities" type="Node2D" parent="."]
+y_sort_enabled = true
+
+[node name="Projectiles" type="Node2D" parent="."]
+
+[node name="Effects" type="Node2D" parent="."]
+
+[node name="Systems" type="Node" parent="."]
+
+[node name="CooldownSystem" type="Node" parent="Systems"]
+script = ExtResource("33_cooldowns")
+
+[node name="PracticeRuntime" type="Node" parent="."]
+script = ExtResource("32_practice_runtime")
+
+[node name="UI" type="CanvasLayer" parent="."]
+layer = 20
+
+[node name="HUD" parent="UI" instance=ExtResource("8_hud")]
+visible = false
+
+[node name="InteractionPrompt" parent="UI" instance=ExtResource("3_prompt")]
+
+[node name="CenterOverlay" type="Control" parent="UI"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 1
+
+[node name="OverlayBackdrop" type="ColorRect" parent="UI/CenterOverlay"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0.01, 0.02, 0.04, 0.86)
+
+[node name="OverlayCenter" type="CenterContainer" parent="UI/CenterOverlay"]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="OverlayPanel" type="PanelContainer" parent="UI/CenterOverlay/OverlayCenter"]
+visible = false
+custom_minimum_size = Vector2(780, 520)
+layout_mode = 2
+
+[node name="Margin" type="MarginContainer" parent="UI/CenterOverlay/OverlayCenter/OverlayPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 24
+theme_override_constants/margin_top = 22
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 22
+
+[node name="VBox" type="VBoxContainer" parent="UI/CenterOverlay/OverlayCenter/OverlayPanel/Margin"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="UI/CenterOverlay/OverlayCenter/OverlayPanel/Margin/VBox"]
+layout_mode = 2
+text = "INTERACTABLE"
+horizontal_alignment = 1
+
+[node name="Subtitle" type="Label" parent="UI/CenterOverlay/OverlayCenter/OverlayPanel/Margin/VBox"]
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="Status" type="Label" parent="UI/CenterOverlay/OverlayCenter/OverlayPanel/Margin/VBox"]
+layout_mode = 2
+horizontal_alignment = 1
+
+[node name="Body" type="Label" parent="UI/CenterOverlay/OverlayCenter/OverlayPanel/Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+autowrap_mode = 3
+
+[node name="Actions" type="HBoxContainer" parent="UI/CenterOverlay/OverlayCenter/OverlayPanel/Margin/VBox"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Action0" type="Button" parent="UI/CenterOverlay/OverlayCenter/OverlayPanel/Margin/VBox/Actions"]
+visible = false
+custom_minimum_size = Vector2(150, 44)
+layout_mode = 2
+text = "ACTION"
+
+[node name="Action1" type="Button" parent="UI/CenterOverlay/OverlayCenter/OverlayPanel/Margin/VBox/Actions"]
+visible = false
+custom_minimum_size = Vector2(150, 44)
+layout_mode = 2
+text = "ACTION"
+
+[node name="Action2" type="Button" parent="UI/CenterOverlay/OverlayCenter/OverlayPanel/Margin/VBox/Actions"]
+visible = false
+custom_minimum_size = Vector2(150, 44)
+layout_mode = 2
+text = "ACTION"
+
+[node name="Action3" type="Button" parent="UI/CenterOverlay/OverlayCenter/OverlayPanel/Margin/VBox/Actions"]
+visible = false
+custom_minimum_size = Vector2(150, 44)
+layout_mode = 2
+text = "ACTION"
+
+[node name="Hint" type="Label" parent="UI/CenterOverlay/OverlayCenter/OverlayPanel/Margin/VBox"]
+layout_mode = 2
+text = "PRESS INTERACT, ENTER, OR ESC TO CLOSE"
+horizontal_alignment = 1

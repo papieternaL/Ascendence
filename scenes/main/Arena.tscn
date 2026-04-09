@@ -1,8 +1,9 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=2 format=3 uid="uid://ciq3k850olb5u"]
 
-[ext_resource type="Script" path="res://scripts/main/arena.gd" id="1_arena"]
+[ext_resource type="Script" uid="uid://cmv6q27h1nn1b" path="res://scripts/main/arena.gd" id="1_arena"]
 
 [node name="Arena" type="Node2D"]
+y_sort_enabled = true
 script = ExtResource("1_arena")
 
 [node name="Ground" type="Node2D" parent="."]
@@ -10,3 +11,4 @@ script = ExtResource("1_arena")
 [node name="Blockers" type="Node2D" parent="."]
 
 [node name="Decor" type="Node2D" parent="."]
+y_sort_enabled = true

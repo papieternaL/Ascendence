@@ -1,0 +1,13 @@
+{
+  "prompt": "wide snowcapped mountain backdrop for a medieval fantasy town, layered purple and blue peaks with cool dusk shadows and a few lower foothills, transparent below the mountain line, no sky, scenic pixel art",
+  "width": 512,
+  "height": 192,
+  "variations": 1,
+  "pixel": true,
+  "bg_mode": "transparent",
+  "theme": "dark fantasy medieval kingdom",
+  "style": "rich painterly pixel art scenic backdrop for a 2D action roguelite hub",
+  "smart_crop": false,
+  "mode": "assets",
+  "resolution": "1K"
+}

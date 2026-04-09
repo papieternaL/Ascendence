@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://yphvxrj7cjd5"
+path="res://.godot/imported/cards-pack-open-1.ogg-a5ebdb71b85d2d9c1d6cc89510c8ae21.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/Audio/Casino Audio/Audio/cards-pack-open-1.ogg"
+dest_files=["res://.godot/imported/cards-pack-open-1.ogg-a5ebdb71b85d2d9c1d6cc89510c8ae21.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

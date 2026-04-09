@@ -1,0 +1,15 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://SpriteCook/scripts/spritecook_animation_preview.gd" id="1_script"]
+
+[node name="AnimationPreview" type="Node2D"]
+script = ExtResource("1_script")
+metadata_path = "res://SpriteCook/animation_export.spritecook.json"
+
+[node name="AnimatedSprite2D" type="AnimatedSprite2D" parent="."]
+position = Vector2(0, 0)
+centered = true
+
+[node name="Camera2D" type="Camera2D" parent="."]
+position = Vector2(0, 0)
+enabled = true

@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://buwqqi7a4511j"
+path="res://.godot/imported/error-a.ogg-745305568d712aa7fe6b832c6a5e6ebf.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/2D assets/Desert Shooter Pack/Sounds/error-a.ogg"
+dest_files=["res://.godot/imported/error-a.ogg-745305568d712aa7fe6b832c6a5e6ebf.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

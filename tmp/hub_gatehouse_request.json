@@ -1,0 +1,14 @@
+{
+  "prompt": "fortified stone gatehouse arch for a fantasy town entrance, heavier and grander than a wooden sign arch, stone columns, battlements, central hanging sign board area, warm lanterns, transparent background, painterly pixel art",
+  "width": 288,
+  "height": 224,
+  "variations": 1,
+  "pixel": true,
+  "bg_mode": "transparent",
+  "theme": "dark fantasy medieval kingdom",
+  "style": "rich painterly pixel art scenic backdrop for a 2D action roguelite hub",
+  "smart_crop": true,
+  "mode": "assets",
+  "resolution": "1K",
+  "reference_asset_id": "b840aa5a-99ba-4bcc-bb09-f8a10956c142"
+}

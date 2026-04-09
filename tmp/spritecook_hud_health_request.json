@@ -1,0 +1,14 @@
+{
+  "prompt": "minimalist fantasy pixel UI thin health bar frame, dark gunmetal with subtle silver bevel, tiny ruby pin accents, clean sleek center opening for fill, transparent background, pixel perfect, horizontal HUD element, no text, no glow bloom, no extra ornaments",
+  "width": 320,
+  "height": 28,
+  "variations": 1,
+  "pixel": true,
+  "bg_mode": "transparent",
+  "theme": "dark fantasy roguelite UI",
+  "style": "minimalist sleek pixel HUD chrome",
+  "aspect_ratio": "16:9",
+  "smart_crop": false,
+  "mode": "ui",
+  "resolution": "1K"
+}

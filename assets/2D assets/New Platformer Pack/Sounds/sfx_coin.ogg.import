@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://cjto8o3xv860f"
+path="res://.godot/imported/sfx_coin.ogg-499bc53f22cb5b398c4b6fb0be2c4c7f.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/2D assets/New Platformer Pack/Sounds/sfx_coin.ogg"
+dest_files=["res://.godot/imported/sfx_coin.ogg-499bc53f22cb5b398c4b6fb0be2c4c7f.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

@@ -1,0 +1,14 @@
+{
+  "prompt": "minimalist fantasy pixel upgrade card icon mount, dark metal crest with silver bevel and tiny gem apex, open center for a large upgrade icon, sleek and symmetrical, transparent background, no text",
+  "width": 120,
+  "height": 112,
+  "variations": 1,
+  "pixel": true,
+  "bg_mode": "transparent",
+  "theme": "dark fantasy roguelite UI",
+  "style": "minimalist sleek pixel HUD chrome",
+  "smart_crop": false,
+  "mode": "ui",
+  "resolution": "1K",
+  "reference_asset_id": "e7fee6ed-125f-4027-bace-0ce4e7222c14"
+}

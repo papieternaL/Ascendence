@@ -1,23 +1,26 @@
 extends Control
 
 const ICON_GLYPH_SCENE: PackedScene = preload("res://scenes/ui/IconGlyph.tscn")
+const FrontendStyle = preload("res://scripts/ui/frontend_style.gd")
 
-@onready var subtitle_label: Label = $Center/Frame/Margin/VBox/Subtitle
-@onready var archer_card: PanelContainer = $Center/Frame/Margin/VBox/ContentRow/ClassCards/ArcherCard
-@onready var pistol_card: PanelContainer = $Center/Frame/Margin/VBox/ContentRow/ClassCards/PistolCard
-@onready var preview_title: Label = $Center/Frame/Margin/VBox/ContentRow/PreviewPanel/Margin/VBox/PreviewTitle
-@onready var preview_status: Label = $Center/Frame/Margin/VBox/ContentRow/PreviewPanel/Margin/VBox/Status
-@onready var preview_description: Label = $Center/Frame/Margin/VBox/ContentRow/PreviewPanel/Margin/VBox/ClassDescription
+@onready var title_label: Label = $Title
+@onready var subtitle_label: Label = $Subtitle
+@onready var archer_card: PanelContainer = $ContentRow/ClassCards/ArcherCard
+@onready var pistol_card: PanelContainer = $ContentRow/ClassCards/PistolCard
+@onready var preview_title: Label = $ContentRow/PreviewPanel/Margin/VBox/PreviewTitle
+@onready var preview_status: Label = $ContentRow/PreviewPanel/Margin/VBox/Status
+@onready var preview_description: Label = $ContentRow/PreviewPanel/Margin/VBox/ClassDescription
 @onready var ability_buttons: Array[Button] = [
-	$Center/Frame/Margin/VBox/ContentRow/PreviewPanel/Margin/VBox/Abilities/Ability0,
-	$Center/Frame/Margin/VBox/ContentRow/PreviewPanel/Margin/VBox/Abilities/Ability1,
-	$Center/Frame/Margin/VBox/ContentRow/PreviewPanel/Margin/VBox/Abilities/Ability2,
-	$Center/Frame/Margin/VBox/ContentRow/PreviewPanel/Margin/VBox/Abilities/Ability3,
-	$Center/Frame/Margin/VBox/ContentRow/PreviewPanel/Margin/VBox/Abilities/Ability4,
+	$ContentRow/PreviewPanel/Margin/VBox/Abilities/Ability0,
+	$ContentRow/PreviewPanel/Margin/VBox/Abilities/Ability1,
+	$ContentRow/PreviewPanel/Margin/VBox/Abilities/Ability2,
+	$ContentRow/PreviewPanel/Margin/VBox/Abilities/Ability3,
+	$ContentRow/PreviewPanel/Margin/VBox/Abilities/Ability4,
 ]
-@onready var ability_summary: Label = $Center/Frame/Margin/VBox/ContentRow/PreviewPanel/Margin/VBox/AbilitySummary
-@onready var ability_detail: Label = $Center/Frame/Margin/VBox/ContentRow/PreviewPanel/Margin/VBox/AbilityDetail
-@onready var footer_hint: Label = $Center/Frame/Margin/VBox/FooterHint
+@onready var ability_summary: Label = $ContentRow/PreviewPanel/Margin/VBox/AbilitySummary
+@onready var ability_detail: Label = $ContentRow/PreviewPanel/Margin/VBox/AbilityDetail
+@onready var footer_hint: Label = $FooterHint
+@onready var nav_hint: Label = $NavHint
 @onready var start_button: Button = $BottomBar/Buttons/StartButton
 @onready var back_button: Button = $BottomBar/Buttons/BackButton
 
@@ -29,9 +32,11 @@ var _card_styles: Dictionary = {}
 var _ability_icons: Array[Control] = []
 
 func _ready() -> void:
+	AudioDirector.set_music_context("menu")
 	RunConfig.reset_for_frontend()
 	_classes = RunConfig.get_class_data()
-	subtitle_label.text = "Hover a class to preview its loadout. Click to lock it in before heading to map select."
+	title_label.text = "CHOOSE YOUR WEAPON"
+	subtitle_label.text = "HOVER TO PREVIEW EACH LOADOUT. CLICK TO LOCK YOUR WEAPON BEFORE HEADING INTO DEEPWOOD."
 	start_button.pressed.connect(_on_start_pressed)
 	back_button.pressed.connect(_on_back_pressed)
 	_apply_theme()
@@ -46,6 +51,19 @@ func _ready() -> void:
 	_selected_ability_index = 0
 	_commit_class_selection(_selected_index)
 	_refresh_preview()
+	_wire_hover_sfx()
+	queue_redraw()
+
+func _draw() -> void:
+	draw_rect(Rect2(Vector2.ZERO, size), Color.BLACK, true)
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel"):
+		_on_back_pressed()
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("ui_accept"):
+		_on_start_pressed()
+		get_viewport().set_input_as_handled()
 
 func _wire_card(card: PanelContainer, index: int) -> void:
 	card.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -58,8 +76,8 @@ func _create_ability_icons() -> void:
 		var icon: Control = ICON_GLYPH_SCENE.instantiate() as Control
 		if icon == null:
 			continue
-		icon.position = Vector2(10.0, 7.0)
-		icon.custom_minimum_size = Vector2(28, 28)
+		icon.position = Vector2(10.0, 3.0)
+		icon.custom_minimum_size = Vector2(36, 36)
 		button.add_child(icon)
 		_ability_icons.append(icon)
 
@@ -81,8 +99,8 @@ func _commit_class_selection(index: int) -> void:
 		return
 	_selected_index = index
 	RunConfig.selected_class_id = str(_classes[index].get("id", RunConfig.CLASS_ARCHER))
-	start_button.text = "Choose %s" % str(_classes[index].get("name", "Class"))
-	footer_hint.text = "Hover abilities to inspect details. Click a class card to lock it, then continue to the map page."
+	start_button.text = "EQUIP %s" % str(_classes[index].get("name", "WEAPON"))
+	footer_hint.text = "ABILITY HOVERS SHOW THE CURRENT LOADOUT. CLICK A WEAPON TO LOCK IT, THEN CONTINUE."
 	_refresh_class_card_styles()
 
 func _refresh_preview() -> void:
@@ -96,11 +114,11 @@ func _refresh_preview() -> void:
 func _refresh_class_card_styles() -> void:
 	var cards: Array[PanelContainer] = [archer_card, pistol_card]
 	for i in range(cards.size()):
-		var style_key: String = "default"
+		var style_key: String = "card"
 		if i == _selected_index:
-			style_key = "selected"
+			style_key = "selected_card"
 		elif i == _preview_index:
-			style_key = "preview"
+			style_key = "preview_card"
 		cards[i].add_theme_stylebox_override("panel", _card_styles[style_key])
 
 func _refresh_ability_buttons() -> void:
@@ -112,9 +130,19 @@ func _refresh_ability_buttons() -> void:
 			continue
 		button.visible = true
 		var data: Dictionary = abilities[i]
-		button.text = "      %s  %s" % [str(data.get("key", "")), str(data.get("name", ""))]
+		var bind_label: String = str(data.get("key", ""))
+		var action_name: String = str(data.get("action", ""))
+		if not action_name.is_empty():
+			bind_label = GameSettings.get_binding_label(action_name)
+		button.text = "        %s  %s" % [bind_label, str(data.get("name", ""))]
 		if i < _ability_icons.size() and _ability_icons[i] != null and _ability_icons[i].has_method("configure"):
-			_ability_icons[i].call("configure", str(data.get("icon", "default")))
+			_ability_icons[i].call(
+				"configure",
+				str(data.get("icon_asset_id", data.get("icon", "default"))),
+				Color(0.83, 0.9, 1.0, 1.0),
+				Color(0.97, 0.77, 0.3, 1.0),
+				str(data.get("icon", "default"))
+			)
 	_update_ability_preview()
 
 func _update_ability_preview() -> void:
@@ -130,86 +158,81 @@ func _update_ability_preview() -> void:
 	for i in range(ability_buttons.size()):
 		if not ability_buttons[i].visible:
 			continue
-		var style: StyleBoxFlat = _card_styles["selected_button"] if i == _selected_ability_index else _card_styles["button"]
-		ability_buttons[i].add_theme_stylebox_override("normal", style)
-		ability_buttons[i].add_theme_stylebox_override("hover", style)
-		ability_buttons[i].add_theme_stylebox_override("pressed", style)
+		FrontendStyle.apply_button_theme(ability_buttons[i], i == _selected_ability_index, false, true)
 
 func _on_card_hovered(index: int) -> void:
+	AudioDirector.play_ui("ui_hover", -4.0)
 	_set_preview_class(index)
 
 func _on_card_input(event: InputEvent, index: int) -> void:
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		AudioDirector.play_ui("ui_click")
 		_commit_class_selection(index)
 		_set_preview_class(index)
+		if event.double_click:
+			_on_start_pressed()
 
 func _on_ability_hovered(index: int) -> void:
+	AudioDirector.play_ui("ui_hover", -4.0)
 	_selected_ability_index = index
 	_update_ability_preview()
 
 func _on_ability_pressed(index: int) -> void:
+	AudioDirector.play_ui("ui_click")
 	_selected_ability_index = index
 	_update_ability_preview()
 
 func _on_start_pressed() -> void:
+	AudioDirector.play_ui("ui_confirm")
 	RunConfig.selected_class_id = str(_classes[_selected_index].get("id", RunConfig.CLASS_ARCHER))
-	get_tree().change_scene_to_file("res://scenes/ui/MapSelect.tscn")
+	RunConfig.selected_map_id = RunConfig.MAP_DEEPWOOD
+	get_tree().change_scene_to_file(RunConfig.get_main_scene_for_selection())
 
 func _on_back_pressed() -> void:
+	AudioDirector.play_ui("ui_click")
 	get_tree().change_scene_to_file("res://scenes/ui/MainMenu.tscn")
 
+func _wire_hover_sfx() -> void:
+	var hover_callback: Callable = Callable(self, "_on_ui_hovered")
+	for button in [start_button, back_button]:
+		if button != null and not button.mouse_entered.is_connected(hover_callback):
+			button.mouse_entered.connect(hover_callback)
+
+func _on_ui_hovered() -> void:
+	AudioDirector.play_ui("ui_hover", -4.0)
+
 func _apply_theme() -> void:
-	var frame_style: StyleBoxFlat = StyleBoxFlat.new()
-	frame_style.bg_color = Color(0.04, 0.06, 0.09, 0.96)
-	frame_style.border_color = Color(0.22, 0.36, 0.54, 1.0)
-	frame_style.set_corner_radius_all(20)
-	frame_style.set_border_width_all(3)
-
-	var card_style: StyleBoxFlat = StyleBoxFlat.new()
-	card_style.bg_color = Color(0.08, 0.1, 0.16, 0.96)
-	card_style.border_color = Color(0.24, 0.34, 0.42, 1.0)
-	card_style.set_corner_radius_all(18)
-	card_style.set_border_width_all(2)
-
-	var preview_card_style: StyleBoxFlat = StyleBoxFlat.new()
-	preview_card_style.bg_color = Color(0.09, 0.12, 0.18, 0.98)
-	preview_card_style.border_color = Color(0.4, 0.52, 0.64, 1.0)
-	preview_card_style.set_corner_radius_all(18)
-	preview_card_style.set_border_width_all(2)
-
-	var selected_style: StyleBoxFlat = StyleBoxFlat.new()
-	selected_style.bg_color = Color(0.11, 0.15, 0.2, 0.98)
-	selected_style.border_color = Color(0.74, 0.62, 0.26, 1.0)
-	selected_style.set_corner_radius_all(18)
-	selected_style.set_border_width_all(3)
-
-	var preview_style: StyleBoxFlat = StyleBoxFlat.new()
-	preview_style.bg_color = Color(0.09, 0.13, 0.18, 0.96)
-	preview_style.border_color = Color(0.18, 0.31, 0.46, 1.0)
-	preview_style.set_corner_radius_all(18)
-	preview_style.set_border_width_all(2)
-
-	var button_style: StyleBoxFlat = StyleBoxFlat.new()
-	button_style.bg_color = Color(0.09, 0.11, 0.16, 1.0)
-	button_style.border_color = Color(0.18, 0.26, 0.33, 1.0)
-	button_style.set_corner_radius_all(10)
-	button_style.set_border_width_all(2)
-
-	var selected_button_style: StyleBoxFlat = StyleBoxFlat.new()
-	selected_button_style.bg_color = Color(0.14, 0.17, 0.22, 1.0)
-	selected_button_style.border_color = Color(0.74, 0.62, 0.26, 1.0)
-	selected_button_style.set_corner_radius_all(10)
-	selected_button_style.set_border_width_all(2)
-
+	FrontendStyle.apply_title(title_label, 40)
+	FrontendStyle.apply_readable_small(subtitle_label, 14, Color(0.88, 0.84, 0.72, 1.0))
+	FrontendStyle.apply_readable_small(footer_hint, 13, Color(0.84, 0.80, 0.70, 1.0))
+	FrontendStyle.apply_readable_small(nav_hint, 12, Color(0.70, 0.72, 0.76, 1.0))
+	FrontendStyle.apply_header(preview_title, 32, Color(0.95, 0.82, 0.52, 1.0))
+	FrontendStyle.apply_readable_small(preview_status, 14, Color(0.86, 0.80, 0.66, 1.0))
+	FrontendStyle.apply_readable_body(preview_description, 16)
+	FrontendStyle.apply_readable_body(ability_summary, 15, Color(0.94, 0.86, 0.72, 1.0))
+	FrontendStyle.apply_readable_body(ability_detail, 15, Color(0.84, 0.87, 0.92, 1.0))
+	for label in [
+		$ContentRow/ClassCards/ArcherCard/Margin/VBox/Name,
+		$ContentRow/ClassCards/PistolCard/Margin/VBox/Name,
+	]:
+		FrontendStyle.apply_header(label, 24, Color(0.93, 0.90, 0.82, 1.0))
+	for label in [
+		$ContentRow/ClassCards/ArcherCard/Margin/VBox/Status,
+		$ContentRow/ClassCards/PistolCard/Margin/VBox/Status,
+	]:
+		FrontendStyle.apply_readable_small(label, 14, Color(0.88, 0.82, 0.66, 1.0))
+	for label in [
+		$ContentRow/ClassCards/ArcherCard/Margin/VBox/Summary,
+		$ContentRow/ClassCards/PistolCard/Margin/VBox/Summary,
+	]:
+		FrontendStyle.apply_readable_body(label, 14, Color(0.84, 0.87, 0.92, 1.0))
 	_card_styles = {
-		"default": card_style,
-		"preview": preview_card_style,
-		"selected": selected_style,
-		"button": button_style,
-		"selected_button": selected_button_style,
+		"card": FrontendStyle.make_texture_style("card_common", 30, 12),
+		"preview_card": FrontendStyle.make_texture_style("card_rare", 30, 12),
+		"selected_card": FrontendStyle.make_texture_style("selected_card", 30, 12),
 	}
-
-	$Center/Frame.add_theme_stylebox_override("panel", frame_style)
-	archer_card.add_theme_stylebox_override("panel", selected_style)
-	pistol_card.add_theme_stylebox_override("panel", card_style)
-	$Center/Frame/Margin/VBox/ContentRow/PreviewPanel.add_theme_stylebox_override("panel", preview_style)
+	FrontendStyle.apply_panel_theme($ContentRow/PreviewPanel, "frame")
+	FrontendStyle.apply_button_theme(start_button, true, false, true)
+	FrontendStyle.apply_button_theme(back_button, false, false, true)
+	for button in ability_buttons:
+		FrontendStyle.apply_button_theme(button, false, false, true)

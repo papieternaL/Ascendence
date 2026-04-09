@@ -1,32 +1,62 @@
-[gd_scene load_steps=9 format=3 uid="uid://bpkvuattnjvx8"]
+[gd_scene load_steps=12 format=3 uid="uid://bpkvuattnjvx8"]
 
 [ext_resource type="Script" uid="uid://ona4taly68j6" path="res://scripts/main/main.gd" id="1_main"]
-[ext_resource type="PackedScene" path="res://scenes/main/Arena.tscn" id="2_arena"]
+[ext_resource type="PackedScene" uid="uid://ciq3k850olb5u" path="res://scenes/main/Arena.tscn" id="2_arena"]
 [ext_resource type="PackedScene" path="res://scenes/player/Player.tscn" id="3_player"]
 [ext_resource type="PackedScene" uid="uid://0tcok3tyrapv" path="res://scenes/ui/HUD.tscn" id="4_hud"]
 [ext_resource type="Script" uid="uid://duotlskfqwbt8" path="res://scripts/systems/spawn_system.gd" id="5_spawn_system"]
 [ext_resource type="Script" uid="uid://4o2dbetxo4" path="res://scripts/systems/damage_system.gd" id="6_damage_system"]
 [ext_resource type="Script" uid="uid://cda5m2h8lw60c" path="res://scripts/systems/cooldown_system.gd" id="7_cooldown_system"]
 [ext_resource type="PackedScene" path="res://scenes/main/BossArena.tscn" id="8_boss_arena"]
+[ext_resource type="Script" uid="uid://y6ufl6rlj0i2" path="res://scripts/systems/xp_orb_field.gd" id="9_xp_orb"]
+[ext_resource type="Shader" uid="uid://drh7frcwoeyti" path="res://shaders/game_post.gdshader" id="10_vignette_shader"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_vignette"]
+shader = ExtResource("10_vignette_shader")
+shader_parameter/vignette_strength = 0.42
 
 [node name="Main" type="Node"]
 script = ExtResource("1_main")
 
-[node name="Arena" parent="." instance=ExtResource("2_arena")]
+[node name="World" type="Node2D" parent="."]
+y_sort_enabled = true
 
-[node name="BossArena" parent="." instance=ExtResource("8_boss_arena")]
+[node name="Arena" parent="World" instance=ExtResource("2_arena")]
 
-[node name="Entities" type="Node2D" parent="."]
+[node name="BossArena" parent="World" instance=ExtResource("8_boss_arena")]
 
-[node name="Player" parent="Entities" instance=ExtResource("3_player")]
+[node name="Entities" type="Node2D" parent="World"]
+y_sort_enabled = true
+
+[node name="Player" parent="World/Entities" instance=ExtResource("3_player")]
+
+[node name="XpOrbField" type="Node2D" parent="World/Entities"]
+process_mode = 3
+z_index = 2
+script = ExtResource("9_xp_orb")
 
 [node name="Projectiles" type="Node2D" parent="."]
 
 [node name="Effects" type="Node2D" parent="."]
 
+[node name="PostProcess" type="CanvasLayer" parent="."]
+layer = 12
+
+[node name="Vignette" type="ColorRect" parent="PostProcess"]
+visible = false
+material = SubResource("ShaderMaterial_vignette")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
 [node name="UI" type="CanvasLayer" parent="."]
+layer = 20
 
 [node name="HUD" parent="UI" instance=ExtResource("4_hud")]
+visible = false
 offset_left = 13.0
 offset_top = 2.0
 offset_right = 13.0

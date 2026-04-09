@@ -1,0 +1,14 @@
+{
+  "prompt": "winding river backdrop strip with cool blue water, stone embankments and cliff edges beside a medieval town, readable river perspective, transparent background around the banks, painterly pixel art",
+  "width": 384,
+  "height": 256,
+  "variations": 1,
+  "pixel": true,
+  "bg_mode": "transparent",
+  "theme": "dark fantasy medieval kingdom",
+  "style": "rich painterly pixel art scenic backdrop for a 2D action roguelite hub",
+  "smart_crop": false,
+  "mode": "assets",
+  "resolution": "1K",
+  "reference_asset_id": "c67a37a4-a22a-4f3a-a39a-e6685a7c996c"
+}

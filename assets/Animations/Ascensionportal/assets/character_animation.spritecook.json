@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "asset_kind": "animation",
+  "texture_path": "res://SpriteCook/assets/character_animation.png",
+  "animation_name": "character_animation",
+  "frame_width": 176,
+  "frame_height": 176,
+  "frame_count": 8,
+  "fps": 8,
+  "recognized_state": "Run"
+}

@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://dutp0gqckqjm7"
+path="res://.godot/imported/fall-b.ogg-9e83e51fc141b2fbc44f33c864eedaae.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/2D assets/Desert Shooter Pack/Sounds/fall-b.ogg"
+dest_files=["res://.godot/imported/fall-b.ogg-9e83e51fc141b2fbc44f33c864eedaae.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

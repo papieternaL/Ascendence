@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://bjgj7xwfl06q6"
+path="res://.godot/imported/card-fan-2.ogg-8d1eba07bc4a33e295cff072747b7012.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/Audio/Casino Audio/Audio/card-fan-2.ogg"
+dest_files=["res://.godot/imported/card-fan-2.ogg-8d1eba07bc4a33e295cff072747b7012.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

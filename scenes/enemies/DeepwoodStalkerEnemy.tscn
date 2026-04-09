@@ -1,0 +1,7 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/enemies/deepwood_stalker_enemy.gd" id="1_stalker"]
+[ext_resource type="PackedScene" path="res://scenes/enemies/EnemyBase.tscn" id="2_enemy_base"]
+
+[node name="DeepwoodStalkerEnemy" instance=ExtResource("2_enemy_base")]
+script = ExtResource("1_stalker")

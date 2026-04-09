@@ -1,0 +1,14 @@
+{
+    "prompt":  "compact minimalist fantasy pixel HUD ability slot frame, small circular medallion ring with subtle octagonal silhouette, dark gunmetal and silver bevel, tiny ruby and sapphire pin accents, clean transparent center opening for an icon, sleek and understated, no bulky ornaments, transparent background",
+    "width":  48,
+    "height":  48,
+    "variations":  1,
+    "pixel":  true,
+    "bg_mode":  "transparent",
+    "theme":  "dark fantasy roguelite UI",
+    "style":  "minimalist sleek pixel HUD chrome",
+    "smart_crop":  false,
+    "mode":  "ui",
+    "resolution":  "1K",
+    "reference_asset_id":  "0d91d637-43a7-4a19-8fdc-aee4f9ad6284"
+}

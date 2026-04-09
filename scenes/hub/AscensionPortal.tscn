@@ -1,0 +1,44 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/hub/portal.gd" id="1_portal"]
+[ext_resource type="Texture2D" path="res://art/hub/portal.png" id="2_art"]
+[ext_resource type="Script" path="res://scripts/hub/sprite_sheet_loop.gd" id="3_sheet_loop"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_interaction"]
+radius = 78.0
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_column"]
+size = Vector2(24, 44)
+
+[node name="AscensionPortal" type="Area2D"]
+collision_layer = 16
+collision_mask = 0
+script = ExtResource("1_portal")
+interactable_name = "ASCENSION PORTAL"
+prompt_label = "ENTER"
+interaction_radius = 78.0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("CircleShape2D_interaction")
+
+[node name="Blocker" type="StaticBody2D" parent="."]
+collision_layer = 1
+collision_mask = 0
+
+[node name="LeftColumn" type="CollisionShape2D" parent="Blocker"]
+position = Vector2(-46, 34)
+shape = SubResource("RectangleShape2D_column")
+
+[node name="RightColumn" type="CollisionShape2D" parent="Blocker"]
+position = Vector2(46, 34)
+shape = SubResource("RectangleShape2D_column")
+
+[node name="ArtSprite" type="Sprite2D" parent="."]
+position = Vector2(0, -24)
+script = ExtResource("3_sheet_loop")
+texture = ExtResource("2_art")
+centered = true
+sheet_path = "res://assets/animations/portalsheet.png"
+frame_count = 8
+frames_per_second = 10.0
+randomize_start_frame = false

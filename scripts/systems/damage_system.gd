@@ -30,7 +30,8 @@ static func apply_hit(target: Node, attack: Variant) -> Dictionary:
 		return {}
 	var payload: Dictionary = {}
 	if attack is Dictionary:
-		payload = (attack as Dictionary).duplicate(true)
+		var attack_data: Dictionary = attack
+		payload = attack_data.duplicate(true)
 	else:
 		payload = {
 			"amount": float(attack),

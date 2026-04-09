@@ -1,0 +1,14 @@
+{
+    "prompt":  "ultra thin minimalist fantasy pixel experience bar frame, dark gunmetal track with silver edges and faint cyan crystal pins, long clean center opening for fill, sleek unobtrusive HUD element, no text, no large ornaments, transparent background",
+    "width":  720,
+    "height":  14,
+    "variations":  1,
+    "pixel":  true,
+    "bg_mode":  "transparent",
+    "theme":  "dark fantasy roguelite UI",
+    "style":  "minimalist sleek pixel HUD chrome",
+    "smart_crop":  false,
+    "mode":  "ui",
+    "resolution":  "1K",
+    "reference_asset_id":  "0d91d637-43a7-4a19-8fdc-aee4f9ad6284"
+}

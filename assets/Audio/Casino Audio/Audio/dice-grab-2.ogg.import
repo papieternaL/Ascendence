@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://diwyefpwbvoqh"
+path="res://.godot/imported/dice-grab-2.ogg-093a597b9d4374ae8358b8eddfda306d.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/Audio/Casino Audio/Audio/dice-grab-2.ogg"
+dest_files=["res://.godot/imported/dice-grab-2.ogg-093a597b9d4374ae8358b8eddfda306d.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

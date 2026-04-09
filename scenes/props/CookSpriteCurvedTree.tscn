@@ -1,0 +1,17 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/props/animated_tree_prop.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://art/cooksprite/trees/Curved_tree1.png" id="2_texture"]
+
+[node name="CookSpriteCurvedTree" type="Node2D"]
+script = ExtResource("1_script")
+tree_texture = ExtResource("2_texture")
+render_scale = Vector2(1.4, 1.4)
+sway_strength_px = 2.6
+sway_speed = 1.0
+gust_strength_px = 1.0
+detail_strength_px = 0.45
+canopy_start = 0.22
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_texture")

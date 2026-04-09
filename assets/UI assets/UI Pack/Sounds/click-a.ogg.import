@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://bbdoxprckmequ"
+path="res://.godot/imported/click-a.ogg-0bfc0ae31d172d00ff93190decf06fb8.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/UI assets/UI Pack/Sounds/click-a.ogg"
+dest_files=["res://.godot/imported/click-a.ogg-0bfc0ae31d172d00ff93190decf06fb8.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

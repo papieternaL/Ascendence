@@ -11,9 +11,13 @@
 [node name="TutorialMain" type="Node"]
 script = ExtResource("1_main")
 
-[node name="Arena" parent="." instance=ExtResource("2_arena")]
+[node name="World" type="Node2D" parent="."]
+y_sort_enabled = true
 
-[node name="Entities" type="Node2D" parent="."]
+[node name="Arena" parent="World" instance=ExtResource("2_arena")]
+
+[node name="Entities" type="Node2D" parent="World"]
+y_sort_enabled = true
 
 [node name="Player" parent="Entities" instance=ExtResource("3_player")]
 
@@ -59,6 +63,60 @@ text = "Tutorial"
 layout_mode = 2
 autowrap_mode = 3
 text = ""
+
+[node name="MovementKeys" type="VBoxContainer" parent="UI/TutorialOverlay/TutorialPanel/Margin/VBox"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 6
+alignment = 1
+
+[node name="TopRow" type="CenterContainer" parent="UI/TutorialOverlay/TutorialPanel/Margin/VBox/MovementKeys"]
+layout_mode = 2
+
+[node name="WBox" type="PanelContainer" parent="UI/TutorialOverlay/TutorialPanel/Margin/VBox/MovementKeys/TopRow"]
+custom_minimum_size = Vector2(54, 44)
+layout_mode = 2
+
+[node name="WLabel" type="Label" parent="UI/TutorialOverlay/TutorialPanel/Margin/VBox/MovementKeys/TopRow/WBox"]
+layout_mode = 2
+text = "W"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="BottomRow" type="HBoxContainer" parent="UI/TutorialOverlay/TutorialPanel/Margin/VBox/MovementKeys"]
+layout_mode = 2
+alignment = 1
+theme_override_constants/separation = 6
+
+[node name="ABox" type="PanelContainer" parent="UI/TutorialOverlay/TutorialPanel/Margin/VBox/MovementKeys/BottomRow"]
+custom_minimum_size = Vector2(54, 44)
+layout_mode = 2
+
+[node name="ALabel" type="Label" parent="UI/TutorialOverlay/TutorialPanel/Margin/VBox/MovementKeys/BottomRow/ABox"]
+layout_mode = 2
+text = "A"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="SBox" type="PanelContainer" parent="UI/TutorialOverlay/TutorialPanel/Margin/VBox/MovementKeys/BottomRow"]
+custom_minimum_size = Vector2(54, 44)
+layout_mode = 2
+
+[node name="SLabel" type="Label" parent="UI/TutorialOverlay/TutorialPanel/Margin/VBox/MovementKeys/BottomRow/SBox"]
+layout_mode = 2
+text = "S"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="DBox" type="PanelContainer" parent="UI/TutorialOverlay/TutorialPanel/Margin/VBox/MovementKeys/BottomRow"]
+custom_minimum_size = Vector2(54, 44)
+layout_mode = 2
+
+[node name="DLabel" type="Label" parent="UI/TutorialOverlay/TutorialPanel/Margin/VBox/MovementKeys/BottomRow/DBox"]
+layout_mode = 2
+text = "D"
+horizontal_alignment = 1
+vertical_alignment = 1
 
 [node name="Footer" type="Label" parent="UI/TutorialOverlay/TutorialPanel/Margin/VBox"]
 layout_mode = 2

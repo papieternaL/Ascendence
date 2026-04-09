@@ -1,0 +1,13 @@
+{
+  "prompt": "distant rocky cliff tower cluster with two to three small stone lookout towers, tiny flags, steep cliff faces, transparent background, dark fantasy pixel art side framing element",
+  "width": 256,
+  "height": 256,
+  "variations": 1,
+  "pixel": true,
+  "bg_mode": "transparent",
+  "theme": "dark fantasy medieval kingdom",
+  "style": "rich painterly pixel art scenic backdrop for a 2D action roguelite hub",
+  "smart_crop": true,
+  "mode": "assets",
+  "resolution": "1K"
+}

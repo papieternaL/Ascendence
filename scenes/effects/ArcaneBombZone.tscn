@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/effects/arcane_bomb_zone.gd" id="1_arcane_bomb_zone"]
+
+[node name="ArcaneBombZone" type="Node2D"]
+script = ExtResource("1_arcane_bomb_zone")

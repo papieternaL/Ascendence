@@ -1,0 +1,13 @@
+{
+  "prompt": "dark fantasy storm sky panorama for a medieval mountain kingdom hub, wide band of deep purple thunderclouds with branching lightning, subtle magical swirl in the clouds, warm sunset orange glow near the horizon, no buildings, no ground, scenic pixel art backdrop",
+  "width": 512,
+  "height": 256,
+  "variations": 1,
+  "pixel": true,
+  "bg_mode": "include",
+  "theme": "dark fantasy medieval kingdom",
+  "style": "rich painterly pixel art scenic backdrop for a 2D action roguelite hub",
+  "smart_crop": false,
+  "mode": "assets",
+  "resolution": "1K"
+}

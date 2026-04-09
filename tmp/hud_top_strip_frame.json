@@ -1,0 +1,14 @@
+{
+    "prompt":  "thin minimalist fantasy pixel top objective strip frame, dark gunmetal horizontal bar with subtle silver bevel and tiny gem endcaps, clean center panel for text, sleek readable roguelite HUD strip, no title text, transparent background, no bulky ornament",
+    "width":  560,
+    "height":  28,
+    "variations":  1,
+    "pixel":  true,
+    "bg_mode":  "transparent",
+    "theme":  "dark fantasy roguelite UI",
+    "style":  "minimalist sleek pixel HUD chrome",
+    "smart_crop":  false,
+    "mode":  "ui",
+    "resolution":  "1K",
+    "reference_asset_id":  "0d91d637-43a7-4a19-8fdc-aee4f9ad6284"
+}

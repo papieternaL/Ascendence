@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://8opooanhliel"
+path="res://.godot/imported/die-throw-1.ogg-c98d302b65e21d27842fba80c7033939.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/Audio/Casino Audio/Audio/die-throw-1.ogg"
+dest_files=["res://.godot/imported/die-throw-1.ogg-c98d302b65e21d27842fba80c7033939.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

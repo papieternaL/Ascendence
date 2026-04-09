@@ -1,0 +1,6 @@
+[gd_resource type="Resource" script_class="BossConfig" load_steps=2 format=3 uid="uid://bpv6v3eh6osit"]
+
+[ext_resource type="Script" uid="uid://umt62n38fvew" path="res://scripts/systems/boss_config.gd" id="1_boss"]
+
+[resource]
+script = ExtResource("1_boss")

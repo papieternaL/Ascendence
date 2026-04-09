@@ -1,0 +1,13 @@
+{
+  "prompt": "distant gothic castle skyline with lit windows, tall spires, battlements, connected stone walls, viewed from afar above a medieval town, transparent background, dark fantasy pixel art",
+  "width": 384,
+  "height": 256,
+  "variations": 1,
+  "pixel": true,
+  "bg_mode": "transparent",
+  "theme": "dark fantasy medieval kingdom",
+  "style": "rich painterly pixel art scenic backdrop for a 2D action roguelite hub",
+  "smart_crop": true,
+  "mode": "assets",
+  "resolution": "1K"
+}

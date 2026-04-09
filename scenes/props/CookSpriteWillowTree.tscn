@@ -1,0 +1,17 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/props/animated_tree_prop.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://art/cooksprite/trees/Willow1.png" id="2_texture"]
+
+[node name="CookSpriteWillowTree" type="Node2D"]
+script = ExtResource("1_script")
+tree_texture = ExtResource("2_texture")
+render_scale = Vector2(1.45, 1.45)
+sway_strength_px = 3.0
+sway_speed = 0.86
+gust_strength_px = 1.1
+detail_strength_px = 0.52
+canopy_start = 0.18
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_texture")

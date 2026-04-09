@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://dfws1bdbaoyli"
+path="res://.godot/imported/coin-c.ogg-6722bb005ceb2e528e075b679b1af0cf.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/2D assets/Desert Shooter Pack/Sounds/coin-c.ogg"
+dest_files=["res://.godot/imported/coin-c.ogg-6722bb005ceb2e528e075b679b1af0cf.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

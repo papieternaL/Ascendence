@@ -6,17 +6,25 @@ signal hit(at: Vector2)
 
 @export var speed: float = 1200.0
 @export var lifetime: float = 0.35
-@export var damage: float = 42.0
+@export var damage: float = 420.0
 @export var crit_chance: float = 0.0
 @export var crit_multiplier: float = 1.5
 @export var pierce_count: int = 2
 @export var visual_style: String = "arcane_sniper"
+@export var visual_scale: float = 1.25
+@export var attack_payload: Dictionary = {}
 var direction: Vector2 = Vector2.RIGHT
 var _hit_ids: Dictionary = {}
+
+@onready var collision_shape: CollisionShape2D = $CollisionShape2D
 
 func _ready() -> void:
 	body_entered.connect(_on_body_entered)
 	area_entered.connect(_on_area_entered)
+	if collision_shape != null and collision_shape.shape is SegmentShape2D:
+		var shape: SegmentShape2D = (collision_shape.shape as SegmentShape2D).duplicate()
+		shape.b *= visual_scale
+		collision_shape.shape = shape
 	queue_redraw()
 
 func _process(delta: float) -> void:
@@ -42,6 +50,8 @@ func _attempt_hit(target: Node) -> void:
 		return
 	_hit_ids[body_id] = true
 	var payload: Dictionary = DAMAGE_SYSTEM.build_hit_payload(damage, crit_chance, crit_multiplier)
+	for key in attack_payload.keys():
+		payload[key] = attack_payload[key]
 	if DAMAGE_SYSTEM.apply_hit(resolved, payload).is_empty():
 		return
 	hit.emit(global_position)
@@ -52,13 +62,13 @@ func _attempt_hit(target: Node) -> void:
 
 func _draw() -> void:
 	if visual_style == "power_arrow":
-		draw_line(Vector2(-34, 0), Vector2(20, 0), Color(0.8, 0.58, 0.26, 1.0), 3.0, true)
-		draw_line(Vector2(-16, -3), Vector2(-8, 0), Color(0.98, 0.88, 0.62, 0.95), 2.0, true)
-		draw_line(Vector2(-16, 3), Vector2(-8, 0), Color(0.98, 0.88, 0.62, 0.95), 2.0, true)
-		draw_line(Vector2(10, -5), Vector2(20, 0), Color(1.0, 0.96, 0.82, 1.0), 3.0, true)
-		draw_line(Vector2(10, 5), Vector2(20, 0), Color(1.0, 0.96, 0.82, 1.0), 3.0, true)
-		draw_arc(Vector2.ZERO, 11.0, 0.0, TAU, 18, Color(1.0, 0.84, 0.34, 0.42), 2.5)
-		draw_line(Vector2(-48, 0), Vector2(-8, 0), Color(1.0, 0.84, 0.34, 0.32), 2.2, true)
+		draw_line(Vector2(-34, 0) * visual_scale, Vector2(20, 0) * visual_scale, Color(0.8, 0.58, 0.26, 1.0), 3.4 * visual_scale, true)
+		draw_line(Vector2(-16, -3) * visual_scale, Vector2(-8, 0) * visual_scale, Color(0.98, 0.88, 0.62, 0.95), 2.3 * visual_scale, true)
+		draw_line(Vector2(-16, 3) * visual_scale, Vector2(-8, 0) * visual_scale, Color(0.98, 0.88, 0.62, 0.95), 2.3 * visual_scale, true)
+		draw_line(Vector2(10, -5) * visual_scale, Vector2(20, 0) * visual_scale, Color(1.0, 0.96, 0.82, 1.0), 3.4 * visual_scale, true)
+		draw_line(Vector2(10, 5) * visual_scale, Vector2(20, 0) * visual_scale, Color(1.0, 0.96, 0.82, 1.0), 3.4 * visual_scale, true)
+		draw_arc(Vector2.ZERO, 11.0 * visual_scale, 0.0, TAU, 18, Color(1.0, 0.84, 0.34, 0.42), 2.8 * visual_scale)
+		draw_line(Vector2(-48, 0) * visual_scale, Vector2(-8, 0) * visual_scale, Color(1.0, 0.84, 0.34, 0.32), 2.4 * visual_scale, true)
 	else:
-		draw_line(Vector2(-26, 0), Vector2(16, 0), Color(1.0, 0.75, 0.35, 0.98), 4.0, true)
-		draw_line(Vector2(-12, 0), Vector2(16, 0), Color(1.0, 0.94, 0.8, 0.55), 2.0, true)
+		draw_line(Vector2(-26, 0) * visual_scale, Vector2(16, 0) * visual_scale, Color(1.0, 0.75, 0.35, 0.98), 4.6 * visual_scale, true)
+		draw_line(Vector2(-12, 0) * visual_scale, Vector2(16, 0) * visual_scale, Color(1.0, 0.94, 0.8, 0.55), 2.3 * visual_scale, true)

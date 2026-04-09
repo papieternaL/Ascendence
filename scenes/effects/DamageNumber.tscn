@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/effects/damage_number.gd" id="1_num"]
+
+[node name="DamageNumber" type="Label"]
+top_level = true
+z_index = 10
+script = ExtResource("1_num")
+text = "0"

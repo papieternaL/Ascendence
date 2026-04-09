@@ -1,0 +1,12 @@
+{
+  "prompt": "ornate fantasy HUD ability orb frame, circular polished silver and blue metal bezel with tiny gem accents, transparent center hole, symmetrical game UI element, pixel art, no icon inside, no background",
+  "width": 64,
+  "height": 64,
+  "pixel": true,
+  "bg_mode": "transparent",
+  "mode": "ui",
+  "style": "ornate roguelite UI frame, polished fantasy metal",
+  "theme": "dark fantasy medieval",
+  "smart_crop": false,
+  "model": "gemini-3.1-flash-image-preview"
+}

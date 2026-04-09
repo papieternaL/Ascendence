@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/enemies/EnemyBase.tscn" id="1_enemy_scene"]
+[ext_resource type="Script" path="res://scripts/enemies/objective_core.gd" id="2_core_script"]
+
+[node name="ObjectiveCore" instance=ExtResource("1_enemy_scene")]
+script = ExtResource("2_core_script")

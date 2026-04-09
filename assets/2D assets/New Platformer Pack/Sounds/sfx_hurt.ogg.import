@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://dxuw0kbjb4gls"
+path="res://.godot/imported/sfx_hurt.ogg-55e32cdefe920f7430f64274fca81c23.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/2D assets/New Platformer Pack/Sounds/sfx_hurt.ogg"
+dest_files=["res://.godot/imported/sfx_hurt.ogg-55e32cdefe920f7430f64274fca81c23.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

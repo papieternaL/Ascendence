@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="Script" path="res://scripts/main/arcane_pistol_runtime.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://scenes/main/Arena.tscn" id="2_arena"]
@@ -8,17 +8,27 @@
 [ext_resource type="Script" path="res://scripts/systems/spawn_system.gd" id="5_spawn_system"]
 [ext_resource type="Script" path="res://scripts/systems/damage_system.gd" id="6_damage_system"]
 [ext_resource type="Script" path="res://scripts/systems/cooldown_system.gd" id="7_cooldown_system"]
+[ext_resource type="Script" path="res://scripts/systems/xp_orb_field.gd" id="9_xp_orb"]
 
 [node name="Main" type="Node"]
 script = ExtResource("1_main")
 
-[node name="Arena" parent="." instance=ExtResource("2_arena")]
+[node name="World" type="Node2D" parent="."]
+y_sort_enabled = true
 
-[node name="BossArena" parent="." instance=ExtResource("8_boss_arena")]
+[node name="Arena" parent="World" instance=ExtResource("2_arena")]
 
-[node name="Entities" type="Node2D" parent="."]
+[node name="BossArena" parent="World" instance=ExtResource("8_boss_arena")]
+
+[node name="Entities" type="Node2D" parent="World"]
+y_sort_enabled = true
 
 [node name="Player" parent="Entities" instance=ExtResource("3_player")]
+
+[node name="XpOrbField" type="Node2D" parent="Entities"]
+z_index = 2
+process_mode = 3
+script = ExtResource("9_xp_orb")
 
 [node name="Projectiles" type="Node2D" parent="."]
 

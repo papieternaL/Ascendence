@@ -1,0 +1,19 @@
+[remap]
+
+importer="oggvorbisstr"
+type="AudioStreamOggVorbis"
+uid="uid://cqette8qsntnq"
+path="res://.godot/imported/shoot-g.ogg-99fea483c362e1df839ec9936afc2b4c.oggvorbisstr"
+
+[deps]
+
+source_file="res://assets/2D assets/Desert Shooter Pack/Sounds/shoot-g.ogg"
+dest_files=["res://.godot/imported/shoot-g.ogg-99fea483c362e1df839ec9936afc2b4c.oggvorbisstr"]
+
+[params]
+
+loop=false
+loop_offset=0
+bpm=0
+beat_count=0
+bar_beats=4

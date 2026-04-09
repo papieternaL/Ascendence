@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "animation_name": "character_animation",
+      "texture_path": "res://SpriteCook/assets/character_animation.png",
+      "metadata_path": "res://SpriteCook/assets/character_animation.spritecook.json",
+      "recognized_state": "Run"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/props/animated_tree_prop.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://art/cooksprite/trees/Swirling tree1.png" id="2_texture"]
+
+[node name="CookSpriteSwirlingTree" type="Node2D"]
+script = ExtResource("1_script")
+tree_texture = ExtResource("2_texture")
+render_scale = Vector2(1.48, 1.48)
+sway_strength_px = 2.35
+sway_speed = 1.05
+gust_strength_px = 0.95
+detail_strength_px = 0.4
+canopy_start = 0.33
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_texture")

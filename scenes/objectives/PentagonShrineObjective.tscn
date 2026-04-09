@@ -1,0 +1,90 @@
+[gd_scene load_steps=10 format=3]
+
+[ext_resource type="Script" path="res://scripts/objectives/pentagon_shrine_objective.gd" id="1_objective"]
+[ext_resource type="Script" path="res://scripts/objectives/shrine_point.gd" id="2_shrine_point"]
+[ext_resource type="PackedScene" path="res://scenes/effects/HolyExplosion.tscn" id="3_holy_explosion"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_shrine"]
+radius = 48.0
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_center"]
+radius = 220.0
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_explosion"]
+radius = 260.0
+
+[node name="PentagonShrineObjective" type="Node2D"]
+script = ExtResource("1_objective")
+explosion_effect_scene = ExtResource("3_holy_explosion")
+
+[node name="ShrinePoints" type="Node2D" parent="."]
+
+[node name="ShrinePoint1" type="Area2D" parent="ShrinePoints"]
+collision_layer = 0
+collision_mask = 1
+monitoring = true
+script = ExtResource("2_shrine_point")
+point_index = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="ShrinePoints/ShrinePoint1"]
+shape = SubResource("CircleShape2D_shrine")
+
+[node name="ShrinePoint2" type="Area2D" parent="ShrinePoints"]
+collision_layer = 0
+collision_mask = 1
+monitoring = true
+script = ExtResource("2_shrine_point")
+point_index = 1
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="ShrinePoints/ShrinePoint2"]
+shape = SubResource("CircleShape2D_shrine")
+
+[node name="ShrinePoint3" type="Area2D" parent="ShrinePoints"]
+collision_layer = 0
+collision_mask = 1
+monitoring = true
+script = ExtResource("2_shrine_point")
+point_index = 2
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="ShrinePoints/ShrinePoint3"]
+shape = SubResource("CircleShape2D_shrine")
+
+[node name="ShrinePoint4" type="Area2D" parent="ShrinePoints"]
+collision_layer = 0
+collision_mask = 1
+monitoring = true
+script = ExtResource("2_shrine_point")
+point_index = 3
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="ShrinePoints/ShrinePoint4"]
+shape = SubResource("CircleShape2D_shrine")
+
+[node name="ShrinePoint5" type="Area2D" parent="ShrinePoints"]
+collision_layer = 0
+collision_mask = 1
+monitoring = true
+script = ExtResource("2_shrine_point")
+point_index = 4
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="ShrinePoints/ShrinePoint5"]
+shape = SubResource("CircleShape2D_shrine")
+
+[node name="CenterArea" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 1
+monitoring = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="CenterArea"]
+shape = SubResource("CircleShape2D_center")
+
+[node name="Connections" type="Node2D" parent="."]
+
+[node name="Visuals" type="Node2D" parent="."]
+
+[node name="ExplosionArea" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 0
+monitoring = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="ExplosionArea"]
+shape = SubResource("CircleShape2D_explosion")

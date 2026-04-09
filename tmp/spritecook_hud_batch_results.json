@@ -1,0 +1,26 @@
+[
+    {
+        "file":  "hud_ability_orb_frame.png",
+        "id":  "73986e4c-c697-46cf-8686-387320b83c7f",
+        "width":  48,
+        "height":  48
+    },
+    {
+        "file":  "hud_level_ring_frame.png",
+        "id":  "f61dda83-6425-424b-8461-7a87a93bd4bd",
+        "width":  60,
+        "height":  60
+    },
+    {
+        "file":  "hud_xp_frame.png",
+        "id":  "55f93b50-0380-43f5-a765-128e3ad1fa4c",
+        "width":  512,
+        "height":  16
+    },
+    {
+        "file":  "hud_top_strip_frame.png",
+        "id":  "95043e64-5213-4dbc-a1e7-db671dabb0a7",
+        "width":  512,
+        "height":  28
+    }
+]

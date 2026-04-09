@@ -1,0 +1,152 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/hybrid_combat_ui.gd" id="1_script"]
+
+[node name="HybridCombatUI" type="CanvasLayer"]
+script = ExtResource("1_script")
+
+[node name="TopPanel" type="PanelContainer" parent="."]
+offset_left = 24.0
+offset_top = 24.0
+offset_right = 424.0
+offset_bottom = 146.0
+
+[node name="Margin" type="MarginContainer" parent="TopPanel"]
+offset_right = 400.0
+offset_bottom = 122.0
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 10
+
+[node name="Stack" type="VBoxContainer" parent="TopPanel/Margin"]
+offset_right = 376.0
+offset_bottom = 102.0
+theme_override_constants/separation = 6
+
+[node name="Title" type="Label" parent="TopPanel/Margin/Stack"]
+offset_right = 376.0
+offset_bottom = 23.0
+text = "HYBRID ARCHER COMBAT SLICE"
+
+[node name="Stats" type="Label" parent="TopPanel/Margin/Stack"]
+offset_top = 29.0
+offset_right = 376.0
+offset_bottom = 52.0
+text = "HP: 1000 / 1000   LVL: 1   XP: 0 / 60"
+
+[node name="Combat" type="Label" parent="TopPanel/Margin/Stack"]
+offset_top = 58.0
+offset_right = 376.0
+offset_bottom = 81.0
+text = "DMG: 100   FIRE CD: 0.46s   KILLS: 0   ENEMIES: 0"
+
+[node name="BottomPanel" type="PanelContainer" parent="."]
+offset_left = 24.0
+offset_top = 924.0
+offset_right = 384.0
+offset_bottom = 1020.0
+
+[node name="Margin" type="MarginContainer" parent="BottomPanel"]
+offset_right = 360.0
+offset_bottom = 96.0
+theme_override_constants/margin_left = 12
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 12
+theme_override_constants/margin_bottom = 10
+
+[node name="Stack" type="VBoxContainer" parent="BottomPanel/Margin"]
+offset_right = 336.0
+offset_bottom = 76.0
+theme_override_constants/separation = 6
+
+[node name="HealthLabel" type="Label" parent="BottomPanel/Margin/Stack"]
+offset_right = 336.0
+offset_bottom = 18.0
+text = "Run Health"
+
+[node name="HealthBar" type="ProgressBar" parent="BottomPanel/Margin/Stack"]
+offset_top = 24.0
+offset_right = 336.0
+offset_bottom = 56.0
+max_value = 1000.0
+value = 1000.0
+
+[node name="Overlay" type="Control" parent="."]
+visible = false
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="Backdrop" type="ColorRect" parent="Overlay"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0.01, 0.02, 0.05, 0.74)
+
+[node name="CenterWrap" type="CenterContainer" parent="Overlay"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LevelUpPanel" type="PanelContainer" parent="Overlay/CenterWrap"]
+custom_minimum_size = Vector2(860, 360)
+
+[node name="Margin" type="MarginContainer" parent="Overlay/CenterWrap/LevelUpPanel"]
+offset_right = 860.0
+offset_bottom = 360.0
+theme_override_constants/margin_left = 18
+theme_override_constants/margin_top = 18
+theme_override_constants/margin_right = 18
+theme_override_constants/margin_bottom = 18
+
+[node name="Stack" type="VBoxContainer" parent="Overlay/CenterWrap/LevelUpPanel/Margin"]
+offset_right = 824.0
+offset_bottom = 324.0
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="Overlay/CenterWrap/LevelUpPanel/Margin/Stack"]
+offset_right = 824.0
+offset_bottom = 36.0
+horizontal_alignment = 1
+text = "LEVEL UP"
+
+[node name="Subtitle" type="Label" parent="Overlay/CenterWrap/LevelUpPanel/Margin/Stack"]
+offset_top = 48.0
+offset_right = 824.0
+offset_bottom = 71.0
+horizontal_alignment = 1
+text = "Choose one upgrade."
+
+[node name="CardsRow" type="HBoxContainer" parent="Overlay/CenterWrap/LevelUpPanel/Margin/Stack"]
+offset_top = 83.0
+offset_right = 824.0
+offset_bottom = 263.0
+theme_override_constants/separation = 12
+alignment = 1
+
+[node name="Choice0" type="Button" parent="Overlay/CenterWrap/LevelUpPanel/Margin/Stack/CardsRow"]
+custom_minimum_size = Vector2(250, 180)
+text = "Choice 1"
+
+[node name="Choice1" type="Button" parent="Overlay/CenterWrap/LevelUpPanel/Margin/Stack/CardsRow"]
+custom_minimum_size = Vector2(250, 180)
+text = "Choice 2"
+
+[node name="Choice2" type="Button" parent="Overlay/CenterWrap/LevelUpPanel/Margin/Stack/CardsRow"]
+custom_minimum_size = Vector2(250, 180)
+text = "Choice 3"
+
+[node name="Hint" type="Label" parent="Overlay/CenterWrap/LevelUpPanel/Margin/Stack"]
+offset_top = 275.0
+offset_right = 824.0
+offset_bottom = 293.0
+horizontal_alignment = 1
+text = "LEFT / RIGHT or 1 / 2 / 3, then ENTER"

@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/props/animated_tree_prop.gd" id="1_script"]
+[ext_resource type="Texture2D" uid="uid://b3glh61psqdj1" path="res://art/hub/hub_tree_pine.png" id="2_texture"]
+
+[node name="AnimatedTreePine" type="Node2D"]
+script = ExtResource("1_script")
+tree_texture = ExtResource("2_texture")
+sway_strength_px = 2.0
+sway_speed = 0.95
+gust_strength_px = 0.7
+detail_strength_px = 0.3
+canopy_start = 0.34
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
+texture = ExtResource("2_texture")

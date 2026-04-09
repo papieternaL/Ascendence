@@ -1,9 +1,13 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=11 format=3]
 
 [ext_resource type="Script" path="res://scripts/player/player.gd" id="1_player"]
 [ext_resource type="PackedScene" path="res://scenes/abilities/PowerShot.tscn" id="2_power_shot"]
 [ext_resource type="PackedScene" path="res://scenes/abilities/ArrowVolley.tscn" id="3_arrow_volley"]
-[ext_resource type="PackedScene" path="res://scenes/abilities/Frenzy.tscn" id="4_frenzy"]
+[ext_resource type="PackedScene" path="res://scenes/abilities/Sentinel.tscn" id="4_sentinel"]
+[ext_resource type="Script" path="res://scripts/effects/camera_shake.gd" id="5_camera_shake"]
+[ext_resource type="PackedScene" path="res://scenes/abilities/ArcaneMissiles.tscn" id="6_arcane_missiles"]
+[ext_resource type="PackedScene" path="res://scenes/abilities/ArcaneBomb.tscn" id="7_arcane_bomb"]
+[ext_resource type="PackedScene" path="res://scenes/abilities/ArcaneSniper.tscn" id="8_arcane_sniper"]
 
 [sub_resource type="CapsuleShape2D" id="CapsuleShape2D_body"]
 radius = 8.0
@@ -17,6 +21,7 @@ collision_layer = 1
 collision_mask = 6
 script = ExtResource("1_player")
 weapon_style = "bow"
+mobility_style = "dash"
 
 [node name="Sprite2D" type="Sprite2D" parent="."]
 
@@ -31,8 +36,9 @@ position = Vector2(14, 0)
 [node name="Camera2D" type="Camera2D" parent="."]
 enabled = true
 position_smoothing_enabled = true
-position_smoothing_speed = 6.0
+position_smoothing_speed = 7.5
 limit_smoothed = true
+script = ExtResource("5_camera_shake")
 
 [node name="Hurtbox" type="Area2D" parent="."]
 collision_layer = 8
@@ -48,4 +54,10 @@ shape = SubResource("CircleShape2D_hurtbox")
 
 [node name="ArrowVolley" parent="AbilityAnchor" instance=ExtResource("3_arrow_volley")]
 
-[node name="Frenzy" parent="AbilityAnchor" instance=ExtResource("4_frenzy")]
+[node name="Sentinel" parent="AbilityAnchor" instance=ExtResource("4_sentinel")]
+
+[node name="ArcaneMissiles" parent="AbilityAnchor" instance=ExtResource("6_arcane_missiles")]
+
+[node name="ArcaneBomb" parent="AbilityAnchor" instance=ExtResource("7_arcane_bomb")]
+
+[node name="ArcaneSniper" parent="AbilityAnchor" instance=ExtResource("8_arcane_sniper")]

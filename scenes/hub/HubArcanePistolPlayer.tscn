@@ -1,0 +1,21 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="PackedScene" path="res://scenes/player/ArcanePistolPlayer.tscn" id="1_base"]
+[ext_resource type="Script" path="res://scripts/hub/hub_combat_player.gd" id="2_hub_script"]
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_interaction"]
+radius = 68.0
+
+[node name="HubArcanePistolPlayer" instance=ExtResource("1_base")]
+collision_mask = 7
+script = ExtResource("2_hub_script")
+footstep_surface = "stone"
+
+[node name="InteractionDetector" type="Area2D" parent="."]
+collision_layer = 0
+collision_mask = 16
+monitoring = true
+monitorable = false
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="InteractionDetector"]
+shape = SubResource("CircleShape2D_interaction")
